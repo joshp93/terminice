@@ -64,7 +64,10 @@ function TranscriptItem({ entry }: { entry: ChatEntry }) {
     default:
       return (
         <div className={`bubble ${entry.role}`}>
-          <MessageBubble text={entry.text} />
+          <MessageBubble
+            text={entry.text}
+            preserveLineBreaks={entry.role === "user"}
+          />
         </div>
       );
   }

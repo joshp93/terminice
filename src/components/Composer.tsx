@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createComposer, type ComposerHandle } from "../lib/createComposer";
+import { createComposer, type ComposerHandle, type ComposerStatus } from "../lib/createComposer";
+import { createInlineState, type FormatId } from "../lib/richFormat";
+import type { ListKind } from "../lib/listMarkers";
 import { FormatToolbar } from "./FormatToolbar";
-import type { FormatId } from "../lib/richFormat";
 import type { PaneMode } from "../types";
 
 /** Props for {@link Composer}. */
@@ -20,8 +21,8 @@ const PLACEHOLDERS: Record<PaneMode, string> = {
 /**
  * Renders the composer for the active pane.
  *
- * In Claude mode Markdown formatting is available and the text is passed
- * through untouched; in terminal mode the text is forwarded verbatim.
+ * In Claude mode Markdown formatting is available; in terminal mode the text is
+ * forwarded verbatim. Any markers left open are closed before sending.
  *
  * @param props - The active mode, Enter behaviour, and send handler.
  * @returns The rendered composer.
@@ -32,8 +33,12 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   const sendRef = useRef(onSend);
   const submitsRef = useRef(submitsOnEnter);
   const richRef = useRef(mode === "claude");
-  const [activeFormats, setActiveFormats] = useState<ReadonlySet<FormatId>>(new Set());
-  const activeFormatsRef = useRef<ReadonlySet<FormatId>>(activeFormats);
+  const [status, setStatus] = useState<ComposerStatus>({
+    inline: createInlineState(),
+    listKind: null,
+  });
+
+  const rich = mode === "claude";
 
   useEffect(() => {
     sendRef.current = onSend;
@@ -43,8 +48,6 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
     submitsRef.current = submitsOnEnter;
   }, [submitsOnEnter]);
 
-  const rich = mode === "claude";
-
   useEffect(() => {
     richRef.current = rich;
   }, [rich]);
@@ -52,7 +55,7 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   const submit = useCallback(() => {
     const handle = handleRef.current;
     if (!handle) return;
-    handle.closeOpenWord();
+    handle.closeOpenFormats();
     const text = handle.getText();
     handle.clear();
     if (text.trim().length === 0) return;
@@ -60,19 +63,12 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   }, []);
 
   const toggleFormat = useCallback((id: FormatId) => {
-    handleRef.current?.closeOpenWord();
-    const next = new Set(activeFormatsRef.current);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    activeFormatsRef.current = next;
-    handleRef.current?.setActiveFormats([...next]);
-    setActiveFormats(next);
+    handleRef.current?.toggleFormat(id);
   }, []);
 
-  const toggleRef = useRef(toggleFormat);
-  useEffect(() => {
-    toggleRef.current = toggleFormat;
-  }, [toggleFormat]);
+  const toggleList = useCallback((kind: ListKind) => {
+    handleRef.current?.toggleList(kind);
+  }, []);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -83,10 +79,9 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
       onSubmit: () => submit(),
       submitsOnEnter: () => submitsRef.current(),
       isRichFormatting: () => richRef.current,
-      onToggleFormat: (id) => toggleRef.current(id),
+      onStatusChange: setStatus,
     });
     handleRef.current = handle;
-    handle.setActiveFormats([...activeFormatsRef.current]);
     handle.focus();
     return () => {
       handle.destroy();
@@ -97,7 +92,13 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   return (
     <footer className="composer">
       <div className="composer-row">
-        {rich && <FormatToolbar activeFormats={activeFormats} onToggle={toggleFormat} />}
+        {rich && (
+          <FormatToolbar
+            status={status}
+            onToggleFormat={toggleFormat}
+            onToggleList={toggleList}
+          />
+        )}
         <div className="composer-host" ref={hostRef} />
         <button type="button" className="send" onClick={submit}>
           Send

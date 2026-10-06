@@ -1,4 +1,4 @@
-/** A Markdown inline style the composer can wrap words in. */
+/** A Markdown inline style the composer can apply. */
 export type FormatId = "bold" | "italic" | "strike" | "code";
 
 /** How a style is presented in the toolbar. */
@@ -30,7 +30,7 @@ const SHORTCUT_KEYS: Record<FormatId, string> = {
   code: "E",
 };
 
-/** The styles offered in the composer toolbar, in display order. */
+/** The inline styles offered in the composer toolbar, in display order. */
 export const FORMATS: readonly FormatDefinition[] = [
   { id: "bold", label: "Bold", glyph: "B" },
   { id: "italic", label: "Italic", glyph: "I" },
@@ -38,20 +38,47 @@ export const FORMATS: readonly FormatDefinition[] = [
   { id: "code", label: "Inline code", glyph: "‹›" },
 ];
 
-/** Tracks whether a marker-wrapped word is currently open. */
-export type TypingState = {
-  /** Markers that opened the current word, or an empty string when none is open. */
-  openMarkers: string;
+/** Which styles are armed, and which have been opened and await closing. */
+export type InlineState = {
+  /** Styles that will wrap the next typed character. */
+  armed: ReadonlySet<FormatId>;
+  /** Styles whose opening markers are written and await their closing markers. */
+  open: ReadonlySet<FormatId>;
 };
 
-/** The text to insert for one typed character, and the state that follows. */
-export type InsertionPlan = {
+/** What pressing a style control does. */
+export type TogglePlan =
+  | { kind: "close"; insert: string; state: InlineState }
+  | { kind: "arm"; state: InlineState };
+
+/** The result of typing a character while a style is armed. */
+export type TypingPlan = {
   insert: string;
-  state: TypingState;
+  state: InlineState;
 };
 
 function usesCommandKey(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+}
+
+/** Creates the inline state for an empty composer. */
+export function createInlineState(): InlineState {
+  return { armed: new Set(), open: new Set() };
+}
+
+/**
+ * Builds the marker string for a set of styles.
+ *
+ * Order is fixed so the same selection always produces the same markers.
+ *
+ * @param active - The styles to build markers for.
+ * @returns The concatenated markers, or an empty string for none.
+ */
+export function formatMarkers(active: Iterable<FormatId>): string {
+  const set = new Set(active);
+  return FORMAT_ORDER.filter((id) => set.has(id))
+    .map((id) => FORMAT_MARKERS[id])
+    .join("");
 }
 
 /**
@@ -65,66 +92,65 @@ export function formatShortcutLabel(id: FormatId): string {
 }
 
 /**
- * Builds the marker string for the armed styles.
+ * Whether a style should render as active.
  *
- * Order is fixed so the same selection always produces the same markers.
- *
- * @param active - The armed styles.
- * @returns The concatenated markers, or an empty string when none are armed.
+ * @param state - The current inline state.
+ * @param id - The style.
+ * @returns True while the style is armed or open.
  */
-export function formatMarkers(active: Iterable<FormatId>): string {
-  const set = new Set(active);
-  return FORMAT_ORDER.filter((id) => set.has(id))
-    .map((id) => FORMAT_MARKERS[id])
-    .join("");
-}
-
-/** Creates the typing state for an empty composer. */
-export function createTypingState(): TypingState {
-  return { openMarkers: "" };
+export function isFormatActive(state: InlineState, id: FormatId): boolean {
+  return state.armed.has(id) || state.open.has(id);
 }
 
 /**
- * Whether a character ends the word it appears in.
+ * Returns the markers needed to close the open group.
+ *
+ * @param state - The current inline state.
+ * @returns The closing markers, or an empty string when nothing is open.
+ */
+export function closingMarkers(state: InlineState): string {
+  return formatMarkers(state.open);
+}
+
+/**
+ * Plans what pressing a style control does when nothing is selected.
+ *
+ * Pressing the same style again closes the group; pressing an unarmed style
+ * arms it so the next typed character is wrapped.
+ *
+ * @param id - The style that was pressed.
+ * @param state - The current inline state.
+ * @returns Either a close to perform, or the state to adopt.
+ */
+export function planToggle(id: FormatId, state: InlineState): TogglePlan {
+  if (state.armed.has(id)) {
+    const armed = new Set(state.armed);
+    armed.delete(id);
+    return { kind: "arm", state: { armed, open: state.open } };
+  }
+
+  if (state.open.has(id)) {
+    return { kind: "close", insert: closingMarkers(state), state: createInlineState() };
+  }
+
+  const armed = new Set(state.armed);
+  armed.add(id);
+  return { kind: "arm", state: { armed, open: state.open } };
+}
+
+/**
+ * Plans what to insert for a typed character.
  *
  * @param char - The character typed.
- * @returns True for whitespace.
+ * @param state - The current inline state.
+ * @returns The text to insert and the resulting state, or null to insert plainly.
  */
-export function isWordBoundary(char: string): boolean {
-  return /\s/.test(char);
-}
-
-/**
- * Plans the insertion of one typed character.
- *
- * While styles are armed the first character of a word is prefixed with the
- * markers and any word boundary closes them, so typing `Hello, world` with bold
- * armed produces `**Hello,** **world**`.
- *
- * @param char - The character typed.
- * @param markers - Markers for the armed styles; empty disables wrapping.
- * @param state - The typing state before this character.
- * @returns The text to insert and the resulting state.
- */
-export function planInsertion(char: string, markers: string, state: TypingState): InsertionPlan {
-  if (markers.length === 0) {
-    return { insert: char, state };
-  }
-  if (isWordBoundary(char)) {
-    return { insert: state.openMarkers + char, state: createTypingState() };
-  }
-  if (state.openMarkers.length === 0) {
-    return { insert: markers + char, state: { openMarkers: markers } };
-  }
-  return { insert: char, state };
-}
-
-/**
- * Returns the markers needed to close a word left open.
- *
- * @param state - The typing state.
- * @returns The closing markers, or an empty string when no word is open.
- */
-export function planClose(state: TypingState): string {
-  return state.openMarkers;
+export function planTypedCharacter(char: string, state: InlineState): TypingPlan | null {
+  if (state.armed.size === 0) return null;
+  const open = new Set(state.open);
+  for (const id of state.armed) open.add(id);
+  return {
+    insert: formatMarkers(state.armed) + char,
+    state: { armed: new Set(), open },
+  };
 }

@@ -155,11 +155,19 @@ formatting and no shortcuts.
 
 (`⌘` in place of `Ctrl` on macOS.)
 
-The formatting buttons *arm* a style rather than wrapping a selection. With
-bold armed, typing `Hello, world` produces `**Hello,** **world**` — the first
-character of each word takes the opening markers and a word boundary closes
-them. Markers follow CommonMark, so a single `*` is italic and bold is `**`;
-that way the transcript renders exactly what was sent.
+The formatting buttons act on a selection when there is one. With nothing
+selected they *arm* a style: the next character typed is wrapped in its markers,
+and pressing the same style again closes it. Anything left open is closed before
+the message is sent. Markers follow CommonMark, so a single `*` is italic and
+bold is `**`; that way the transcript renders exactly what was sent.
+
+The two list buttons act on the current line, turning it into a bulleted or
+numbered item and removing the marker when pressed again. Enter inside an item
+starts the next one, numbering ordered lists in sequence; Enter on an empty item
+ends the list, after which Enter sends as usual.
+
+User messages render with single newlines preserved, so the transcript shows the
+message as it was typed rather than folding it into one paragraph.
 
 Typing `!` as the first character in Claude mode sends the rest of the line to
 the shell instead of to Claude, and records a notice in the transcript.

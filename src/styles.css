@@ -8,6 +8,7 @@
   --text-dim: #8b93a1;
   --selection: #2c3440;
   --code-bg: #0b0d10;
+  --caret: #ffffff;
   --danger-text: #f2a6ac;
   --danger-bg: rgba(224, 108, 117, 0.1);
   --danger-border: rgba(224, 108, 117, 0.35);
@@ -28,6 +29,7 @@
   --text-dim: #626b78;
   --selection: #cfe0f5;
   --code-bg: #f7f8fa;
+  --caret: #22262c;
   --danger-text: #a3261f;
   --danger-bg: rgba(192, 57, 43, 0.08);
   --danger-border: rgba(192, 57, 43, 0.3);
@@ -433,12 +435,19 @@ body {
   padding-bottom: 3px;
 }
 
+.format-divider {
+  width: 1px;
+  margin: 5px 3px;
+  background: var(--border);
+}
+
 .format-button {
   font: inherit;
   font-size: 13px;
   line-height: 1;
-  width: 32px;
+  min-width: 32px;
   height: 32px;
+  padding: 0 7px;
   border-radius: 7px;
   border: 1px solid var(--border);
   background: transparent;
