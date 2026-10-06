@@ -30,12 +30,14 @@ export function useTerminal(cwd: string | null): TerminalSession {
     const container = containerRef.current;
     if (!cwd || !container) return;
 
+    let cancelled = false;
     const handle: TerminalHandle = createTerminal(container);
     handle.fit();
     setStatus("starting");
 
     const events = new Channel<TerminalEvent>();
     events.onmessage = (event) => {
+      if (cancelled) return;
       if (event.kind === "data") {
         pasteModeRef.current = updatePasteMode(pasteModeRef.current, event.data);
         handle.write(event.data);
@@ -57,7 +59,6 @@ export function useTerminal(cwd: string | null): TerminalSession {
     const observer = new ResizeObserver(() => handle.fit());
     observer.observe(container);
 
-    let cancelled = false;
     void invoke<string>("start_terminal", {
       onEvent: events,
       cwd,

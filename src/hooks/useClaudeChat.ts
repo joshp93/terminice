@@ -32,6 +32,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     let cancelled = false;
     const events = new Channel<ClaudeEvent>();
     events.onmessage = (event) => {
+      if (cancelled) return;
       if (event.kind === "line") {
         setState((current) => applyClaudeLine(current, event.line));
         return;

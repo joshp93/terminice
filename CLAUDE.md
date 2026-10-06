@@ -93,6 +93,21 @@ it with the user rather than quietly changing it.
 
   Verified by attempting it: MSVC fails at the first link; GNU compiles ~30 crates and
   then fails in `windows-sys`.
+- **`LIB` is set in `.cargo/config.toml` for a reason — do not delete it casually.** This
+  machine's Windows SDK reports `ProductVersion = 10.0.26100` while the directory on disk
+  is `10.0.26100.0`, so rustc computes a library path that does not exist and the link
+  fails with `LNK1181: cannot open input file 'dbghelp.lib'`. The file is present and
+  intact; the search path is wrong. The config points `LIB` at the real directories. It
+  hardcodes an SDK version — if `cargo` starts failing after an SDK upgrade, update or
+  remove that file rather than assuming the code broke.
 - **UTF-8 must be decoded incrementally.** PTY reads split multi-byte characters at
   arbitrary boundaries; `utf8::Utf8Stream` holds incomplete trailing sequences back.
   Writing PTY bytes straight to xterm.js will corrupt CJK and emoji.
+- **The terminal uses xterm's DOM renderer, not WebGL, and that is deliberate.**
+  `@xterm/addon-webgl` loads without error in this webview but paints nothing, leaving a
+  blank terminal pane while the process tree — shell, conpty host, webview — looks
+  perfectly healthy. The DOM renderer measures within run-to-run variance of WebGL for
+  our workload, so the addon is not a dependency. Do not re-add it without a screenshot
+  proving it renders.
+- **Fonts are shared through `src/lib/fonts.ts`.** Nerd Font variants must stay first in
+  the stack or prompt themes that use private-use glyphs render blanks.

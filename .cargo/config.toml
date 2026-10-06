@@ -1,0 +1,13 @@
+# Machine-specific workaround. See "Windows toolchain" in README.md.
+#
+# This machine's Windows SDK records ProductVersion as 10.0.26100 in the registry
+# while the library directory on disk is 10.0.26100.0. rustc computes its library
+# search path from that registry value, lands on a directory that does not exist,
+# and link.exe then fails with LNK1181 on dbghelp.lib -- the one library MSVC does
+# not ship a copy of. Pointing LIB at the real directories fixes it with no
+# registry edit and no reinstall.
+#
+# Delete this file once the SDK registry value is corrected.
+
+[env]
+LIB = "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.26100.0\\um\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.26100.0\\ucrt\\x64"

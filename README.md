@@ -27,7 +27,7 @@ tool rather than two bolted together.
 | Layer | Choice |
 |---|---|
 | Shell | Tauri 2 — native window, system webview, no browser chrome |
-| Terminal | xterm.js 6 with the WebGL renderer |
+| Terminal | xterm.js 6 with the DOM renderer |
 | PTY | `portable-pty` (ConPTY on Windows, `openpty` elsewhere) |
 | Composer | CodeMirror 6, Markdown-as-source-of-truth with live decorations |
 | Transcript | `react-markdown` + `remark-gfm`, sanitised, with `rehype-highlight` |
@@ -76,6 +76,26 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools `
 ```
 
 Then `rustup component add rustfmt` if you want `cargo fmt`.
+
+### Windows toolchain note
+
+Rust on Windows does not ship a linker. Compiling is two stages — source to object
+files, then objects to an executable — and the second stage uses the platform's linker,
+`link.exe`, which comes from the MSVC C++ build tools rather than from Windows or Rust.
+Without it, `cargo` fails with `linker link.exe not found` before it compiles anything.
+
+This repository contains `.cargo/config.toml` working around a separate, narrower problem:
+on this machine the Windows SDK records `ProductVersion = 10.0.26100` in the registry while
+the library directory on disk is `10.0.26100.0`. rustc derives its library search path from
+that registry value, so it points at a directory that does not exist. The link then
+succeeds for `kernel32.lib`, `ntdll.lib`, `userenv.lib` and `ws2_32.lib` — MSVC ships its
+own copies of those — and fails on `dbghelp.lib`, which it does not, producing a confusing
+`LNK1181: cannot open input file 'dbghelp.lib'` for a file that is present and intact.
+
+Setting `LIB` to the real SDK directories resolves it, which is what `.cargo/config.toml`
+does. If the SDK is later repaired or reinstalled, delete that file — the path is
+hardcoded and will not follow an SDK version bump.
+
 
 ## Getting started
 

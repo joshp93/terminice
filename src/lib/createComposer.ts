@@ -3,6 +3,7 @@ import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { MONO_FONT_STACK } from "./fonts";
 
 /** A composer view and the operations the UI needs from it. */
 export type ComposerHandle = {
@@ -26,8 +27,7 @@ const theme = EditorView.theme({
     fontSize: "13.5px",
   },
   ".cm-content": {
-    fontFamily:
-      '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace',
+    fontFamily: MONO_FONT_STACK,
     padding: "10px 12px",
     caretColor: "#7dd3a0",
   },

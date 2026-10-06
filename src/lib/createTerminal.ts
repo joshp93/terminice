@@ -1,6 +1,6 @@
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
+import { MONO_FONT_STACK } from "./fonts";
 
 const THEME: ITheme = {
   background: "#131519",
@@ -26,8 +26,7 @@ const THEME: ITheme = {
   brightWhite: "#ffffff",
 };
 
-const FONT_FAMILY =
-  '"Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Courier New", monospace';
+const FONT_FAMILY = MONO_FONT_STACK;
 
 /** A terminal view and the operations the UI needs from it. */
 export type TerminalHandle = {
@@ -39,19 +38,11 @@ export type TerminalHandle = {
   dispose: () => void;
 };
 
-function attachRenderer(terminal: Terminal): void {
-  try {
-    terminal.loadAddon(new WebglAddon());
-  } catch {
-    // WebGL is unavailable; the DOM renderer loaded by `open` remains active.
-  }
-}
-
 /**
  * Creates a terminal view attached to `container`.
  *
- * Uses the WebGL renderer when the environment supports it and the DOM
- * renderer otherwise.
+ * Uses xterm's default DOM renderer. The WebGL renderer measured within
+ * run-to-run variance of it and can paint nothing at all in some webviews.
  *
  * @param container - Element the terminal should fill.
  * @returns A handle exposing the terminal and its lifecycle operations.
@@ -71,7 +62,6 @@ export function createTerminal(container: HTMLElement): TerminalHandle {
   const fitAddon = new FitAddon();
   terminal.loadAddon(fitAddon);
   terminal.open(container);
-  attachRenderer(terminal);
 
   const fit = (): void => {
     try {
