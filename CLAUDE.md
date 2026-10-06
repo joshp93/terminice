@@ -24,14 +24,14 @@ it with the user rather than quietly changing it.
 1. **Tauri, not Electron.** Electron bundles Chromium *and* Node. A Node runtime inside
    the app is exactly what the user is trying to escape: the whole point of terminice is
    that it has no opinion about which Node version a project uses. Tauri uses the system
-   webview (WebView2 on Windows, already present) and a Rust backend that execs a clean
-   login shell.
+   webview (WebView2 on Windows, already present) and a Rust backend that execs the
+   `claude` CLI directly.
 
-2. **No webview-free rewrite.** The rich-text composer is the reason a webview is
-   acceptable. WYSIWYG editing and Markdown syntax highlighting have no mature non-web
-   implementation — in Rust, Go or C++ you would be writing a text editor from scratch.
-   A plain terminal emulator with no rich input would correctly be native; this is not
-   that app.
+2. **No terminal pane — this is a chat client for Claude Code, not a terminal.** An
+   earlier version wrapped a PTY in xterm.js alongside the chat. It was removed
+   deliberately: the app is for driving agents, and a half-built terminal emulator was
+   paying for `portable-pty`, ConPTY packaging and an escape-sequence attack surface
+   without earning it. Do not reintroduce one without asking.
 
 3. **Claude is driven over stream-json, never by scraping the TUI.** A terminal stream has
    no message boundaries — it is a screen state that gets redrawn — and Claude Code ships
@@ -39,8 +39,8 @@ it with the user rather than quietly changing it.
    supports a long-lived bidirectional session (`--input-format stream-json`); that is
    what `claude.rs` uses.
 
-4. **The PTY is a destination, not a data source.** The terminal pane exists so real
-   shells and interactive programs work. It is never used to derive chat messages.
+4. **The PTY is gone; `claude` is spawned as a plain child process.** Nothing scrapes a
+   terminal any more. If a future feature needs a real TTY, that is a new decision.
 
 5. **The composer sends literal Markdown.** The rich rendering is a view of the same
    bytes. Do not strip it to plain text — the agent understands Markdown, so `- item`

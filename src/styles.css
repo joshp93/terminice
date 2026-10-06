@@ -44,6 +44,7 @@
 :root {
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --composer-line: 44px;
 
   color-scheme: dark light;
   font-family: var(--font-ui);
@@ -86,41 +87,37 @@ body {
   background: var(--panel);
 }
 
-.mode-tabs {
+.session {
   display: flex;
-  gap: 6px;
+  align-items: baseline;
+  gap: 14px;
+  margin-left: auto;
+  min-width: 0;
 }
 
-.mode-tab {
-  font: inherit;
+.session-agent,
+.session-item {
+  color: var(--accent);
   font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  padding: 6px 16px;
-  border-radius: 7px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--accent);
-  cursor: pointer;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
 }
 
-.mode-tab:hover {
-  background: var(--panel-raised);
-}
-
-.mode-tab.active {
-  background: var(--panel-raised);
-  border-color: var(--accent-border);
+.session-item {
+  font-weight: 500;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 
 .cwd {
-  margin-left: auto;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .settings {
@@ -210,23 +207,16 @@ body {
 }
 
 .workspace {
-  position: relative;
+  display: grid;
   min-height: 0;
 }
 
 .pane {
-  position: absolute;
-  inset: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   background: var(--bg);
   min-width: 0;
   min-height: 0;
-}
-
-.pane.inactive {
-  visibility: hidden;
-  pointer-events: none;
 }
 
 .pane-header {
@@ -250,16 +240,6 @@ body {
   font-size: 11px;
   color: var(--text-dim);
   font-family: var(--font-mono);
-}
-
-.terminal-host {
-  overflow: hidden;
-  padding: 8px 6px 4px 10px;
-  min-height: 0;
-}
-
-.terminal-host .xterm {
-  height: 100%;
 }
 
 .transcript {
@@ -499,7 +479,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
-  min-height: 42px;
+  min-height: var(--composer-line);
   max-height: 220px;
   overflow-y: auto;
 }
@@ -512,12 +492,14 @@ body {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  padding: 9px 20px;
+  height: var(--composer-line);
+  padding: 0 20px;
   border-radius: 8px;
   border: 1px solid var(--accent-border);
   background: var(--accent-fill);
   color: var(--accent-on-fill);
   cursor: pointer;
+  align-self: end;
 }
 
 .send:hover {

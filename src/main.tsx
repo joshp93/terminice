@@ -6,7 +6,6 @@
  * shell and a second Claude process on every mount.
  */
 import { createRoot } from "react-dom/client";
-import "@xterm/xterm/css/xterm.css";
 import "highlight.js/styles/github-dark.css";
 import "./styles.css";
 import { App } from "./App";

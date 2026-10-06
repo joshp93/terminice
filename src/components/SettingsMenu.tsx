@@ -53,15 +53,6 @@ export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
       {open && (
         <div className="settings-panel" role="dialog" aria-label="Settings">
           <SegmentedChoice
-            label="Open with"
-            value={settings.defaultMode}
-            options={[
-              { value: "claude", label: "Claude" },
-              { value: "terminal", label: "Terminal" },
-            ]}
-            onSelect={(defaultMode) => onChange({ ...settings, defaultMode })}
-          />
-          <SegmentedChoice
             label="Enter key"
             value={settings.enterBehaviour}
             options={[
@@ -79,7 +70,7 @@ export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
             ]}
             onSelect={(theme) => onChange({ ...settings, theme })}
           />
-          <p className="settings-note">“Open with” applies the next time terminice starts.</p>
+          <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>
       )}
     </div>

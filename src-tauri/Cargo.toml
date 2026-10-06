@@ -1,7 +1,7 @@
 [package]
 name = "terminice"
 version = "0.1.0"
-description = "A terminal emulator with a rich-text composer"
+description = "A chat client for Claude Code"
 authors = ["joshp93"]
 edition = "2021"
 rust-version = "1.77"
@@ -17,7 +17,6 @@ tauri-build = { version = "2.7.1", features = [] }
 tauri = { version = "2.12.1", features = [] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
-portable-pty = "0.9.0"
 uuid = { version = "1.27.0", features = ["v4"] }
 
 [profile.release]

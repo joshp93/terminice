@@ -9,7 +9,7 @@ import {
   syntaxTree,
 } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
-import { planAutoPair } from "./autoPair";
+import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import { MONO_FONT_STACK } from "./fonts";
 import {
   codeBlockText,
@@ -78,8 +78,6 @@ export type ComposerOptions = {
   onSubmit: () => void;
   /** Whether a bare Enter sends. Evaluated on each keypress. */
   submitsOnEnter: () => boolean;
-  /** Whether Markdown wrapping and shortcuts are available. */
-  isRichFormatting: () => boolean;
   /** Reports what the toolbar should show. */
   onStatusChange: (status: ComposerStatus) => void;
 };
@@ -163,6 +161,21 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     });
   };
 
+  const replaceRange = (
+    view: EditorView,
+    from: number,
+    to: number,
+    insert: string,
+    anchor: number,
+    head?: number,
+  ): void => {
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: head === undefined ? { anchor } : { anchor, head },
+    });
+    report(view);
+  };
+
   const removeMarks = (
     view: EditorView,
     nodes: readonly SyntaxNode[],
@@ -236,30 +249,20 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         report(view);
         return;
       }
-      const wrapped = { from: range.from + offsets.start, to: range.from + offsets.end };
+      const from = range.from + offsets.start;
+      const to = range.from + offsets.end;
 
-      const nodes = styleNodesInRange(tree, id, wrapped.from, wrapped.to);
-      if (nodes.length > 0 && spansCover(nodes, wrapped.from, wrapped.to)) {
-        removeMarks(view, nodes, wrapped.from, wrapped.to);
+      const nodes = styleNodesInRange(tree, id, from, to);
+      if (nodes.length > 0 && spansCover(nodes, from, to)) {
+        removeMarks(view, nodes, from, to);
         report(view);
         return;
       }
 
       const markers = FORMAT_MARKERS[id];
-      const stripped = stripMarkers(
-        nodes,
-        wrapped.from,
-        wrapped.to,
-        view.state.sliceDoc(wrapped.from, wrapped.to),
-      );
-      view.dispatch({
-        changes: { from: wrapped.from, to: wrapped.to, insert: markers + stripped + markers },
-        selection: {
-          anchor: wrapped.from + markers.length,
-          head: wrapped.from + markers.length + stripped.length,
-        },
-      });
-      report(view);
+      const inner = stripMarkers(nodes, from, to, view.state.sliceDoc(from, to));
+      const insert = markers + inner + markers;
+      replaceRange(view, from, to, insert, from + markers.length, from + markers.length + inner.length);
       return;
     }
 
@@ -270,10 +273,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const plan = planToggle(id, inline);
       inline = plan.state;
       if (plan.kind === "close") {
-        view.dispatch({
-          changes: { from: caret, insert: plan.insert },
-          selection: { anchor: caret + plan.insert.length },
-        });
+        replaceRange(view, caret, caret, plan.insert, caret + plan.insert.length);
+        return;
       }
       report(view);
       return;
@@ -323,25 +324,21 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     const first = view.state.doc.lineAt(range.from);
     const last = view.state.doc.lineAt(range.to);
     const body = view.state.sliceDoc(first.from, last.to);
-    view.dispatch({
-      changes: {
-        from: first.from,
-        to: last.to,
-        insert: `${FENCE}\n${body}\n${FENCE}`,
-      },
-      selection: { anchor: range.from + FENCE.length + 1, head: range.to + FENCE.length + 1 },
-    });
-    report(view);
+    replaceRange(
+      view,
+      first.from,
+      last.to,
+      `${FENCE}\n${body}\n${FENCE}`,
+      range.from + FENCE.length + 1,
+      range.to + FENCE.length + 1,
+    );
   };
 
   const closeOpenFormats = (view: EditorView): void => {
     const closing = closingMarkers(inline);
     if (closing.length === 0) return;
     const at = view.state.selection.main.head;
-    view.dispatch({
-      changes: { from: at, insert: closing },
-      selection: { anchor: at + closing.length },
-    });
+    replaceRange(view, at, at, closing, at + closing.length);
     inline = createInlineState();
   };
 
@@ -349,27 +346,25 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     const cursor = view.state.selection.main.head;
     const line = view.state.doc.lineAt(cursor);
 
-    if (options.isRichFormatting()) {
-      const plan = planListEnter(line.text);
-      if (plan) {
-        if (plan.removeMarker > 0) {
-          view.dispatch({
-            changes: [
-              { from: line.from, to: line.from + plan.removeMarker, insert: "" },
-              { from: cursor, insert: plan.insert },
-            ],
-            selection: { anchor: cursor - plan.removeMarker + plan.insert.length },
-          });
-        } else {
-          view.dispatch({
-            changes: { from: cursor, insert: plan.insert },
-            selection: { anchor: cursor + plan.insert.length },
-          });
-        }
-        renumberAround(view, view.state.selection.main.head);
-        report(view);
-        return true;
+    const plan = planListEnter(line.text);
+    if (plan) {
+      if (plan.removeMarker > 0) {
+        view.dispatch({
+          changes: [
+            { from: line.from, to: line.from + plan.removeMarker, insert: "" },
+            { from: cursor, insert: plan.insert },
+          ],
+          selection: { anchor: cursor - plan.removeMarker + plan.insert.length },
+        });
+      } else {
+        view.dispatch({
+          changes: { from: cursor, insert: plan.insert },
+          selection: { anchor: cursor + plan.insert.length },
+        });
       }
+      renumberAround(view, view.state.selection.main.head);
+      report(view);
+      return true;
     }
 
     if (!options.submitsOnEnter()) return false;
@@ -394,8 +389,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     const parsed = parseListLine(line.text);
     if (!parsed) return false;
 
-    const markerEnd =
-      line.from + parsed.indent.length + parsed.marker.length + parsed.gap.length;
+    const markerEnd = line.from + parsed.indent.length + parsed.marker.length + parsed.gap.length;
     if (cursor > markerEnd) return false;
 
     const edit = planListBackspace(line.text);
@@ -414,27 +408,9 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
           return true;
         },
       },
-      {
-        key: "Tab",
-        run: (view) => {
-          if (!options.isRichFormatting()) return false;
-          return handleTab(view, false);
-        },
-      },
-      {
-        key: "Shift-Tab",
-        run: (view) => {
-          if (!options.isRichFormatting()) return false;
-          return handleTab(view, true);
-        },
-      },
-      {
-        key: "Backspace",
-        run: (view) => {
-          if (!options.isRichFormatting()) return false;
-          return handleBackspace(view);
-        },
-      },
+      { key: "Tab", run: (view) => handleTab(view, false) },
+      { key: "Shift-Tab", run: (view) => handleTab(view, true) },
+      { key: "Backspace", run: (view) => handleBackspace(view) },
       ...(
         [
           ["Mod-b", "bold"],
@@ -445,7 +421,6 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       ).map(([key, id]) => ({
         key,
         run: (view: EditorView) => {
-          if (!options.isRichFormatting()) return false;
           toggleFormat(view, id);
           return true;
         },
@@ -453,28 +428,45 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     ]),
   );
 
-  const handleTypedCharacter = EditorView.inputHandler.of((view, from, to, text) => {
-    if (!options.isRichFormatting()) return false;
-    if (from !== to || text.length !== 1) return false;
+  const surroundSelection = (view: EditorView, open: string, close: string): boolean => {
+    const range = view.state.selection.main;
+    const selected = view.state.sliceDoc(range.from, range.to);
+    const offsets = pairNeedsTrim(open)
+      ? wrapOffsets(selected)
+      : { start: 0, end: selected.length };
+    if (!offsets) return false;
 
-    const formatPlan = planTypedCharacter(text, inline);
-    if (formatPlan) {
-      inline = formatPlan.state;
-      view.dispatch({
-        changes: { from, to, insert: formatPlan.insert },
-        selection: { anchor: from + formatPlan.insert.length },
-        scrollIntoView: true,
-      });
-      report(view);
-      return true;
+    const from = range.from + offsets.start;
+    const to = range.from + offsets.end;
+    const insert = open + view.state.sliceDoc(from, to) + close;
+    replaceRange(view, from, to, insert, from + insert.length);
+    return true;
+  };
+
+  const handleTypedCharacter = EditorView.inputHandler.of((view, from, to, text) => {
+    if (text.length !== 1) return false;
+    const hasSelection = from !== to;
+
+    if (!hasSelection) {
+      const formatPlan = planTypedCharacter(text, inline);
+      if (formatPlan) {
+        inline = formatPlan.state;
+        replaceRange(view, from, to, formatPlan.insert, from + formatPlan.insert.length);
+        return true;
+      }
     }
 
     const pairPlan = planAutoPair({
       char: text,
+      hasSelection,
       before: from > 0 ? view.state.sliceDoc(from - 1, from) : "",
       after: to < view.state.doc.length ? view.state.sliceDoc(to, to + 1) : "",
     });
     if (!pairPlan) return false;
+
+    if (pairPlan.kind === "surround") {
+      return surroundSelection(view, pairPlan.open, pairPlan.close);
+    }
 
     if (pairPlan.kind === "skip") {
       view.dispatch({ selection: { anchor: from + pairPlan.caretOffset } });
@@ -482,12 +474,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       return true;
     }
 
-    view.dispatch({
-      changes: { from, to, insert: pairPlan.text },
-      selection: { anchor: from + pairPlan.caretOffset },
-      scrollIntoView: true,
-    });
-    report(view);
+    replaceRange(view, from, to, pairPlan.text, from + pairPlan.caretOffset);
     return true;
   });
 
@@ -538,11 +525,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     },
     insertText: (text) => {
       const range = view.state.selection.main;
-      view.dispatch({
-        changes: { from: range.from, to: range.to, insert: text },
-        selection: { anchor: range.from + text.length },
-        scrollIntoView: true,
-      });
+      replaceRange(view, range.from, range.to, text, range.from + text.length);
       view.focus();
     },
     toggleFormat: (id) => toggleFormat(view, id),

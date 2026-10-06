@@ -4,20 +4,15 @@ import { subscribeToFileDrops } from "../lib/fileDrops";
 import type { FormatId } from "../lib/richFormat";
 import type { ListKind } from "../lib/listMarkers";
 import { FormatToolbar } from "./FormatToolbar";
-import type { PaneMode } from "../types";
 
 /** Props for {@link Composer}. */
 export type ComposerProps = {
-  mode: PaneMode;
   /** Whether a bare Enter sends. Evaluated on each keypress. */
   submitsOnEnter: () => boolean;
   onSend: (text: string) => void;
 };
 
-const PLACEHOLDERS: Record<PaneMode, string> = {
-  claude: "Message Claude — Enter sends, Shift+Enter for a new line",
-  terminal: "Send to the terminal",
-};
+const PLACEHOLDER = "Message Claude — Enter sends, Shift+Enter for a new line";
 
 const INITIAL_STATUS: ComposerStatus = {
   formats: new Map(),
@@ -26,23 +21,19 @@ const INITIAL_STATUS: ComposerStatus = {
 };
 
 /**
- * Renders the composer for the active pane.
+ * Renders the composer and its formatting toolbar.
  *
- * In Claude mode the formatting toolbar sits above the text box; in terminal
- * mode the text is forwarded verbatim. Markers left open are closed on send.
+ * Markers left open are closed before the message is sent.
  *
- * @param props - The active mode, Enter behaviour, and send handler.
+ * @param props - The Enter behaviour and the send handler.
  * @returns The rendered composer.
  */
-export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
+export function Composer({ submitsOnEnter, onSend }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const handleRef = useRef<ComposerHandle | null>(null);
   const sendRef = useRef(onSend);
   const submitsRef = useRef(submitsOnEnter);
-  const richRef = useRef(mode === "claude");
   const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
-
-  const rich = mode === "claude";
 
   useEffect(() => {
     sendRef.current = onSend;
@@ -51,10 +42,6 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   useEffect(() => {
     submitsRef.current = submitsOnEnter;
   }, [submitsOnEnter]);
-
-  useEffect(() => {
-    richRef.current = rich;
-  }, [rich]);
 
   const submit = useCallback(() => {
     const handle = handleRef.current;
@@ -100,10 +87,9 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
     if (!host) return;
     const handle = createComposer({
       parent: host,
-      placeholder: PLACEHOLDERS[mode],
+      placeholder: PLACEHOLDER,
       onSubmit: () => submit(),
       submitsOnEnter: () => submitsRef.current(),
-      isRichFormatting: () => richRef.current,
       onStatusChange: setStatus,
     });
     handleRef.current = handle;
@@ -113,18 +99,16 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
       handleRef.current = null;
       setStatus(INITIAL_STATUS);
     };
-  }, [mode, submit]);
+  }, [submit]);
 
   return (
     <footer className="composer">
-      {rich && (
-        <FormatToolbar
-          status={status}
-          onToggleFormat={toggleFormat}
-          onToggleList={toggleList}
-          onToggleCodeBlock={toggleCodeBlock}
-        />
-      )}
+      <FormatToolbar
+        status={status}
+        onToggleFormat={toggleFormat}
+        onToggleList={toggleList}
+        onToggleCodeBlock={toggleCodeBlock}
+      />
       <div className="composer-row">
         <div className="composer-host" ref={hostRef} />
         <button type="button" className="send" onClick={submit}>

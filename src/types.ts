@@ -1,8 +1,3 @@
-/** Events emitted by a terminal session in the Rust backend. */
-export type TerminalEvent =
-  | { kind: "data"; data: string }
-  | { kind: "exit"; code: number | null };
-
 /** Events emitted by a Claude session in the Rust backend. */
 export type ClaudeEvent =
   | { kind: "line"; line: string }
@@ -25,6 +20,10 @@ export type ChatState = {
   model: string | null;
   busy: boolean;
   costUsd: number | null;
+  /** Tokens currently occupying the context window. */
+  contextUsed: number | null;
+  /** Size of that window, as reported by the CLI. */
+  contextWindow: number | null;
 };
 
 /** Creates an empty chat state. */
@@ -36,11 +35,10 @@ export function createChatState(): ChatState {
     model: null,
     busy: false,
     costUsd: null,
+    contextUsed: null,
+    contextWindow: null,
   };
 }
-
-/** Which pane is shown, and therefore what the composer feeds. */
-export type PaneMode = "claude" | "terminal";
 
 /** What a bare Enter key does in the composer. */
 export type EnterBehaviour = "send" | "newline";
@@ -50,12 +48,11 @@ export type ThemeName = "dark" | "light";
 
 /** Settings persisted to `~/.config/terminice-settings.json`. */
 export type Settings = {
-  defaultMode: PaneMode;
   enterBehaviour: EnterBehaviour;
   theme: ThemeName;
 };
 
 /** Creates the settings used when no file exists yet. */
 export function createDefaultSettings(): Settings {
-  return { defaultMode: "claude", enterBehaviour: "send", theme: "dark" };
+  return { enterBehaviour: "send", theme: "dark" };
 }

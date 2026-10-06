@@ -128,7 +128,7 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
       return appendEntry(state, {
         id: nextId("notice"),
         role: "notice",
-        text: "Claude is waiting for a permission decision. Answer it in the terminal pane for now.",
+        text: "Claude is waiting for a permission decision, which this window cannot answer yet.",
       });
     default:
       return state;
@@ -186,11 +186,54 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
     });
   }
 
+  const context = readContext(message, state);
+
   return {
     ...state,
     entries: [...state.entries, ...additions],
     streaming: "",
     busy: false,
     costUsd,
+    contextUsed: context.used,
+    contextWindow: context.window,
   };
+}
+
+function numberOr(value: unknown): number {
+  return typeof value === "number" ? value : 0;
+}
+
+/**
+ * Reads how full the context window is after a turn.
+ *
+ * Usage is reported per turn, so a turn that made no API call — a slash command
+ * such as `/usage` — reports nothing and the previous reading is kept. The
+ * window size comes from the per-model usage block.
+ */
+function readContext(
+  message: Json,
+  state: ChatState,
+): { used: number | null; window: number | null } {
+  let window = state.contextWindow;
+  const models = asRecord(message.modelUsage);
+  if (models) {
+    for (const value of Object.values(models)) {
+      const record = asRecord(value);
+      if (record && typeof record.contextWindow === "number") {
+        window = record.contextWindow;
+        break;
+      }
+    }
+  }
+
+  const usage = asRecord(message.usage);
+  if (!usage) return { used: state.contextUsed, window };
+
+  const total =
+    numberOr(usage.input_tokens) +
+    numberOr(usage.cache_read_input_tokens) +
+    numberOr(usage.cache_creation_input_tokens) +
+    numberOr(usage.output_tokens);
+
+  return { used: total > 0 ? total : state.contextUsed, window };
 }

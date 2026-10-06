@@ -5,22 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
 
-/// Which pane the application opens with, and which one the composer feeds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    /// The Claude Code session.
-    Claude,
-    /// The interactive shell.
-    Terminal,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Claude
-    }
-}
-
 /// What a bare Enter key does in the composer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -57,8 +41,6 @@ impl Default for Theme {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
-    /// Pane to open with.
-    pub default_mode: Mode,
     /// What Enter does in the composer.
     pub enter_behaviour: EnterBehaviour,
     /// Colour scheme.
@@ -68,7 +50,6 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            default_mode: Mode::default(),
             enter_behaviour: EnterBehaviour::default(),
             theme: Theme::default(),
         }
@@ -115,12 +96,11 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{EnterBehaviour, Mode, Settings, Theme};
+    use super::{EnterBehaviour, Settings, Theme};
 
     #[test]
-    fn defaults_to_claude_send_dark() {
+    fn defaults_to_send_and_dark() {
         let settings = Settings::default();
-        assert_eq!(settings.default_mode, Mode::Claude);
         assert_eq!(settings.enter_behaviour, EnterBehaviour::Send);
         assert_eq!(settings.theme, Theme::Dark);
     }
@@ -128,22 +108,27 @@ mod tests {
     #[test]
     fn round_trips_as_camel_case_json() {
         let settings = Settings {
-            default_mode: Mode::Terminal,
             enter_behaviour: EnterBehaviour::Newline,
             theme: Theme::Light,
         };
         let json = serde_json::to_string(&settings).expect("serialises");
-        assert!(json.contains("\"defaultMode\":\"terminal\""), "{json}");
         assert!(json.contains("\"enterBehaviour\":\"newline\""), "{json}");
         assert!(json.contains("\"theme\":\"light\""), "{json}");
         let parsed: Settings = serde_json::from_str(&json).expect("parses");
-        assert_eq!(parsed.default_mode, Mode::Terminal);
+        assert_eq!(parsed.theme, Theme::Light);
     }
 
     #[test]
     fn missing_fields_fall_back_to_defaults() {
         let parsed: Settings = serde_json::from_str("{}").expect("parses");
         assert_eq!(parsed.theme, Theme::Dark);
-        assert_eq!(parsed.default_mode, Mode::Claude);
+        assert_eq!(parsed.enter_behaviour, EnterBehaviour::Send);
+    }
+
+    #[test]
+    fn ignores_keys_from_older_versions() {
+        let parsed: Settings =
+            serde_json::from_str(r#"{"defaultMode":"terminal","theme":"light"}"#).expect("parses");
+        assert_eq!(parsed.theme, Theme::Light);
     }
 }
