@@ -111,3 +111,11 @@ it with the user rather than quietly changing it.
   proving it renders.
 - **Fonts are shared through `src/lib/fonts.ts`.** Nerd Font variants must stay first in
   the stack or prompt themes that use private-use glyphs render blanks.
+- **If a CSS change appears not to apply, press F5 in the app before debugging.**
+  Observed directly: after a couple of hours of edits, Vite had applied every JavaScript
+  hot update but never swapped the stylesheet, so a new `.format-button.on` rule was
+  present in the file the dev server served and absent from the running page. The button
+  did nothing while the component's own rendered class name was correct. Hours can go
+  into chasing that in the wrong place.
+- **The formatting toolbar's active state is `on`, not `active`.** `.format-button.active`
+  is a leftover; the three states are `on`, `mixed` and unset.
