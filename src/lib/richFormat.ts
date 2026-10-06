@@ -92,17 +92,6 @@ export function formatShortcutLabel(id: FormatId): string {
 }
 
 /**
- * Whether a style should render as active.
- *
- * @param state - The current inline state.
- * @param id - The style.
- * @returns True while the style is armed or open.
- */
-export function isFormatActive(state: InlineState, id: FormatId): boolean {
-  return state.armed.has(id) || state.open.has(id);
-}
-
-/**
  * Returns the markers needed to close the open group.
  *
  * @param state - The current inline state.

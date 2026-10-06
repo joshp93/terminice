@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createComposer, type ComposerHandle, type ComposerStatus } from "../lib/createComposer";
-import { createInlineState, type FormatId } from "../lib/richFormat";
+import type { FormatId } from "../lib/richFormat";
 import type { ListKind } from "../lib/listMarkers";
 import { FormatToolbar } from "./FormatToolbar";
 import type { PaneMode } from "../types";
@@ -18,11 +18,13 @@ const PLACEHOLDERS: Record<PaneMode, string> = {
   terminal: "Send to the terminal",
 };
 
+const INITIAL_STATUS: ComposerStatus = { formats: new Set(), listKind: null };
+
 /**
  * Renders the composer for the active pane.
  *
- * In Claude mode Markdown formatting is available; in terminal mode the text is
- * forwarded verbatim. Any markers left open are closed before sending.
+ * In Claude mode the formatting toolbar sits above the text box; in terminal
+ * mode the text is forwarded verbatim. Markers left open are closed on send.
  *
  * @param props - The active mode, Enter behaviour, and send handler.
  * @returns The rendered composer.
@@ -33,10 +35,7 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
   const sendRef = useRef(onSend);
   const submitsRef = useRef(submitsOnEnter);
   const richRef = useRef(mode === "claude");
-  const [status, setStatus] = useState<ComposerStatus>({
-    inline: createInlineState(),
-    listKind: null,
-  });
+  const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
 
   const rich = mode === "claude";
 
@@ -86,19 +85,20 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
     return () => {
       handle.destroy();
       handleRef.current = null;
+      setStatus(INITIAL_STATUS);
     };
   }, [mode, submit]);
 
   return (
     <footer className="composer">
+      {rich && (
+        <FormatToolbar
+          status={status}
+          onToggleFormat={toggleFormat}
+          onToggleList={toggleList}
+        />
+      )}
       <div className="composer-row">
-        {rich && (
-          <FormatToolbar
-            status={status}
-            onToggleFormat={toggleFormat}
-            onToggleList={toggleList}
-          />
-        )}
         <div className="composer-host" ref={hostRef} />
         <button type="button" className="send" onClick={submit}>
           Send

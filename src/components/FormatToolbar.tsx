@@ -1,4 +1,4 @@
-import { FORMATS, formatShortcutLabel, isFormatActive, type FormatId } from "../lib/richFormat";
+import { FORMATS, formatShortcutLabel, type FormatId } from "../lib/richFormat";
 import type { ComposerStatus } from "../lib/createComposer";
 import type { ListKind } from "../lib/listMarkers";
 
@@ -26,7 +26,7 @@ export function FormatToolbar({ status, onToggleFormat, onToggleList }: FormatTo
   return (
     <div className="format-toolbar">
       {FORMATS.map((format) => {
-        const active = isFormatActive(status.inline, format.id);
+        const active = status.formats.has(format.id);
         return (
           <button
             key={format.id}

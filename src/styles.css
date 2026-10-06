@@ -128,10 +128,13 @@ body {
 }
 
 .settings-trigger {
-  font: inherit;
-  font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--text-dim);
@@ -417,6 +420,9 @@ body {
 }
 
 .composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   border-top: 1px solid var(--border);
   background: var(--panel);
   padding: 10px 14px 12px;
@@ -424,7 +430,7 @@ body {
 
 .composer-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
   gap: 10px;
 }
@@ -432,7 +438,6 @@ body {
 .format-toolbar {
   display: flex;
   gap: 4px;
-  padding-bottom: 3px;
 }
 
 .format-divider {

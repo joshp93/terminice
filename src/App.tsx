@@ -70,6 +70,7 @@ export function App() {
   return (
     <div className="app">
       <header className="titlebar">
+        <SettingsMenu settings={settings} onChange={updateSettings} />
         <div className="mode-tabs" role="tablist" aria-label="Pane">
           {MODES.map((option) => (
             <button
@@ -84,7 +85,6 @@ export function App() {
             </button>
           ))}
         </div>
-        <SettingsMenu settings={settings} onChange={updateSettings} />
         <span className="cwd" title={cwd ?? ""}>
           {cwd ?? "…"}
         </span>

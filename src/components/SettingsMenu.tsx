@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CogIcon } from "./CogIcon";
 import { SegmentedChoice } from "./SegmentedChoice";
 import type { Settings } from "../types";
 
@@ -43,9 +44,11 @@ export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
         className={open ? "settings-trigger active" : "settings-trigger"}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label="Settings"
+        title="Settings"
         onClick={() => setOpen((current) => !current)}
       >
-        Settings
+        <CogIcon />
       </button>
       {open && (
         <div className="settings-panel" role="dialog" aria-label="Settings">
