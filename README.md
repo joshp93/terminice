@@ -148,6 +148,7 @@ formatting and no shortcuts.
 | `Enter` | Sends, unless *Enter key* is set to new line |
 | `Shift+Enter` | Inserts a newline |
 | `Ctrl+Enter` | Always sends |
+| `Tab` / `Shift+Tab` | Indent or outdent the line, and list items with it |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
 | `Ctrl+E` | Inline code |
@@ -161,13 +162,31 @@ and pressing the same style again closes it. Anything left open is closed before
 the message is sent. Markers follow CommonMark, so a single `*` is italic and
 bold is `**`; that way the transcript renders exactly what was sent.
 
+**Selecting text that is already styled removes the style** rather than adding a
+second pair of markers. A selection that is only partly styled is normalised, so
+the result is one clean run either way.
+
+**The buttons show three states.** They read the Markdown around the caret, so
+they light up inside styled text and show a dashed outline when a selection is
+only partly styled. Just past a closing marker they read as off, because that is
+where typing really is unstyled — inserting markers there would merge two runs
+into one, which Markdown cannot tell apart.
+
 The two list buttons act on the current line, turning it into a bulleted or
 numbered item and removing the marker when pressed again. Enter inside an item
-starts the next one, numbering ordered lists in sequence; Enter on an empty item
-ends the list, after which Enter sends as usual.
+starts the next one, keeping the bullet character and delimiter you started with
+and renumbering ordered lists as you go. Enter on an empty item ends the list,
+after which Enter sends as usual. Backspace at the start of an item clears its
+marker, or outdents it first when it is nested. Tab indents.
 
-User messages render with single newlines preserved, so the transcript shows the
-message as it was typed rather than folding it into one paragraph.
+The `{ }` button wraps the current line, or the selection, in a fenced code
+block, and unwraps it when pressed again.
+
+Brackets, quotes and backticks pair themselves as you type, and asterisks pair
+only mid-word so that starting a bullet with `*` still works. Dropping files
+onto the window inserts their paths. User messages render with single newlines
+preserved, so the transcript shows the message as it was typed rather than
+folding it into one paragraph.
 
 Typing `!` as the first character in Claude mode sends the rest of the line to
 the shell instead of to Claude, and records a notice in the transcript.

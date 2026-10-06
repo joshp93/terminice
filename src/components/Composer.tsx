@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createComposer, type ComposerHandle, type ComposerStatus } from "../lib/createComposer";
+import { subscribeToFileDrops } from "../lib/fileDrops";
 import type { FormatId } from "../lib/richFormat";
 import type { ListKind } from "../lib/listMarkers";
 import { FormatToolbar } from "./FormatToolbar";
@@ -18,7 +19,11 @@ const PLACEHOLDERS: Record<PaneMode, string> = {
   terminal: "Send to the terminal",
 };
 
-const INITIAL_STATUS: ComposerStatus = { formats: new Set(), listKind: null };
+const INITIAL_STATUS: ComposerStatus = {
+  formats: new Map(),
+  listKind: null,
+  inCodeBlock: false,
+};
 
 /**
  * Renders the composer for the active pane.
@@ -69,6 +74,27 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
     handleRef.current?.toggleList(kind);
   }, []);
 
+  const toggleCodeBlock = useCallback(() => {
+    handleRef.current?.toggleCodeBlock();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unsubscribe: (() => void) | undefined;
+    void subscribeToFileDrops((paths) => {
+      if (paths.length > 0) handleRef.current?.insertText(paths.join(" "));
+    })
+      .then((remove) => {
+        if (cancelled) remove();
+        else unsubscribe = remove;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -96,6 +122,7 @@ export function Composer({ mode, submitsOnEnter, onSend }: ComposerProps) {
           status={status}
           onToggleFormat={toggleFormat}
           onToggleList={toggleList}
+          onToggleCodeBlock={toggleCodeBlock}
         />
       )}
       <div className="composer-row">

@@ -1,12 +1,14 @@
 import { FORMATS, formatShortcutLabel, type FormatId } from "../lib/richFormat";
 import type { ComposerStatus } from "../lib/createComposer";
 import type { ListKind } from "../lib/listMarkers";
+import type { StyleState } from "../lib/markdownSpans";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {
   status: ComposerStatus;
   onToggleFormat: (id: FormatId) => void;
   onToggleList: (kind: ListKind) => void;
+  onToggleCodeBlock: () => void;
 };
 
 const LISTS: readonly { kind: ListKind; label: string; glyph: string }[] = [
@@ -14,27 +16,38 @@ const LISTS: readonly { kind: ListKind; label: string; glyph: string }[] = [
   { kind: "ordered", label: "Numbered list", glyph: "1." },
 ];
 
+function stateClass(state: StyleState): string {
+  return state === "off" ? "" : ` ${state}`;
+}
+
 /**
- * Renders the Markdown formatting and list buttons.
+ * Renders the Markdown formatting, code and list buttons.
  *
- * Pointer presses are cancelled so the editor keeps focus.
+ * A button shows a third, indeterminate appearance when only part of the
+ * selection carries its style. Pointer presses are cancelled so the editor
+ * keeps focus.
  *
- * @param props - The composer status and the two toggle handlers.
+ * @param props - The composer status and the toggle handlers.
  * @returns The rendered toolbar.
  */
-export function FormatToolbar({ status, onToggleFormat, onToggleList }: FormatToolbarProps) {
+export function FormatToolbar({
+  status,
+  onToggleFormat,
+  onToggleList,
+  onToggleCodeBlock,
+}: FormatToolbarProps) {
   return (
     <div className="format-toolbar">
       {FORMATS.map((format) => {
-        const active = status.formats.has(format.id);
+        const state = status.formats.get(format.id) ?? "off";
         return (
           <button
             key={format.id}
             type="button"
-            className={`format-button glyph-${format.id}${active ? " active" : ""}`}
+            className={`format-button glyph-${format.id}${stateClass(state)}`}
             title={`${format.label} (${formatShortcutLabel(format.id)})`}
             aria-label={format.label}
-            aria-pressed={active}
+            aria-pressed={state === "on"}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onToggleFormat(format.id)}
           >
@@ -42,6 +55,17 @@ export function FormatToolbar({ status, onToggleFormat, onToggleList }: FormatTo
           </button>
         );
       })}
+      <button
+        type="button"
+        className={`format-button${status.inCodeBlock ? " on" : ""}`}
+        title="Code block"
+        aria-label="Code block"
+        aria-pressed={status.inCodeBlock}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onToggleCodeBlock}
+      >
+        {"{ }"}
+      </button>
       <span className="format-divider" aria-hidden="true" />
       {LISTS.map((list) => {
         const active = status.listKind === list.kind;
@@ -49,7 +73,7 @@ export function FormatToolbar({ status, onToggleFormat, onToggleList }: FormatTo
           <button
             key={list.kind}
             type="button"
-            className={active ? "format-button active" : "format-button"}
+            className={active ? "format-button on" : "format-button"}
             title={list.label}
             aria-label={list.label}
             aria-pressed={active}
