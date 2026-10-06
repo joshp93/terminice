@@ -130,16 +130,45 @@ export function planToggle(id: FormatId, state: InlineState): TogglePlan {
 /**
  * Plans what to insert for a typed character.
  *
+ * Whitespace is inserted plainly and the style stays armed, because Markdown
+ * cannot open emphasis against a space — wrapping one would leave the markers
+ * as literal characters.
+ *
  * @param char - The character typed.
  * @param state - The current inline state.
  * @returns The text to insert and the resulting state, or null to insert plainly.
  */
 export function planTypedCharacter(char: string, state: InlineState): TypingPlan | null {
   if (state.armed.size === 0) return null;
+  if (/\s/.test(char)) return null;
   const open = new Set(state.open);
   for (const id of state.armed) open.add(id);
   return {
     insert: formatMarkers(state.armed) + char,
     state: { armed: new Set(), open },
   };
+}
+
+/** Offsets into a selection of the text its markers should enclose. */
+export type WrapOffsets = {
+  start: number;
+  end: number;
+};
+
+/**
+ * Narrows a selection to the text its markers should enclose.
+ *
+ * Markdown will not open or close emphasis against whitespace, so wrapping a
+ * selection that ends in a space produces literal asterisks rather than bold
+ * text. The whitespace is left in the document, outside the markers.
+ *
+ * @param text - The selection's text.
+ * @returns Offsets relative to the selection, or null when it holds no visible text.
+ */
+export function wrapOffsets(text: string): WrapOffsets | null {
+  let start = 0;
+  let end = text.length;
+  while (start < end && /\s/.test(text[start])) start += 1;
+  while (end > start && /\s/.test(text[end - 1])) end -= 1;
+  return start >= end ? null : { start, end };
 }

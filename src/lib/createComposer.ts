@@ -43,6 +43,7 @@ import {
   createInlineState,
   planToggle,
   planTypedCharacter,
+  wrapOffsets,
   type FormatId,
   type InlineState,
 } from "./richFormat";
@@ -230,12 +231,16 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     const tree = treeAt(view);
 
     if (range.from !== range.to) {
-      const nodes = styleNodesInRange(tree, id, range.from, range.to);
-      const state: StyleState =
-        nodes.length === 0 ? "off" : spansCover(nodes, range.from, range.to) ? "on" : "mixed";
+      const offsets = wrapOffsets(view.state.sliceDoc(range.from, range.to));
+      if (!offsets) {
+        report(view);
+        return;
+      }
+      const wrapped = { from: range.from + offsets.start, to: range.from + offsets.end };
 
-      if (state === "on") {
-        removeMarks(view, nodes, range.from, range.to);
+      const nodes = styleNodesInRange(tree, id, wrapped.from, wrapped.to);
+      if (nodes.length > 0 && spansCover(nodes, wrapped.from, wrapped.to)) {
+        removeMarks(view, nodes, wrapped.from, wrapped.to);
         report(view);
         return;
       }
@@ -243,15 +248,15 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const markers = FORMAT_MARKERS[id];
       const stripped = stripMarkers(
         nodes,
-        range.from,
-        range.to,
-        view.state.sliceDoc(range.from, range.to),
+        wrapped.from,
+        wrapped.to,
+        view.state.sliceDoc(wrapped.from, wrapped.to),
       );
       view.dispatch({
-        changes: { from: range.from, to: range.to, insert: markers + stripped + markers },
+        changes: { from: wrapped.from, to: wrapped.to, insert: markers + stripped + markers },
         selection: {
-          anchor: range.from + markers.length,
-          head: range.from + markers.length + stripped.length,
+          anchor: wrapped.from + markers.length,
+          head: wrapped.from + markers.length + stripped.length,
         },
       });
       report(view);
