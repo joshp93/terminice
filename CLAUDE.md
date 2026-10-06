@@ -81,6 +81,18 @@ it with the user rather than quietly changing it.
   effects would spawn a second shell and a second Claude process on every mount.
 - **`link.exe` is required on Windows.** Without the MSVC C++ build tools, `cargo` fails
   with `linker link.exe not found`. See the README.
+- **The GNU toolchain is not an escape hatch — do not retry it.** `x86_64-pc-windows-gnu`
+  looks promising because `rustup` bundles MinGW runtime libraries, but it is not
+  self-contained. The `windows-sys` and `parking_lot_core` build scripts generate import
+  libraries, which needs `dlltool`. `rust-mingw` *does* install `dlltool.exe` — but into
+  `lib/rustlib/x86_64-pc-windows-gnu/bin/self-contained/`, which is not on `PATH`, so the
+  first failure is `dlltool.exe: program not found`. Adding that directory to `PATH` only
+  moves the problem: `dlltool` then fails with a `CreateProcess` error because it needs an
+  assembler (`as.exe`) that is not shipped at all. A real MinGW-w64 binutils install is
+  required either way, and Tauri is tested against MSVC — so install the Build Tools.
+
+  Verified by attempting it: MSVC fails at the first link; GNU compiles ~30 crates and
+  then fails in `windows-sys`.
 - **UTF-8 must be decoded incrementally.** PTY reads split multi-byte characters at
   arbitrary boundaries; `utf8::Utf8Stream` holds incomplete trailing sequences back.
   Writing PTY bytes straight to xterm.js will corrupt CJK and emoji.
