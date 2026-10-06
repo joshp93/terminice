@@ -120,9 +120,50 @@ On first run, `cargo` compiles the Rust dependencies — a few minutes, once.
 
 ### Configuration
 
+Settings live in `~/.config/terminice-settings.json`, written by the in-app
+settings menu. Missing or malformed values fall back to defaults, so a
+hand-edited file cannot stop the app from starting.
+
+| Key | Values | Default | Meaning |
+|---|---|---|---|
+| `defaultMode` | `claude` \| `terminal` | `claude` | Which pane to open with |
+| `enterBehaviour` | `send` \| `newline` | `send` | What Enter does in the composer |
+| `theme` | `dark` \| `light` | `dark` | Colour scheme |
+
 | Variable | Effect |
 |---|---|
 | `TERMINICE_CLAUDE_BINARY` | Full path to the `claude` executable, when it is not on `PATH` |
+
+### The composer
+
+One pane is shown at a time, chosen by the **CLAUDE** / **TERMINAL** tabs.
+Both stay mounted, so the shell keeps running whichever mode you are in.
+
+In **Claude** mode the composer sends literal Markdown and offers inline
+formatting. In **Terminal** mode the text is forwarded verbatim, with no
+formatting and no shortcuts.
+
+| Shortcut | Action |
+|---|---|
+| `Enter` | Sends, unless *Enter key* is set to new line |
+| `Shift+Enter` | Inserts a newline |
+| `Ctrl+Enter` | Always sends |
+| `Ctrl+B` | Bold |
+| `Ctrl+I` | Italic |
+| `Ctrl+E` | Inline code |
+| `Ctrl+Shift+X` | Strikethrough |
+
+(`⌘` in place of `Ctrl` on macOS.)
+
+The formatting buttons *arm* a style rather than wrapping a selection. With
+bold armed, typing `Hello, world` produces `**Hello,** **world**` — the first
+character of each word takes the opening markers and a word boundary closes
+them. Markers follow CommonMark, so a single `*` is italic and bold is `**`;
+that way the transcript renders exactly what was sent.
+
+Typing `!` as the first character in Claude mode sends the rest of the line to
+the shell instead of to Claude, and records a notice in the transcript.
+
 
 ---
 

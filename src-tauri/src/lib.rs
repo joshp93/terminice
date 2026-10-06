@@ -1,7 +1,9 @@
 //! terminice — a terminal emulator with a rich-text composer.
 
 mod claude;
+mod home;
 mod path;
+mod settings;
 mod shell;
 mod startup;
 mod terminal;
@@ -21,6 +23,8 @@ pub fn run() {
             claude::start_claude,
             claude::send_claude_line,
             claude::close_claude,
+            settings::load_settings,
+            settings::save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running terminice");

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { applyClaudeLine, withError, withUserMessage } from "../lib/claudeProtocol";
+import { applyClaudeLine, withError, withNotice, withUserMessage } from "../lib/claudeProtocol";
 import { createChatState, type ChatState, type ClaudeEvent } from "../types";
 
 /** A Claude Code session driven over the stream-json protocol. */
@@ -8,6 +8,7 @@ export type ClaudeSession = {
   state: ChatState;
   status: string;
   send: (text: string) => Promise<void>;
+  notice: (text: string) => void;
 };
 
 const STDERR_HISTORY = 20;
@@ -90,5 +91,9 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     }
   }, []);
 
-  return { state, status, send };
+  const notice = useCallback((text: string) => {
+    setState((current) => withNotice(current, text));
+  }, []);
+
+  return { state, status, send, notice };
 }

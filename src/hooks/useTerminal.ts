@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { bracketedPaste } from "../lib/bracketedPaste";
-import { createTerminal, type TerminalHandle } from "../lib/createTerminal";
+import { createTerminal, type TerminalHandle, type TerminalThemeName } from "../lib/createTerminal";
 import { updatePasteMode } from "../lib/pasteMode";
 import type { TerminalEvent } from "../types";
 
@@ -15,23 +15,32 @@ export type TerminalSession = {
 /**
  * Owns a terminal session and its view for `cwd`.
  *
- * The PTY is created on mount and closed on unmount.
+ * The PTY is created on mount and closed on unmount, and stays alive while the
+ * pane is hidden so commands can be sent to it from either mode. The palette is
+ * applied by a separate effect, so changing the theme never restarts the shell.
  *
  * @param cwd - Directory the shell starts in; the hook stays inert until it is set.
+ * @param theme - The palette to draw the terminal with.
  * @returns The container ref, a status label, and a text sender.
  */
-export function useTerminal(cwd: string | null): TerminalSession {
+export function useTerminal(cwd: string | null, theme: TerminalThemeName): TerminalSession {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const handleRef = useRef<TerminalHandle | null>(null);
   const sessionRef = useRef<string | null>(null);
   const pasteModeRef = useRef(false);
   const [status, setStatus] = useState("waiting");
+
+  useEffect(() => {
+    handleRef.current?.setTheme(theme);
+  }, [theme]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!cwd || !container) return;
 
     let cancelled = false;
-    const handle: TerminalHandle = createTerminal(container);
+    const handle: TerminalHandle = createTerminal(container, theme);
+    handleRef.current = handle;
     handle.fit();
     setStatus("starting");
 
@@ -83,6 +92,7 @@ export function useTerminal(cwd: string | null): TerminalSession {
       sessionRef.current = null;
       if (id) void invoke("close_terminal", { id }).catch(() => undefined);
       handle.dispose();
+      handleRef.current = null;
     };
   }, [cwd]);
 

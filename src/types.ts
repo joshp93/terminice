@@ -39,5 +39,23 @@ export function createChatState(): ChatState {
   };
 }
 
-/** Which destination the composer sends to. */
-export type ComposerTarget = "terminal" | "claude";
+/** Which pane is shown, and therefore what the composer feeds. */
+export type PaneMode = "claude" | "terminal";
+
+/** What a bare Enter key does in the composer. */
+export type EnterBehaviour = "send" | "newline";
+
+/** Colour scheme for the whole application. */
+export type ThemeName = "dark" | "light";
+
+/** Settings persisted to `~/.config/terminice-settings.json`. */
+export type Settings = {
+  defaultMode: PaneMode;
+  enterBehaviour: EnterBehaviour;
+  theme: ThemeName;
+};
+
+/** Creates the settings used when no file exists yet. */
+export function createDefaultSettings(): Settings {
+  return { defaultMode: "claude", enterBehaviour: "send", theme: "dark" };
+}

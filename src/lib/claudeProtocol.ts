@@ -91,6 +91,20 @@ export function withError(state: ChatState, text: string): ChatState {
 }
 
 /**
+ * Records a local notice that did not come from the Claude stream.
+ *
+ * @param state - The current chat state.
+ * @param text - The notice text.
+ * @returns The updated chat state.
+ */
+export function withNotice(state: ChatState, text: string): ChatState {
+  return {
+    ...state,
+    entries: [...state.entries, { id: nextId("notice"), role: "notice", text }],
+  };
+}
+
+/**
  * Applies one newline-delimited JSON event from a Claude session.
  *
  * @param state - The current chat state.

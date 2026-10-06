@@ -6,25 +6,21 @@ import rehypeHighlight from "rehype-highlight";
 const REMARK_PLUGINS = [remarkGfm];
 const REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight];
 
-/** A chat message to render. */
+/** Props for {@link MessageBubble}. */
 export type MessageBubbleProps = {
   text: string;
-  role: "user" | "assistant";
 };
 
 /**
- * Renders one chat message.
+ * Renders one chat message as sanitised Markdown.
  *
- * User input is shown verbatim; Claude's output is rendered as sanitised
- * Markdown with highlighted code blocks.
+ * Both directions are Markdown: what the user types is Markdown source, and so
+ * is what Claude replies with.
  *
- * @param props - The message text and its author.
- * @returns The rendered message.
+ * @param props - The message text.
+ * @returns The rendered message body.
  */
-export function MessageBubble({ text, role }: MessageBubbleProps) {
-  if (role === "user") {
-    return <div className="user-text">{text}</div>;
-  }
+export function MessageBubble({ text }: MessageBubbleProps) {
   return (
     <Markdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
       {text}

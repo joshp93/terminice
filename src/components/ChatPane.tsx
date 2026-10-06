@@ -7,6 +7,7 @@ import type { ChatEntry, ChatState } from "../types";
 export type ChatPaneProps = {
   state: ChatState;
   status: string;
+  active: boolean;
 };
 
 /**
@@ -14,18 +15,19 @@ export type ChatPaneProps = {
  *
  * Scrolls to the newest content as entries arrive.
  *
- * @param props - The chat state and a status label.
+ * @param props - The chat state, a status label, and whether the pane is shown.
  * @returns The rendered chat pane.
  */
-export function ChatPane({ state, status }: ChatPaneProps) {
+export function ChatPane({ state, status, active }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [state.entries, state.streaming]);
+  }, [active, state.entries, state.streaming]);
 
   return (
-    <section className="pane chat-pane">
+    <section className={active ? "pane chat-pane" : "pane chat-pane inactive"}>
       <header className="pane-header">
         <span className="pane-title">Claude</span>
         <span className="pane-status">
@@ -39,7 +41,7 @@ export function ChatPane({ state, status }: ChatPaneProps) {
         ))}
         {state.streaming.length > 0 && (
           <div className="bubble assistant streaming">
-            <MessageBubble text={state.streaming} role="assistant" />
+            <MessageBubble text={state.streaming} />
           </div>
         )}
         {state.busy && state.streaming.length === 0 && (
@@ -62,7 +64,7 @@ function TranscriptItem({ entry }: { entry: ChatEntry }) {
     default:
       return (
         <div className={`bubble ${entry.role}`}>
-          <MessageBubble text={entry.text} role={entry.role} />
+          <MessageBubble text={entry.text} />
         </div>
       );
   }
