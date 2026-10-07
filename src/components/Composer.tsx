@@ -19,6 +19,8 @@ export type ComposerProps = {
   running: boolean;
   /** Whether the CLI is summarising the conversation. */
   compacting: boolean;
+  /** Tokens in context before compaction began, when that is known. */
+  contextTokens: number | null;
   onStop: () => void;
   /** Cycles the permission mode; bound to Shift+Tab. */
   onCycleMode: () => void;
@@ -31,6 +33,7 @@ const INITIAL_STATUS: ComposerStatus = {
   listKind: null,
   inCodeBlock: false,
   text: "",
+  caret: 0,
 };
 
 /** The height a menu needs before it is worth showing below the composer. */
@@ -52,6 +55,7 @@ export function Composer({
   menu,
   running,
   compacting,
+  contextTokens,
   onStop,
   onCycleMode,
 }: ComposerProps) {
@@ -104,7 +108,7 @@ export function Composer({
     () =>
       buildRootEntries({
         ...menuRef.current,
-        fillComposer: (text: string) => handleRef.current?.setText(text),
+        fillComposer: (text: string) => handleRef.current?.setText(text, true),
         runCommand: (command: string) => {
           remember(command);
           menuRef.current.runCommand(command);
@@ -133,7 +137,10 @@ export function Composer({
     : query !== null
       ? filterEntries(rootEntries, query)
       : [];
-  const menuOpen = submenu !== null || (query !== null && !typedArgument);
+  // A recalled command puts the caret before its slash, which is a position to
+  // read from rather than to choose from, so the menu waits until the caret
+  // actually sits past the slash.
+  const menuOpen = submenu !== null || (query !== null && !typedArgument && status.caret > 0);
 
   useEffect(() => {
     if (query === null) setSubmenus([]);
@@ -162,10 +169,28 @@ export function Composer({
   }, [remember]);
 
   /**
+   * Takes the composer's reported state.
+   *
+   * Editing a recalled prompt stops the arrows browsing history, so Up and Down
+   * go back to moving the caret within what is being written.
+   *
+   * @param next - The composer's state after the change.
+   */
+  const handleStatusChange = useCallback((next: ComposerStatus) => {
+    setStatus(next);
+    const index = historyIndexRef.current;
+    if (index === null) return;
+    const recalled = historyRef.current[index];
+    if (recalled !== undefined && next.text !== recalled) historyIndexRef.current = null;
+  }, []);
+
+  /**
    * Steps through what has already been sent.
    *
    * Reaching the newest entry restores whatever was half-typed, so browsing
-   * back and forward never costs the draft.
+   * back and forward never costs the draft. The caret lands at the very start
+   * of each recalled prompt, which keeps a recalled command readable without
+   * its menu springing open.
    *
    * @param delta - -1 for older, 1 for newer.
    */
@@ -220,7 +245,7 @@ export function Composer({
   const insertEntry = useCallback((entry: MenuEntry) => {
     setSubmenus([]);
     setHighlight(0);
-    if (entry.label.startsWith("/")) handleRef.current?.setText(`${entry.label} `);
+    if (entry.label.startsWith("/")) handleRef.current?.setText(`${entry.label} `, true);
   }, []);
 
   const handleKeyDownCapture = useCallback(
@@ -336,7 +361,7 @@ export function Composer({
       placeholder: PLACEHOLDER,
       onSubmit: () => submit(),
       submitsOnEnter: () => submitsRef.current(),
-      onStatusChange: setStatus,
+      onStatusChange: handleStatusChange,
     });
     handleRef.current = handle;
     handle.focus();
@@ -345,7 +370,7 @@ export function Composer({
       handleRef.current = null;
       setStatus(INITIAL_STATUS);
     };
-  }, [submit]);
+  }, [handleStatusChange, submit]);
 
   return (
     <footer className="composer">
@@ -367,7 +392,15 @@ export function Composer({
           />
         )}
         <div className="composer-field">
-          {compacting && <ProgressBar label="Compacting…" />}
+          {compacting && (
+            <ProgressBar
+              label={
+                contextTokens === null
+                  ? "Compacting…"
+                  : `Compacting ${contextTokens.toLocaleString()} tokens…`
+              }
+            />
+          )}
           <div
             className={running ? "composer-host busy" : "composer-host"}
             ref={hostRef}

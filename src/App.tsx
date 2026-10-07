@@ -87,8 +87,8 @@ export function App() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
         />
+        <span className="session-agent">CLAUDE</span>
         <div className="session">
-          <span className="session-agent">CLAUDE</span>
           {chat.state.model !== null && <span className="session-item">{chat.state.model}</span>}
           {chat.state.costUsd !== null && (
             <span className="session-item">${chat.state.costUsd.toFixed(3)}</span>
@@ -115,7 +115,7 @@ export function App() {
         </div>
       </header>
       <main className="workspace">
-        <ChatPane state={chat.state} status={chat.status} />
+        <ChatPane state={chat.state} />
       </main>
       <div className={chat.prompt ? "composer-slot hidden" : "composer-slot"} inert={chat.prompt !== null}>
         <Composer
@@ -124,6 +124,7 @@ export function App() {
           menu={menu}
           running={chat.state.busy}
           compacting={chat.state.compacting}
+          contextTokens={chat.state.contextUsage?.totalTokens ?? null}
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}
         />

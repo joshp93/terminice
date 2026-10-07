@@ -6,7 +6,6 @@ import type { ChatEntry, ChatState } from "../types";
 /** Props for {@link ChatPane}. */
 export type ChatPaneProps = {
   state: ChatState;
-  status: string;
 };
 
 /**
@@ -14,10 +13,10 @@ export type ChatPaneProps = {
  *
  * Scrolls to the newest content as entries arrive.
  *
- * @param props - The chat state and a status label.
+ * @param props - The chat state.
  * @returns The rendered chat pane.
  */
-export function ChatPane({ state, status }: ChatPaneProps) {
+export function ChatPane({ state }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -26,10 +25,6 @@ export function ChatPane({ state, status }: ChatPaneProps) {
 
   return (
     <section className="pane">
-      <header className="pane-header">
-        <span className="pane-title">Claude</span>
-        <span className="pane-status">{status}</span>
-      </header>
       <div className="transcript">
         {state.entries.map((entry) => (
           <TranscriptItem key={entry.id} entry={entry} />

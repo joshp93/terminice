@@ -16,10 +16,10 @@ export type ProgressBarProps = {
 export function ProgressBar({ label }: ProgressBarProps) {
   return (
     <div className="progress" role="progressbar" aria-label={label} aria-valuetext={label}>
+      <span className="progress-label">{label}</span>
       <div className="progress-track">
         <div className="progress-fill" />
       </div>
-      <span className="progress-label">{label}</span>
     </div>
   );
 }

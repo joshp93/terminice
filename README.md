@@ -28,7 +28,8 @@ Markdown, with a rich composer that writes the Markdown for you.
   caret, so it shows what is actually there rather than only a pending toggle.
 - **Context from the CLI itself** — the header percentage is what `/context` reports, not
   a ratio computed here. Compaction shows a bar above the composer while it runs, then
-  reports how much it freed.
+  reports how much it freed. The bar does not track a percentage, because the CLI does not
+  report one — see below.
 
 ## Architecture
 
@@ -160,9 +161,13 @@ ignored, so a hand-edited file cannot stop the app from starting.
 one, since a keystroke that sends should not also be how you get a tab.
 
 **Prompt recall.** `↑` at the very start of a message steps back through what you have
-already sent, and `↓` at the very end steps forward again. Past the newest entry you get
-back whatever you were half-way through typing, so browsing never costs a draft. Both the
-composer and the commands you run from the `/` menu go into that history.
+already sent, and `↓` steps forward again; once browsing, the arrows keep stepping
+whatever the caret is doing. The caret lands at the **start** of each recalled prompt, so
+a recalled command reads without its menu springing open — the menu waits until the caret
+is actually past the `/`. Editing a recalled prompt ends the browsing, and the arrows go
+back to moving within what you are writing. Stepping past the newest entry gives you back
+whatever you were half-way through typing, so browsing never costs a draft. Commands run
+from the `/` menu go into the same history as the composer's own.
 
 **Formatting buttons.** With a selection they apply to it; with nothing selected they
 *arm* a style, so the next character typed is wrapped. Pressing the same style again
@@ -240,6 +245,11 @@ across processes, and the app says so rather than pretending.
 
 ## Known limitations
 
+- **The compaction bar cannot show real progress.** Verified by logging every event during
+  a compaction: the CLI emits `system/status` with `status: "compacting"` when it starts and
+  `system/compact_boundary` when it ends, with nothing in between. There is no percentage
+  to draw, so the bar slides rather than filling, and the label shows the token count from
+  the last context reading — the only figure that is actually known while it runs.
 - **`/doctor` is slow enough to trip the silence guard.** It blocks the session for a long
   time without emitting anything, so after 20 seconds of total silence the turn is
   interrupted with a note. Other commands are unaffected because they speak up as they go.

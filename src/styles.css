@@ -215,34 +215,11 @@ body {
 }
 
 .pane {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
   min-width: 0;
   min-height: 0;
-}
-
-.pane-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 7px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-}
-
-.pane-title {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
-}
-
-.pane-status {
-  font-size: 11px;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
 }
 
 .transcript {
@@ -1098,19 +1075,20 @@ body {
 
 .progress-fill {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  width: 34%;
   border-radius: 3px;
   background: var(--accent);
-  transform-origin: left center;
-  animation: progress-fill 1.6s ease-in-out infinite;
+  animation: progress-slide 1.5s ease-in-out infinite;
 }
 
-@keyframes progress-fill {
+@keyframes progress-slide {
   from {
-    transform: scaleX(0);
+    left: -34%;
   }
   to {
-    transform: scaleX(1);
+    left: 100%;
   }
 }
 

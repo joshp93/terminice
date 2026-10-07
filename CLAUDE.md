@@ -158,5 +158,7 @@ it with the user rather than quietly changing it.
 - **Compaction is reported as a start and an end, not as progress.** The CLI emits
   `system/status` with `status: "compacting"` when it begins and `system/compact_boundary`
   when it finishes, carrying `pre_tokens`, `post_tokens` and `cumulative_dropped_tokens`.
-  There are no steps in between, so the bar sweeps rather than inventing a percentage —
-  the only real figures arrive at the end. Those are worth showing when they do.
+  Logging every event during a compaction shows nothing between the two, so there is no
+  percentage to draw. The bar therefore slides rather than filling, and the label carries
+  the token count from the last context reading — do not animate it as though it were
+  completing, which is a progress bar impersonating knowledge it does not have.

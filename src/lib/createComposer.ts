@@ -58,13 +58,16 @@ export type ComposerStatus = {
   inCodeBlock: boolean;
   /** The composer's current contents, which drives the slash menu. */
   text: string;
+  /** The caret's offset, so the menu can tell whether it sits past the slash. */
+  caret: number;
 };
 
 /** A composer view and the operations the UI needs from it. */
 export type ComposerHandle = {
   focus: () => void;
   getText: () => string;
-  setText: (text: string) => void;
+  /** Replaces the contents; the caret lands at the start unless told otherwise. */
+  setText: (text: string, caretAtEnd?: boolean) => void;
   clear: () => void;
   insertText: (text: string) => void;
   /** True when the caret is at the very start, with nothing selected. */
@@ -166,6 +169,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       listKind: readListMarker(line.text)?.kind ?? null,
       inCodeBlock: findCodeBlock(tree.resolveInner(range.head, -1)) !== null,
       text: view.state.doc.toString(),
+      caret: range.head,
     });
   };
 
@@ -529,11 +533,11 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
   return {
     focus: () => view.focus(),
     getText: () => view.state.doc.toString(),
-    setText: (text) => {
+    setText: (text, caretAtEnd = false) => {
       inline = createInlineState();
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
-        selection: { anchor: text.length },
+        selection: { anchor: caretAtEnd ? text.length : 0 },
       });
       view.focus();
     },
