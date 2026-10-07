@@ -149,13 +149,16 @@ it with the user rather than quietly changing it.
   carries the working directory, so the header's path and the directory `!` commands run
   in both read it from there. Do not fall back to the launch directory once a session has
   reported one.
-- **Changing the logo needs a `build.rs` nudge, because cargo does not watch the icons.**
+- **Changing the logo needs a `build.rs` nudge, and watching the directory is not enough.**
   Measured: after regenerating every file in `src-tauri/icons/`, `cargo build` finished in
   0.36s without compiling anything and the executable kept its old icon — `tauri-build`
-  emits no `cargo:rerun-if-changed` for them. `build.rs` therefore watches `icons/`
-  itself. Without that line a new logo is invisible to the build system, and restarting
-  the app changes nothing at all. The icon is embedded at compile time, so a running
-  process also keeps the old one until it is restarted.
+  emits no `cargo:rerun-if-changed` for them. Watching `icons/` as a directory does not
+  fix it either, because cargo compares a directory's own mtime and that does not change
+  when a file inside it is *rewritten* — which is exactly what `tauri icon` does. `build.rs`
+  therefore walks the tree and emits `rerun-if-changed` for every file. Without that, a new
+  logo is invisible to the build system and restarting the app changes nothing at all. The
+  icon is embedded at compile time, so a running process also keeps the old one until it
+  is restarted.
 - **bash is usually not on `PATH`, even where Git is installed.** Measured on this
   machine: `Get-Command bash` finds nothing, but `C:\Program Files\Git\bin\bash.exe` runs
   fine. `shell::shell_program` therefore checks `PATH` and then the usual Git for Windows
