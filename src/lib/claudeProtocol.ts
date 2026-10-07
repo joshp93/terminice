@@ -1,11 +1,18 @@
 import { describeToolUse } from "./describeToolUse";
 import {
+  readFastMode,
   readNames,
   readPlugins,
 } from "./controlProtocol";
 import { asArray, asNumber, asRecord, asText, parseJsonLine, prettyJson, type Json } from "./json";
 import { nextId } from "./nextId";
-import { describeToolResult, hookMatcher, readHookNote, readResultText } from "./toolResults";
+import {
+  describeToolResult,
+  hookMatcher,
+  readHookNote,
+  readResultText,
+  type HookNote,
+} from "./toolResults";
 import type { ChatEntry, ChatState } from "../types";
 
 function appendEntry(state: ChatState, entry: ChatEntry): ChatState {
@@ -226,6 +233,12 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
   const message = parseJsonLine(line);
   if (!message) return state;
 
+  // Subagent output rides the same stream as everything else and is told apart
+  // only by the call it belongs to, so it is routed before anything else can
+  // mistake it for the main conversation.
+  const parent = asText(message.parent_tool_use_id);
+  if (parent) return withSubagentOutput(state, parent, message);
+
   switch (asText(message.type)) {
     case "system":
       return applySystemEvent(state, message);
@@ -244,6 +257,224 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
   }
 }
 
+/**
+ * Records what a subagent produced, inside the card of the call that spawned it.
+ *
+ * A subagent's frames carry the `tool_use_id` of its spawning call, so they are
+ * filed under that card rather than being interleaved with the main
+ * conversation, where they would read as things the main agent said.
+ *
+ * @param state - The current chat state.
+ * @param parentId - The spawning call's tool-use id.
+ * @param message - The tagged event.
+ * @returns The updated chat state.
+ */
+function withSubagentOutput(state: ChatState, parentId: string, message: Json): ChatState {
+  const index = state.entries.findIndex(
+    (entry) => entry.role === "subagent" && entry.toolUseId === parentId,
+  );
+  const agent = index >= 0 ? state.entries[index] : null;
+  if (!agent || agent.role !== "subagent") return state;
+
+  const kind = asText(message.type);
+  let inner = agent.entries;
+
+  if (kind === "assistant") {
+    const additions = assistantEntries(asRecord(message.message)?.content);
+    if (additions.length === 0) return state;
+    inner = [...inner, ...additions];
+  } else if (kind === "user") {
+    inner = withToolResults(inner, message);
+  } else if (kind === "system" && asText(message.subtype) === "hook_response") {
+    inner = withHook(inner, readHookNote(message));
+  } else {
+    return state;
+  }
+
+  if (inner === agent.entries) return state;
+  const entries = [...state.entries];
+  entries[index] = { ...agent, entries: inner };
+  return { ...state, entries };
+}
+
+/** Tools that start an agent rather than doing their own work. */
+const SUBAGENT_TOOLS = ["Task", "Agent"];
+
+/**
+ * Builds the transcript entry for one tool call.
+ *
+ * A call that spawns a subagent becomes a card holding that agent's own
+ * conversation rather than a leaf, so the two are told apart here and nowhere
+ * else.
+ *
+ * @param tool - The call's id, name and input.
+ * @returns The entry to record it as.
+ */
+function toolEntry(tool: { id: string; name: string; input: unknown }): ChatEntry {
+  if (SUBAGENT_TOOLS.includes(tool.name)) {
+    return {
+      id: tool.id ? `tool:${tool.id}` : nextId("subagent"),
+      role: "subagent",
+      toolUseId: tool.id,
+      label: describeToolUse(tool.name, tool.input) || tool.name,
+      input: prettyJson(tool.input ?? {}),
+      result: "",
+      status: "running",
+      entries: [],
+    };
+  }
+
+  return {
+    id: tool.id ? `tool:${tool.id}` : nextId("tool"),
+    role: "tool",
+    toolUseId: tool.id,
+    name: tool.name,
+    detail: describeToolUse(tool.name, tool.input),
+    input: prettyJson(tool.input ?? {}),
+    result: "",
+    status: "running",
+    hooks: [],
+  };
+}
+
+/**
+ * Turns one completed assistant message into transcript entries.
+ *
+ * Reasoning is recorded before the reply it produced, which is the order the
+ * content blocks arrive in and the order it was thought in.
+ *
+ * @param content - The message's content-block array.
+ * @returns The entries it contributes, which may be none.
+ */
+function assistantEntries(content: unknown): ChatEntry[] {
+  const additions: ChatEntry[] = [];
+
+  const thinking = readThinkingBlocks(content);
+  if (thinking.trim().length > 0) {
+    additions.push({ id: nextId("thinking"), role: "thinking", text: thinking });
+  }
+
+  const text = readTextBlocks(content);
+  if (text.trim().length > 0) {
+    additions.push({ id: nextId("assistant"), role: "assistant", text });
+  }
+
+  for (const tool of readToolUses(content)) additions.push(toolEntry(tool));
+
+  return additions;
+}
+
+/**
+ * Fills in what the tools in one `user` message produced.
+ *
+ * @param entries - The entries to update.
+ * @param message - The decoded `user` line.
+ * @returns The updated entries, or the same array when it carried no results.
+ */
+function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
+  const content = asRecord(message.message)?.content;
+  const results = asArray(content)
+    .map(asRecord)
+    .filter((block): block is Json => block !== null && asText(block.type) === "tool_result");
+  if (results.length === 0) return entries;
+
+  const next = [...entries];
+
+  for (const block of results) {
+    const toolUseId = asText(block.tool_use_id);
+    const isError = block.is_error === true;
+    const text = readResultText(block.content);
+    const index = next.findIndex(
+      (entry) =>
+        (entry.role === "tool" || entry.role === "subagent") && entry.toolUseId === toolUseId,
+    );
+    const existing = index >= 0 ? next[index] : null;
+
+    if (existing && existing.role === "tool") {
+      next[index] = {
+        ...existing,
+        result: describeToolResult(existing.name, message.tool_use_result, text),
+        status: isError ? "error" : "ok",
+      };
+      continue;
+    }
+
+    if (existing && existing.role === "subagent") {
+      next[index] = { ...existing, result: text, status: isError ? "error" : "ok" };
+      continue;
+    }
+
+    next.push({
+      id: nextId("tool"),
+      role: "tool",
+      toolUseId,
+      name: "Tool result",
+      detail: "",
+      input: "",
+      result: text,
+      status: isError ? "error" : "ok",
+      hooks: [],
+    });
+  }
+
+  return next;
+}
+
+/**
+ * Attaches a hook's outcome to the tool call it most likely surrounds.
+ *
+ * Hook events do not carry a tool-use id, so the call is matched by the hook's
+ * own matcher (`PreToolUse:Bash` → `Bash`) against the newest matching call
+ * that has not finished. Where nothing matches, a failing hook is surfaced on
+ * its own rather than being dropped.
+ *
+ * @param entries - The entries to update.
+ * @param note - The hook that just finished, or null when the line was not one.
+ * @returns The updated entries, or the same array when nothing changed.
+ */
+function withHook(entries: ChatEntry[], note: HookNote | null): ChatEntry[] {
+  if (!note) return entries;
+  const failed = note.exitCode !== null && note.exitCode !== 0;
+  const matcher = hookMatcher(note.name);
+
+  if (matcher) {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (entry.role !== "tool" || entry.name !== matcher) continue;
+      const next = [...entries];
+      next[index] = { ...entry, hooks: [...entry.hooks, note] };
+      return next;
+    }
+  }
+
+  if (!failed) return entries;
+  return [
+    ...entries,
+    {
+      id: nextId("notice"),
+      role: "notice",
+      text: `Hook ${note.name} exited ${note.exitCode}${note.output ? `: ${note.output.trim()}` : ""}`,
+    },
+  ];
+}
+
+/**
+ * Records what a payload says about fast mode.
+ *
+ * Both `initialize` and every result message carry the fields, so whichever
+ * arrived most recently is the current answer.
+ *
+ * @param state - The current chat state.
+ * @param payload - The event or response body to read.
+ * @returns The updated chat state.
+ */
+function withFastMode(state: ChatState, payload: Json): ChatState {
+  const reading = readFastMode(payload);
+  if (!reading) return state;
+  if (reading.state === state.fastMode && reading.reason === state.fastModeReason) return state;
+  return { ...state, fastMode: reading.state, fastModeReason: reading.reason };
+}
+
 function applySystemEvent(state: ChatState, message: Json): ChatState {
   const subtype = asText(message.subtype);
 
@@ -255,21 +486,27 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
     });
     const plugins = readPlugins(message.plugins);
     const skills = readNames(message.skills);
-    return {
-      ...state,
-      sessionId: asText(message.session_id) || state.sessionId,
-      // The CLI repeats this event when the session's directory changes, so
-      // this is what keeps the header's path current.
-      cwd: asText(message.cwd) || state.cwd,
-      model: asText(message.model) || state.model,
-      permissionMode: asText(message.permissionMode) || state.permissionMode,
-      mcpServers: servers.length > 0 ? servers : state.mcpServers,
-      plugins: plugins.length > 0 ? plugins : state.plugins,
-      skills: skills.length > 0 ? skills : state.skills,
-    };
+    return withFastMode(
+      {
+        ...state,
+        sessionId: asText(message.session_id) || state.sessionId,
+        // The CLI repeats this event when the session's directory changes, so
+        // this is what keeps the header's path current.
+        cwd: asText(message.cwd) || state.cwd,
+        model: asText(message.model) || state.model,
+        permissionMode: asText(message.permissionMode) || state.permissionMode,
+        mcpServers: servers.length > 0 ? servers : state.mcpServers,
+        plugins: plugins.length > 0 ? plugins : state.plugins,
+        skills: skills.length > 0 ? skills : state.skills,
+      },
+      message,
+    );
   }
 
-  if (subtype === "hook_response") return attachHook(state, readHookNote(message));
+  if (subtype === "hook_response") {
+    const entries = withHook(state.entries, readHookNote(message));
+    return entries === state.entries ? state : { ...state, entries };
+  }
 
   if (subtype === "permission_denied") {
     return appendEntry(state, {
@@ -325,37 +562,6 @@ function applyCompactBoundary(state: ChatState, message: Json): ChatState {
   };
 }
 
-/**
- * Attaches a hook's outcome to the tool call it most likely surrounds.
- *
- * Hook events do not carry a tool-use id, so the call is matched by the hook's
- * own matcher (`PreToolUse:Bash` → `Bash`) against the newest matching call
- * that has not finished. Where nothing matches, a failing hook is surfaced on
- * its own rather than being dropped.
- */
-function attachHook(state: ChatState, note: ReturnType<typeof readHookNote>): ChatState {
-  if (!note) return state;
-  const failed = note.exitCode !== null && note.exitCode !== 0;
-  const matcher = hookMatcher(note.name);
-
-  if (matcher) {
-    for (let index = state.entries.length - 1; index >= 0; index -= 1) {
-      const entry = state.entries[index];
-      if (entry.role !== "tool" || entry.name !== matcher) continue;
-      const entries = [...state.entries];
-      entries[index] = { ...entry, hooks: [...entry.hooks, note] };
-      return { ...state, entries };
-    }
-  }
-
-  if (!failed) return state;
-  return appendEntry(state, {
-    id: nextId("notice"),
-    role: "notice",
-    text: `Hook ${note.name} exited ${note.exitCode}${note.output ? `: ${note.output.trim()}` : ""}`,
-  });
-}
-
 function applyStreamEvent(state: ChatState, message: Json): ChatState {
   const event = asRecord(message.event);
   if (!event || asText(event.type) !== "content_block_delta") return state;
@@ -366,87 +572,28 @@ function applyStreamEvent(state: ChatState, message: Json): ChatState {
 }
 
 /**
- * Turns one completed assistant message into transcript entries.
- *
- * Reasoning is recorded before the reply it produced, which is the order the
- * content blocks arrive in and the order it was thought in.
+ * Records the entries one completed assistant message contributes.
  *
  * @param state - The current chat state.
  * @param message - A decoded `assistant` line.
  * @returns The updated chat state.
  */
 function applyAssistantEvent(state: ChatState, message: Json): ChatState {
-  const content = asRecord(message.message)?.content;
-  const additions: ChatEntry[] = [];
-
-  const thinking = readThinkingBlocks(content);
-  if (thinking.trim().length > 0) {
-    additions.push({ id: nextId("thinking"), role: "thinking", text: thinking });
-  }
-
-  const text = readTextBlocks(content);
-  if (text.trim().length > 0) {
-    additions.push({ id: nextId("assistant"), role: "assistant", text });
-  }
-  for (const tool of readToolUses(content)) {
-    additions.push({
-      id: tool.id ? `tool:${tool.id}` : nextId("tool"),
-      role: "tool",
-      toolUseId: tool.id,
-      name: tool.name,
-      detail: describeToolUse(tool.name, tool.input),
-      input: prettyJson(tool.input ?? {}),
-      result: "",
-      status: "running",
-      hooks: [],
-    });
-  }
-
+  const additions = assistantEntries(asRecord(message.message)?.content);
   if (additions.length === 0 && state.streaming.length === 0) return state;
   return { ...state, entries: [...state.entries, ...additions], streaming: "" };
 }
 
+/**
+ * Fills in what the tools in one `user` message produced.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `user` line.
+ * @returns The updated chat state.
+ */
 function applyUserEvent(state: ChatState, message: Json): ChatState {
-  const content = asRecord(message.message)?.content;
-  const results = asArray(content)
-    .map(asRecord)
-    .filter((block): block is Json => block !== null && asText(block.type) === "tool_result");
-  if (results.length === 0) return state;
-
-  const entries = [...state.entries];
-
-  for (const block of results) {
-    const toolUseId = asText(block.tool_use_id);
-    const isError = block.is_error === true;
-    const text = readResultText(block.content);
-    const index = entries.findIndex(
-      (entry) => entry.role === "tool" && entry.toolUseId === toolUseId,
-    );
-    const existing = index >= 0 ? entries[index] : null;
-
-    if (existing && existing.role === "tool") {
-      entries[index] = {
-        ...existing,
-        result: describeToolResult(existing.name, message.tool_use_result, text),
-        status: isError ? "error" : "ok",
-      };
-      continue;
-    }
-
-    entries.push({
-      id: nextId("tool"),
-      role: "tool",
-      toolUseId,
-      name: "Tool result",
-      detail: "",
-      input: "",
-      result: text,
-      status: isError ? "error" : "ok",
-      hooks: [],
-    });
-  }
-
-  return { ...state, entries };
+  const entries = withToolResults(state.entries, message);
+  return entries === state.entries ? state : { ...state, entries };
 }
 
 function applyResultEvent(state: ChatState, message: Json): ChatState {
@@ -485,5 +632,5 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
     costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
   };
 
-  return next;
+  return withFastMode(next, message);
 }

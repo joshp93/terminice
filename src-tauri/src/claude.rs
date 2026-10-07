@@ -143,7 +143,14 @@ where
     });
 }
 
-fn default_args() -> [&'static str; 11] {
+/// The arguments every session is started with.
+///
+/// `fast_mode` is passed as a settings flag rather than left to the user's
+/// files because the SDK path requires an explicit opt-in: without it the CLI
+/// answers every fast-mode request with `sdk_opt_in_required` and the feature
+/// can never be reached. An organisation's policy still overrides this — the
+/// reason simply becomes `preference` — so opting in cannot force it on.
+fn default_args() -> [&'static str; 14] {
     [
         "-p",
         "--input-format",
@@ -162,6 +169,11 @@ fn default_args() -> [&'static str; 11] {
         // sends one when its own rollout has the feature on, so this being set
         // does not mean a suggestion will arrive.
         "--prompt-suggestions",
+        // Carries a subagent's own text and reasoning, tagged with the call
+        // that spawned it.
+        "--forward-subagent-text",
+        "--settings",
+        r#"{"fastMode":true}"#,
     ]
 }
 

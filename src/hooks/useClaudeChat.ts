@@ -17,6 +17,7 @@ import {
   denyTool,
   readContextUsage,
   readControlResponse,
+  readFileSuggestions,
   readInboundRequest,
   readInitialize,
   readMcpServers,
@@ -72,6 +73,8 @@ export type ClaudeSession = {
   startNew: () => void;
   resume: (id: string) => void;
   notice: (text: string) => void;
+  /** Paths matching what is being typed after an `@`, for the composer's menu. */
+  suggestFiles: (query: string) => Promise<string[]>;
 };
 
 /**
@@ -739,6 +742,29 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     if (active !== null) askMcp(active);
   }, [askMcp]);
 
+  /**
+   * Asks the CLI which files match what is being typed after an `@`.
+   *
+   * The CLI answers from an index it maintains itself — `git ls-files` plus
+   * ripgrep, honouring the ignore files — so this offers what Claude Code's own
+   * terminal offers. A directory walk here would disagree with it.
+   *
+   * @param query - What has been typed after the `@`.
+   * @returns Paths relative to the session's directory, best match first.
+   */
+  const suggestFiles = useCallback(
+    (query: string): Promise<string[]> => {
+      const active = activeRef.current;
+      if (active === null) return Promise.resolve([]);
+      return new Promise((resolve) => {
+        request(active, { subtype: "file_suggestions", query }, (envelope) => {
+          resolve(envelope.subtype === "error" ? [] : readFileSuggestions(envelope.response));
+        });
+      });
+    },
+    [request],
+  );
+
   const active = activeRef.current;
   const record = active === null ? undefined : storeRef.current.get(active);
 
@@ -769,6 +795,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     startNew,
     resume,
     notice,
+    suggestFiles,
   };
 }
 

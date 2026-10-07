@@ -76,6 +76,8 @@ export type ComposerHandle = {
   getText: () => string;
   /** Replaces the contents; the caret lands at the start unless told otherwise. */
   setText: (text: string, caretAtEnd?: boolean) => void;
+  /** Replaces part of the contents, leaving the caret after what was inserted. */
+  replaceRange: (from: number, to: number, text: string) => void;
   clear: () => void;
   insertText: (text: string) => void;
   /** True when the caret is at the very start, with nothing selected. */
@@ -582,6 +584,10 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     clear: () => {
       inline = createInlineState();
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "" } });
+    },
+    replaceRange: (from, to, text) => {
+      replaceRange(view, from, to, text, from + text.length);
+      view.focus();
     },
     insertText: (text) => {
       const range = view.state.selection.main;

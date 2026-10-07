@@ -5,6 +5,8 @@
  * run with no arguments, so the menu never offers a value the CLI would reject.
  */
 
+import type { FastModeState } from "./controlProtocol";
+
 /** One setting `/config` accepts. */
 export type ClaudeConfigKey = {
   key: string;
@@ -116,6 +118,38 @@ export function findConfigKey(key: string): ClaudeConfigKey | undefined {
 
 /** The permission modes the CLI accepts, in the order it lists them. */
 export const PERMISSION_MODES = ["default", "plan", "acceptEdits", "auto", "dontAsk"] as const;
+
+/** Why fast mode is not serving, in the words the CLI's reason codes mean. */
+const FAST_MODE_REASONS: Record<string, string> = {
+  free: "it is not included in this plan",
+  preference: "it is turned off for this organization",
+  extra_usage_disabled: "extra usage is disabled",
+  network_error: "of a network error",
+  not_first_party: "this is not a first-party connection",
+  disabled_by_env: "an environment variable disables it",
+  model_not_allowed: "this model does not support it",
+  sdk_opt_in_required: "the session has not opted in",
+  pending: "the organization's status is pending",
+  unknown: "for a reason the CLI did not name",
+};
+
+/**
+ * Describes fast mode for a tooltip.
+ *
+ * Fast mode is two states in one field: it is either serving, or switched on
+ * but paused after a rate limit. Both are worth showing; being off is not, so
+ * the reason only matters once it is on.
+ *
+ * @param state - What the CLI last reported.
+ * @param reason - The CLI's reason code for it not serving, when it gave one.
+ * @returns A sentence to show on hover.
+ */
+export function describeFastMode(state: FastModeState, reason: string | null): string {
+  if (state === "on") return "Fast mode is on";
+  if (state === "cooldown") return "Fast mode is on, paused after a rate limit";
+  if (reason === null) return "Fast mode is off";
+  return `Fast mode is off because ${FAST_MODE_REASONS[reason] ?? FAST_MODE_REASONS.unknown}.`;
+}
 
 /**
  * Describes a permission mode for display.

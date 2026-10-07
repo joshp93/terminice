@@ -5,7 +5,7 @@ import { Composer } from "./components/Composer";
 import { DialogCard } from "./components/DialogCard";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
-import { describePermissionMode } from "./lib/claudeConfig";
+import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { SlashMenuHost } from "./lib/slashMenu";
 import { createDefaultSettings, type Settings } from "./types";
@@ -130,6 +130,9 @@ export function App() {
           onCycleMode={chat.cyclePermissionMode}
           onRunShell={chat.runShell}
           suggestion={chat.state.suggestion}
+          fastMode={chat.state.fastMode !== "off"}
+          fastModeTitle={describeFastMode(chat.state.fastMode, chat.state.fastModeReason)}
+          onSuggestFiles={chat.suggestFiles}
         />
       </div>
       {chat.prompt && (

@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useExpansion } from "./ExpansionContext";
 
 /** Props for {@link ThinkingBlock}. */
 export type ThinkingBlockProps = {
+  /** The entry's id, which is how the pane tracks which blocks are open. */
+  id: string;
   /** The reasoning Claude produced before replying. */
   text: string;
 };
@@ -15,8 +17,9 @@ export type ThinkingBlockProps = {
  * @param props - The reasoning to render.
  * @returns The rendered block.
  */
-export function ThinkingBlock({ text }: ThinkingBlockProps) {
-  const [open, setOpen] = useState(false);
+export function ThinkingBlock({ id, text }: ThinkingBlockProps) {
+  const { isOpen, toggle } = useExpansion();
+  const open = isOpen(id);
   const preview = text.trim().split("\n")[0] ?? "";
 
   return (
@@ -25,7 +28,7 @@ export function ThinkingBlock({ text }: ThinkingBlockProps) {
         type="button"
         className="thinking-summary"
         aria-expanded={open}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => toggle(id)}
       >
         <span className="thinking-label">Thought</span>
         {!open && preview.length > 0 && <span className="thinking-preview">{preview}</span>}

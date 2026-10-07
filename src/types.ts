@@ -1,5 +1,6 @@
 import type {
   ContextUsage,
+  FastModeState,
   InitializePayload,
   McpServerInfo,
   PluginInfo,
@@ -35,6 +36,21 @@ export type ChatEntry =
     }
   | { id: string; role: "notice"; text: string }
   | { id: string; role: "error"; text: string }
+  | {
+      id: string;
+      role: "subagent";
+      /** The id pairing this agent with the call that spawned it. */
+      toolUseId: string;
+      /** The agent's description, as the spawning call gave it. */
+      label: string;
+      /** The spawning call's full input, shown when the card is opened. */
+      input: string;
+      /** The agent's closing report. */
+      result: string;
+      status: "running" | "ok" | "error";
+      /** What the agent said and did, in the order it happened. */
+      entries: ChatEntry[];
+    }
   | {
       id: string;
       role: "shell";
@@ -73,6 +89,10 @@ export type ChatState = {
   thinkingTokens: number;
   /** The CLI's predicted next prompt, when it offers one. */
   suggestion: string | null;
+  /** Whether fast mode is serving, paused after a rate limit, or off. */
+  fastMode: FastModeState;
+  /** Why fast mode is not serving, when the CLI gives a reason. */
+  fastModeReason: string | null;
 };
 
 /** Creates an empty chat state. */
@@ -94,6 +114,8 @@ export function createChatState(): ChatState {
     compacting: false,
     thinkingTokens: 0,
     suggestion: null,
+    fastMode: "off",
+    fastModeReason: null,
   };
 }
 

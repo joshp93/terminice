@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createComposer, type ComposerHandle, type ComposerStatus } from "../lib/createComposer";
 import { subscribeToFileDrops } from "../lib/fileDrops";
+import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
 import type { ListKind } from "../lib/listMarkers";
 import { buildRootEntries, filterEntries, type MenuEntry, type SlashMenuHost } from "../lib/slashMenu";
+import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
 import { ProgressBar } from "./ProgressBar";
 import { SlashMenu } from "./SlashMenu";
@@ -28,6 +30,12 @@ export type ComposerProps = {
   onRunShell: (command: string) => void;
   /** The CLI's predicted next prompt, when it offers one. */
   suggestion: string | null;
+  /** Whether fast mode is on, which turns the field orange. */
+  fastMode: boolean;
+  /** What to say about fast mode when it is hovered. */
+  fastModeTitle: string;
+  /** Paths matching what is being typed after an `@`. */
+  onSuggestFiles: (query: string) => Promise<string[]>;
 };
 
 const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
@@ -45,6 +53,9 @@ const MENU_ROOM = 280;
 
 /** The character that turns the composer into a shell. */
 const SHELL_PREFIX = "!";
+
+/** How long typing pauses before the CLI is asked for suggestions. */
+const MENTION_DEBOUNCE_MS = 120;
 
 /**
  * Reads a local command out of what was typed.
@@ -79,6 +90,9 @@ export function Composer({
   onCycleMode,
   onRunShell,
   suggestion,
+  fastMode,
+  fastModeTitle,
+  onSuggestFiles,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +105,7 @@ export function Composer({
   const stopRef = useRef(onStop);
   const cycleRef = useRef(onCycleMode);
   const runShellRef = useRef(onRunShell);
+  const suggestFilesRef = useRef(onSuggestFiles);
   /** Prompts that have been sent, oldest first, for recall with the arrows. */
   const historyRef = useRef<string[]>([]);
   /** Where recall currently sits, or null when editing the unsent draft. */
@@ -103,6 +118,8 @@ export function Composer({
   const [highlight, setHighlight] = useState(0);
   const [placeAbove, setPlaceAbove] = useState(true);
   const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
+  const [files, setFiles] = useState<string[]>([]);
+  const [fileHighlight, setFileHighlight] = useState(0);
 
   menuRef.current = menu;
   sendRef.current = onSend;
@@ -111,6 +128,7 @@ export function Composer({
   stopRef.current = onStop;
   cycleRef.current = onCycleMode;
   runShellRef.current = onRunShell;
+  suggestFilesRef.current = onSuggestFiles;
 
   const sessionSignature = menu.sessions.map((item) => `${item.id}:${item.live ? 1 : 0}`).join("|");
 
@@ -129,6 +147,37 @@ export function Composer({
   }, []);
 
   const isShell = status.text.startsWith(SHELL_PREFIX);
+
+  const mention = mentionIn(status.text, status.caret);
+  const mentionQuery = mention?.query ?? null;
+
+  const fileEntries = useMemo<MenuEntry[]>(
+    () => files.map((path) => ({ id: `file:${path}`, label: path, detail: "", hint: "", selected: false })),
+    [files],
+  );
+
+  // The slash menu wins when both could be open, since a command is the more
+  // specific thing to be typing.
+  const mentionOpen = mention !== null && fileEntries.length > 0;
+
+  useEffect(() => {
+    if (mentionQuery === null) {
+      setFiles([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void suggestFilesRef.current(mentionQuery).then((paths) => {
+        if (cancelled) return;
+        setFiles(paths);
+        setFileHighlight(0);
+      });
+    }, MENTION_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [mentionQuery]);
 
   /**
    * Whether the CLI's suggestion is worth showing.
@@ -191,11 +240,11 @@ export function Composer({
   }, [query]);
 
   useLayoutEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !mentionOpen) return;
     const row = rowRef.current;
     if (!row) return;
     setPlaceAbove(window.innerHeight - row.getBoundingClientRect().bottom < MENU_ROOM);
-  }, [menuOpen]);
+  }, [menuOpen, mentionOpen]);
 
   useEffect(() => {
     setHighlight(0);
@@ -294,6 +343,25 @@ export function Composer({
     if (entry.label.startsWith("/")) handleRef.current?.setText(`${entry.label} `, true);
   }, []);
 
+  /**
+   * Swaps the mention being typed for the file that was chosen.
+   *
+   * Only the `@` and what follows it are replaced, so a path picked part-way
+   * through a sentence leaves the rest of it alone.
+   *
+   * @param entry - The file to insert.
+   */
+  const chooseFile = useCallback(
+    (entry: MenuEntry) => {
+      const handle = handleRef.current;
+      if (!mention || !handle) return;
+      const end = mention.from + MENTION_PREFIX.length + mention.query.length;
+      handle.replaceRange(mention.from, end, `${MENTION_PREFIX}${entry.label} `);
+      setFiles([]);
+    },
+    [mention],
+  );
+
   const handleKeyDownCapture = useCallback(
     (event: React.KeyboardEvent) => {
       const handle = handleRef.current;
@@ -304,6 +372,37 @@ export function Composer({
         event.stopPropagation();
         cycleRef.current();
         return;
+      }
+
+      // The file menu is checked first so its keys do not fall through to the
+      // slash menu's, and so Enter picks a file rather than sending the line.
+      if (mentionOpen) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          event.stopPropagation();
+          setFileHighlight((current) => Math.min(current + 1, fileEntries.length - 1));
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          event.stopPropagation();
+          setFileHighlight((current) => Math.max(current - 1, 0));
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          const entry = fileEntries[fileHighlight];
+          if (!entry) return;
+          event.preventDefault();
+          event.stopPropagation();
+          chooseFile(entry);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setFiles([]);
+          return;
+        }
       }
 
       if (event.key === "Escape") {
@@ -437,6 +536,21 @@ export function Composer({
             onChoose={choose}
           />
         )}
+        {mentionOpen && !menuOpen && (
+          <SlashMenu
+            entries={fileEntries}
+            highlight={fileHighlight}
+            parentLabel={null}
+            placeAbove={placeAbove}
+            onHighlight={setFileHighlight}
+            onChoose={chooseFile}
+          />
+        )}
+        {fastMode && (
+          <span className="fast-flag" title={fastModeTitle}>
+            <FlameIcon size={16} />
+          </span>
+        )}
         <div className="composer-field">
           {compacting && (
             <ProgressBar
@@ -463,7 +577,12 @@ export function Composer({
             </div>
           )}
           <div
-            className={["composer-host", running ? "busy" : "", isShell ? "shell" : ""]
+            className={[
+              "composer-host",
+              running ? "busy" : "",
+              isShell ? "shell" : "",
+              fastMode ? "fast" : "",
+            ]
               .filter(Boolean)
               .join(" ")}
             ref={hostRef}

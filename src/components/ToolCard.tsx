@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useExpansion } from "./ExpansionContext";
 import type { HookNote } from "../lib/toolResults";
 
 /** Props for {@link ToolCard}. */
 export type ToolCardProps = {
+  /** The entry's id, which is how the pane tracks which cards are open. */
+  id: string;
   name: string;
   /** A one-line summary of the input. */
   detail: string;
@@ -42,9 +44,10 @@ function previewOf(text: string, count: number): { lines: string[]; hidden: numb
  * @param props - The call and its result.
  * @returns The rendered tool card.
  */
-export function ToolCard({ name, detail, input, result, status, hooks }: ToolCardProps) {
-  const [open, setOpen] = useState(false);
+export function ToolCard({ id, name, detail, input, result, status, hooks }: ToolCardProps) {
+  const { isOpen, toggle } = useExpansion();
   const expandable = input.length > 0 || result.length > 0;
+  const open = expandable && isOpen(id);
   const preview = previewOf(result, PREVIEW_LINES);
   const notable = hooks.filter(
     (hook) => (hook.exitCode !== null && hook.exitCode !== 0) || hook.output.trim().length > 0,
@@ -57,7 +60,7 @@ export function ToolCard({ name, detail, input, result, status, hooks }: ToolCar
         className="tool-summary"
         aria-expanded={open}
         disabled={!expandable}
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => toggle(id)}
       >
         <span className={`tool-status ${status}`} aria-hidden="true" />
         <span className="tool-name">{name}</span>
@@ -89,7 +92,7 @@ export function ToolCard({ name, detail, input, result, status, hooks }: ToolCar
       {!open && preview.lines.length > 0 && (
         <div
           className={status === "error" ? "tool-preview failed" : "tool-preview"}
-          onClick={() => setOpen(true)}
+          onClick={() => toggle(id)}
         >
           <pre>
             {preview.lines.join("\n")}

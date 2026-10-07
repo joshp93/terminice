@@ -306,13 +306,73 @@ export function readUsage(payload: unknown): UsageSummary | null {
 }
 
 /**
+ * Whether fast mode is serving, paused after a rate limit, or off.
+ *
+ * The CLI ignores any other value, so an unrecognised one is treated as
+ * "nothing was said" rather than being shown.
+ */
+export type FastModeState = "on" | "cooldown" | "off";
+
+/** What a payload's fast-mode fields say. */
+export type FastModeReading = {
+  state: FastModeState;
+  /** Why fast mode is not serving, when the CLI gives a reason. */
+  reason: string | null;
+};
+
+/**
+ * Reads the fast-mode fields a payload may carry.
+ *
+ * Both `initialize` and every result message carry them, so this is read from
+ * whichever arrived most recently.
+ *
+ * @param payload - The response body, or a streamed event.
+ * @returns The state and reason, or null when the payload says nothing.
+ */
+export function readFastMode(payload: unknown): FastModeReading | null {
+  const record = asRecord(payload);
+  const raw = asText(record?.fast_mode_state);
+  if (raw !== "on" && raw !== "cooldown" && raw !== "off") return null;
+  return { state: raw, reason: asText(record?.fast_mode_disabled_reason) || null };
+}
+
+/**
+ * Reads the `file_suggestions` payload.
+ *
+ * The CLI answers from its own index, which spans more than the project: a
+ * query also turns up paths inside the CLI's own skills directories. The menu
+ * is about the session's directory, so anything outside it is dropped.
+ *
+ * @param payload - The response body.
+ * @returns Paths to offer, relative to the session's directory.
+ */
+export function readFileSuggestions(payload: unknown): string[] {
+  const record = asRecord(payload);
+  const cwd = asText(record?.cwd).replace(/[\\/]+$/, "");
+  const prefix = cwd.toLowerCase();
+
+  return asArray(record?.suggestions).flatMap((entry): string[] => {
+    const raw = asText(asRecord(entry)?.path);
+    if (!raw) return [];
+    const path = raw.replace(/[\\/]+$/, "");
+    if (path.length === 0) return [];
+
+    if (cwd.length > 0 && path.toLowerCase().startsWith(prefix)) {
+      const rest = path.slice(cwd.length).replace(/^[\\/]+/, "");
+      return rest.length > 0 ? [rest] : [];
+    }
+
+    return /^([A-Za-z]:|[\\/])/.test(path) ? [] : [path];
+  });
+}
+
+/**
  * Reads the `mcp_status` payload.
  *
  * @param payload - The response body.
  * @returns Each server with its status.
  */
-export function readMcpServers(payload: unknown): McpServerInfo[] {
-  return asArray(asRecord(payload)?.mcpServers).flatMap((entry): McpServerInfo[] => {
+export function readMcpServers(payload: unknown): McpServerInfo[] {  return asArray(asRecord(payload)?.mcpServers).flatMap((entry): McpServerInfo[] => {
     const item = asRecord(entry);
     const name = item ? asText(item.name) : "";
     return name ? [{ name, status: asText(item?.status) || "unknown" }] : [];
