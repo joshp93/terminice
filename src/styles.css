@@ -822,8 +822,6 @@ body {
 }
 
 .dialog-option.submit-answer.disabled {
-  border-color: var(--border);
-  color: var(--text-dim);
   font-weight: 400;
   cursor: default;
 }
@@ -1040,11 +1038,9 @@ body {
 }
 
 /*
- * Green buttons rest as an outline and fill on hover, selection or focus. The
- * fill is a scaled pseudo-element rather than a colour change so it spreads
- * from the middle outwards, which is what makes the state readable at a glance.
- * `isolation` keeps the negative-z child above the button's own background but
- * below its label.
+ * Green buttons rest as an outline and fill in on hover, selection or focus.
+ * The fill is an ordinary background transition, so the state change costs no
+ * layout and nothing moves.
  */
 .green-button {
   background-color: var(--bg);
@@ -1054,43 +1050,25 @@ body {
 
 .green-button,
 .segment {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
   transition:
-    color 0.4s ease,
-    border-color 0.4s ease;
+    background-color 0.3s ease,
+    color 0.3s ease,
+    border-color 0.3s ease;
 }
 
-.green-button::before,
-.segment::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background: var(--accent-fill);
-  transform: scale(0);
-  transition: transform 0.4s ease;
-}
-
-.green-button:hover::before,
-.green-button:focus-visible::before,
-.segment:hover::before,
-.segment:focus-visible::before,
-.segment.active::before {
-  transform: scale(1);
-}
-
-.green-button:hover,
-.green-button:focus-visible,
+.green-button:not(.disabled):hover,
+.green-button:not(.disabled):focus-visible,
 .segment:hover,
 .segment:focus-visible,
 .segment.active {
+  background-color: var(--accent-fill);
   color: var(--accent-on-fill);
 }
 
-.green-button.disabled::before {
-  transform: scale(0);
+.green-button.disabled {
+  background-color: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
 }
 
 .green-button:focus-visible,
