@@ -107,7 +107,7 @@ export function App() {
       <main className="workspace">
         <ChatPane state={chat.state} status={chat.status} />
       </main>
-      <div className={chat.prompt ? "composer-slot hidden" : "composer-slot"}>
+      <div className={chat.prompt ? "composer-slot hidden" : "composer-slot"} inert={chat.prompt !== null}>
         <Composer
           submitsOnEnter={() => settings.enterBehaviour === "send"}
           onSend={chat.send}

@@ -133,12 +133,14 @@ export function Composer({
     if (build) {
       setSubmenus((current) => [...current, { label: entry.label, entries: build() }]);
       setHighlight(0);
+      handleRef.current?.focus();
       return;
     }
     setSubmenus([]);
     handleRef.current?.clear();
     setHighlight(0);
     entry.run?.();
+    handleRef.current?.focus();
   }, []);
 
   const toggleFormat = useCallback((id: FormatId) => handleRef.current?.toggleFormat(id), []);

@@ -226,8 +226,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
       chooseOption(focus.question, focus.option);
     };
 
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    // Captured on the document so the card wins over the composer, which is
+    // still mounted behind it holding whatever had been typed.
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   });
 
   let rowIndex = -1;
