@@ -13,6 +13,26 @@ function appendEntry(state: ChatState, entry: ChatEntry): ChatState {
 }
 
 /**
+ * Joins the field of every content block of one kind.
+ *
+ * Text and reasoning blocks both carry their body in a field named after their
+ * own type — `text` and `thinking` — so one reader covers both.
+ *
+ * @param content - A content-block array.
+ * @param kind - The block type to collect.
+ * @returns The concatenated bodies, or an empty string.
+ */
+function joinBlocks(content: unknown, kind: string): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => {
+      const record = asRecord(block);
+      return record && record.type === kind ? asText(record[kind]) : "";
+    })
+    .join("");
+}
+
+/**
  * Joins the text of every `text` block in an Anthropic content-block array.
  *
  * @param content - A content-block array, or a plain string.
@@ -20,13 +40,35 @@ function appendEntry(state: ChatState, entry: ChatEntry): ChatState {
  */
 export function readTextBlocks(content: unknown): string {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((block) => {
-      const record = asRecord(block);
-      return record && record.type === "text" ? asText(record.text) : "";
-    })
-    .join("");
+  return joinBlocks(content, "text");
+}
+
+/**
+ * Joins the reasoning in every `thinking` block of an Anthropic content-block
+ * array.
+ *
+ * @param content - A content-block array.
+ * @returns The concatenated reasoning, or an empty string.
+ */
+export function readThinkingBlocks(content: unknown): string {
+  return joinBlocks(content, "thinking");
+}
+
+/**
+ * Finds the last thing Claude said in the transcript.
+ *
+ * A plan is written as an ordinary reply and the `ExitPlanMode` call that
+ * follows carries none of it, so this is where the plan's text is read from.
+ *
+ * @param state - The current chat state.
+ * @returns The most recent assistant text, or an empty string.
+ */
+export function latestAssistantText(state: ChatState): string {
+  for (let index = state.entries.length - 1; index >= 0; index -= 1) {
+    const entry = state.entries[index];
+    if (entry.role === "assistant" && entry.text.trim().length > 0) return entry.text;
+  }
+  return "";
 }
 
 /**
@@ -64,6 +106,8 @@ export function withUserMessage(state: ChatState, text: string): ChatState {
   return {
     ...state,
     busy: true,
+    thinkingTokens: 0,
+    suggestion: null,
     entries: [...state.entries, { id: nextId("user"), role: "user", text }],
   };
 }
@@ -193,6 +237,8 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
       return applyUserEvent(state, message);
     case "result":
       return applyResultEvent(state, message);
+    case "prompt_suggestion":
+      return { ...state, suggestion: asText(message.suggestion) || null };
     default:
       return state;
   }
@@ -238,6 +284,10 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
     if (status === "requesting") return { ...state, busy: true };
     if (status === "idle") return { ...state, busy: false, compacting: false };
     if (status === "compacting") return { ...state, busy: true, compacting: true };
+  }
+
+  if (subtype === "thinking_tokens") {
+    return { ...state, thinkingTokens: asNumber(message.estimated_tokens) ?? state.thinkingTokens };
   }
 
   if (subtype === "compact_boundary") return applyCompactBoundary(state, message);
@@ -313,9 +363,24 @@ function applyStreamEvent(state: ChatState, message: Json): ChatState {
   return text.length > 0 ? { ...state, streaming: state.streaming + text } : state;
 }
 
+/**
+ * Turns one completed assistant message into transcript entries.
+ *
+ * Reasoning is recorded before the reply it produced, which is the order the
+ * content blocks arrive in and the order it was thought in.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `assistant` line.
+ * @returns The updated chat state.
+ */
 function applyAssistantEvent(state: ChatState, message: Json): ChatState {
   const content = asRecord(message.message)?.content;
   const additions: ChatEntry[] = [];
+
+  const thinking = readThinkingBlocks(content);
+  if (thinking.trim().length > 0) {
+    additions.push({ id: nextId("thinking"), role: "thinking", text: thinking });
+  }
 
   const text = readTextBlocks(content);
   if (text.trim().length > 0) {
@@ -413,6 +478,7 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
     streaming: "",
     busy: false,
     compacting: false,
+    thinkingTokens: 0,
     costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
   };
 

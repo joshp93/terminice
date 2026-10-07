@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { EmptyChat } from "./EmptyChat";
 import { MessageBubble } from "./MessageBubble";
 import { ShellCard } from "./ShellCard";
+import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCard } from "./ToolCard";
 import type { ChatEntry, ChatState } from "../types";
 
@@ -39,7 +40,13 @@ export function ChatPane({ state }: ChatPaneProps) {
             <MessageBubble text={state.streaming} />
           </div>
         )}
-        {state.busy && state.streaming.length === 0 && <div className="working">Working…</div>}
+        {state.busy && state.streaming.length === 0 && (
+          <div className="working">
+            {state.thinkingTokens > 0
+              ? `Thinking… ${state.thinkingTokens.toLocaleString()} tokens`
+              : "Working…"}
+          </div>
+        )}
         <div ref={endRef} />
       </div>
     </section>
@@ -61,6 +68,8 @@ function TranscriptItem({ entry }: { entry: ChatEntry }) {
       );
     case "notice":
       return <div className="notice">{entry.text}</div>;
+    case "thinking":
+      return <ThinkingBlock text={entry.text} />;
     case "shell":
       return (
         <ShellCard

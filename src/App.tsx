@@ -129,6 +129,7 @@ export function App() {
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}
           onRunShell={chat.runShell}
+          suggestion={chat.state.suggestion}
         />
       </div>
       {chat.prompt && (

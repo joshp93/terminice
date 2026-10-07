@@ -16,6 +16,7 @@ export type ClaudeEvent =
 export type ChatEntry =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
+  | { id: string; role: "thinking"; text: string }
   | {
       id: string;
       role: "tool";
@@ -68,6 +69,10 @@ export type ChatState = {
   permissionMode: string;
   /** True while the CLI is summarising the conversation. */
   compacting: boolean;
+  /** Reasoning tokens spent so far on the running turn. */
+  thinkingTokens: number;
+  /** The CLI's predicted next prompt, when it offers one. */
+  suggestion: string | null;
 };
 
 /** Creates an empty chat state. */
@@ -87,6 +92,8 @@ export function createChatState(): ChatState {
     skills: [],
     permissionMode: "default",
     compacting: false,
+    thinkingTokens: 0,
+    suggestion: null,
   };
 }
 

@@ -143,7 +143,7 @@ where
     });
 }
 
-fn default_args() -> [&'static str; 10] {
+fn default_args() -> [&'static str; 11] {
     [
         "-p",
         "--input-format",
@@ -158,6 +158,10 @@ fn default_args() -> [&'static str; 10] {
         // CLI has nobody to ask and refuses anything that would prompt.
         "--permission-prompt-tool",
         "stdio",
+        // Asks the CLI for a predicted next prompt after each turn. It only
+        // sends one when its own rollout has the feature on, so this being set
+        // does not mean a suggestion will arrive.
+        "--prompt-suggestions",
     ]
 }
 

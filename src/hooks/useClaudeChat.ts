@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   applyClaudeLine,
+  latestAssistantText,
   withError,
   withHistory,
   withNotice,
@@ -278,10 +279,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
    */
   const enqueuePrompt = useCallback(
     (backendId: string, inbound: InboundRequest) => {
-      const prompt = readPrompt(inbound);
       const store = storeRef.current;
       const record = store.get(backendId);
       if (!record) return;
+
+      const prompt = readPrompt(inbound, latestAssistantText(record.state));
 
       if (!prompt) {
         writeLine(
@@ -622,16 +624,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const prompt = record?.prompts[0];
       if (!record || !prompt) return;
 
-      const line =
-        resolution.kind === "permission"
-          ? resolution.choice === "deny"
-            ? denyTool(prompt.requestId, "The user denied this tool call.")
-            : allowTool(prompt.requestId, prompt.rawInput, resolution.permissions)
-          : allowTool(prompt.requestId, {
-              ...prompt.rawInput,
-              answers: resolution.answers,
-              annotations: resolution.annotations,
-            });
+      const line = responseFor(prompt, resolution);
 
       storeRef.current.set(active, {
         ...record,
@@ -769,6 +762,36 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     resume,
     notice,
   };
+}
+
+/**
+ * Builds the control response that answers one card.
+ *
+ * @param prompt - The card being answered.
+ * @param resolution - What the user chose.
+ * @returns The message to write back to the CLI.
+ */
+function responseFor(prompt: Prompt, resolution: PromptResolution): unknown {
+  if (resolution.kind === "permission") {
+    return resolution.choice === "deny"
+      ? denyTool(prompt.requestId, "The user denied this tool call.")
+      : allowTool(prompt.requestId, prompt.rawInput, resolution.permissions);
+  }
+
+  if (resolution.kind === "plan") {
+    return resolution.choice === "revise"
+      ? denyTool(
+          prompt.requestId,
+          "The user did not approve this plan. Stay in plan mode and revise it.",
+        )
+      : allowTool(prompt.requestId, prompt.rawInput);
+  }
+
+  return allowTool(prompt.requestId, {
+    ...prompt.rawInput,
+    answers: resolution.answers,
+    annotations: resolution.annotations,
+  });
 }
 
 /**

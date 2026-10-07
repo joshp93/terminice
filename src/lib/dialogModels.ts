@@ -8,7 +8,8 @@ export type PromptResolution =
       kind: "question";
       answers: Record<string, string>;
       annotations: Record<string, { notes?: string }>;
-    };
+    }
+  | { kind: "plan"; choice: "approve" | "revise" };
 
 /** A button on a permission card. */
 export type PermissionChoice = {
@@ -60,8 +61,21 @@ export type QuestionPrompt = {
   questions: QuestionModel[];
 };
 
+/** A plan Claude has written and is waiting to be allowed to start. */
+export type PlanPrompt = {
+  kind: "plan";
+  requestId: string;
+  toolName: string;
+  toolUseId: string;
+  /** The tool input as the CLI sent it, echoed back when approving. */
+  rawInput: Json;
+  /** The plan, as Claude wrote it in the reply that preceded the call. */
+  plan: string;
+  choices: PermissionChoice[];
+};
+
 /** Something the CLI is waiting on the user to decide. */
-export type Prompt = PermissionPrompt | QuestionPrompt;
+export type Prompt = PermissionPrompt | QuestionPrompt | PlanPrompt;
 
 /**
  * Describes a permission suggestion as a button label.
@@ -162,14 +176,31 @@ function readQuestions(input: Record<string, unknown> | null): QuestionModel[] {
  * yes/no approval.
  *
  * @param request - The decoded inbound request.
+ * @param planText - The reply that preceded the call, which is where a plan's
+ *   text lives: the `ExitPlanMode` input carries none of it.
  * @returns The prompt, or null when this request is not one we render.
  */
-export function readPrompt(request: InboundRequest): Prompt | null {
+export function readPrompt(request: InboundRequest, planText = ""): Prompt | null {
   if (request.subtype === "elicitation") return null;
 
   const toolName = asText(request.request.tool_name);
   const toolUseId = asText(request.request.tool_use_id);
   const input = asRecord(request.request.input);
+
+  if (toolName === "ExitPlanMode") {
+    return {
+      kind: "plan",
+      requestId: request.requestId,
+      toolName,
+      toolUseId,
+      rawInput: input ?? {},
+      plan: planText,
+      choices: [
+        { id: "allow", label: "Start on this plan" },
+        { id: "deny", label: "Keep planning" },
+      ],
+    };
+  }
 
   if (toolName === "AskUserQuestion") {
     const questions = readQuestions(input);

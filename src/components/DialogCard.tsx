@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useHoverIntent } from "../hooks/useHoverIntent";
 import type {
   PermissionChoice,
@@ -66,22 +66,22 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState<FocusTarget>(() =>
-    prompt.kind === "permission"
-      ? { kind: "choice", index: 0 }
-      : { kind: "option", question: 0, option: 0 },
+    prompt.kind === "question"
+      ? { kind: "option", question: 0, option: 0 }
+      : { kind: "choice", index: 0 },
   );
   const notesRef = useRef<HTMLTextAreaElement | null>(null);
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const hover = useHoverIntent(setFocus);
 
   const questions: QuestionModel[] = prompt.kind === "question" ? prompt.questions : [];
-  const choices: PermissionChoice[] = prompt.kind === "permission" ? prompt.choices : [];
+  const choices: PermissionChoice[] = prompt.kind === "question" ? [] : prompt.choices;
 
   const answered = questions.every((question) => (selections[question.question] ?? []).length > 0);
   const needsSubmit = questions.some((question) => question.multiSelect);
 
   const targets = useMemo<FocusTarget[]>(() => {
-    if (prompt.kind === "permission") {
+    if (prompt.kind !== "question") {
       return choices.map((_, index) => ({ kind: "choice", index }) as FocusTarget);
     }
     const rows: FocusTarget[] = [];
@@ -180,6 +180,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const chooseChoice = (index: number): void => {
     const choice = choices[index];
     if (!choice) return;
+    if (prompt.kind === "plan") {
+      onResolve({ kind: "plan", choice: choice.id === "deny" ? "revise" : "approve" });
+      return;
+    }
     onResolve({ kind: "permission", choice: choice.id, permissions: choice.permissions });
   };
 
@@ -266,47 +270,59 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
               <span className="dialog-kind">needs approval</span>
             </div>
 
-            <div className="dialog-code">
-              <pre>{collapsedBody(prompt.body, expanded)}</pre>
-              {prompt.body.split("\n").length > COLLAPSED_LINES && (
-                <button
-                  type="button"
-                  className="dialog-code-toggle"
-                  onClick={() => setExpanded((current) => !current)}
-                >
-                  {expanded ? "Hide" : `Show all ${prompt.body.split("\n").length} lines`}
-                </button>
-              )}
-            </div>
+            <CollapsibleText
+              text={prompt.body}
+              expanded={expanded}
+              onToggle={() => setExpanded((current) => !current)}
+            />
 
-            <ul className="dialog-list">
-              {choices.map((choice, index) => (
-                <li key={choice.id}>
-                  <button
-                    type="button"
-                    ref={(node) => {
-                      rowRefs.current[index] = node;
-                    }}
-                    className={[
-                      "dialog-option",
-                      index === settledIndex ? "focused" : "",
-                      choice.id === "deny" ? "negative" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onMouseMove={hover({ kind: "choice", index })}
-                    onClick={() => chooseChoice(index)}
-                  >
-                    <span className="dialog-option-body">
-                      <span className="dialog-option-label">{choice.label}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <ChoiceList
+              choices={choices}
+              settledIndex={settledIndex}
+              hover={hover}
+              onChoose={chooseChoice}
+              registerRow={(index, node) => {
+                rowRefs.current[index] = node;
+              }}
+            />
 
             <div className="dialog-footer">
               <span className="dialog-hint">↑↓ to move, Enter to choose</span>
+            </div>
+          </>
+        )}
+
+        {prompt.kind === "plan" && (
+          <>
+            <div className="dialog-question-header">
+              <span className="dialog-chip">Plan</span>
+              <span className="dialog-question-text">
+                Claude has finished planning and is waiting to start
+              </span>
+              <span className="dialog-kind">needs approval</span>
+            </div>
+
+            <CollapsibleText
+              text={prompt.plan || "The plan was not included in the reply that preceded this."}
+              expanded={expanded}
+              onToggle={() => setExpanded((current) => !current)}
+              variant="plan"
+            />
+
+            <ChoiceList
+              choices={choices}
+              settledIndex={settledIndex}
+              hover={hover}
+              onChoose={chooseChoice}
+              registerRow={(index, node) => {
+                rowRefs.current[index] = node;
+              }}
+            />
+
+            <div className="dialog-footer">
+              <span className="dialog-hint">
+                ↑↓ to move, Enter to choose · keeping planning leaves Claude in plan mode
+              </span>
             </div>
           </>
         )}
@@ -442,4 +458,77 @@ function collapsedBody(body: string, expanded: boolean): string {
   const lines = body.split("\n");
   if (expanded || lines.length <= COLLAPSED_LINES) return body;
   return lines.slice(0, COLLAPSED_LINES).join("\n");
+}
+
+/** Props for {@link CollapsibleText}. */
+type CollapsibleTextProps = {
+  text: string;
+  expanded: boolean;
+  onToggle: () => void;
+  /** Names what the text is, so a plan does not read as a tool input. */
+  variant?: "plan";
+};
+
+/**
+ * Renders a long block of text, trimmed until the reader asks for all of it.
+ *
+ * @param props - The text, whether it is expanded, and how to toggle it.
+ * @returns The rendered block.
+ */
+function CollapsibleText({ text, expanded, onToggle, variant }: CollapsibleTextProps) {
+  const lines = text.split("\n").length;
+  return (
+    <div className={variant ? `dialog-code ${variant}` : "dialog-code"}>
+      <pre>{collapsedBody(text, expanded)}</pre>
+      {lines > COLLAPSED_LINES && (
+        <button type="button" className="dialog-code-toggle" onClick={onToggle}>
+          {expanded ? "Hide" : `Show all ${lines} lines`}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Props for {@link ChoiceList}. */
+type ChoiceListProps = {
+  choices: PermissionChoice[];
+  /** The index of the row the keyboard is on. */
+  settledIndex: number;
+  hover: (value: FocusTarget) => (event: MouseEvent) => void;
+  onChoose: (index: number) => void;
+  registerRow: (index: number, node: HTMLButtonElement | null) => void;
+};
+
+/**
+ * Renders a card's buttons as a list the keyboard can walk.
+ *
+ * @param props - The choices and the handlers behind them.
+ * @returns The rendered list.
+ */
+function ChoiceList({ choices, settledIndex, hover, onChoose, registerRow }: ChoiceListProps) {
+  return (
+    <ul className="dialog-list">
+      {choices.map((choice, index) => (
+        <li key={choice.id}>
+          <button
+            type="button"
+            ref={(node) => registerRow(index, node)}
+            className={[
+              "dialog-option",
+              index === settledIndex ? "focused" : "",
+              choice.id === "deny" ? "negative" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onMouseMove={hover({ kind: "choice", index })}
+            onClick={() => onChoose(index)}
+          >
+            <span className="dialog-option-body">
+              <span className="dialog-option-label">{choice.label}</span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
 }

@@ -26,6 +26,8 @@ export type ComposerProps = {
   onCycleMode: () => void;
   /** Runs a `!` command locally rather than sending it to Claude. */
   onRunShell: (command: string) => void;
+  /** The CLI's predicted next prompt, when it offers one. */
+  suggestion: string | null;
 };
 
 const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
@@ -76,6 +78,7 @@ export function Composer({
   onStop,
   onCycleMode,
   onRunShell,
+  suggestion,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -99,6 +102,7 @@ export function Composer({
   const [submenus, setSubmenus] = useState<{ label: string; entries: MenuEntry[] }[]>([]);
   const [highlight, setHighlight] = useState(0);
   const [placeAbove, setPlaceAbove] = useState(true);
+  const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
 
   menuRef.current = menu;
   sendRef.current = onSend;
@@ -125,6 +129,24 @@ export function Composer({
   }, []);
 
   const isShell = status.text.startsWith(SHELL_PREFIX);
+
+  /**
+   * Whether the CLI's suggestion is worth showing.
+   *
+   * It is a prompt for an empty composer, so it stands down as soon as anything
+   * is being written, and again once it has been dismissed or taken.
+   */
+  const showSuggestion =
+    suggestion !== null &&
+    suggestion.length > 0 &&
+    suggestion !== dismissedSuggestion &&
+    status.text.length === 0;
+
+  const acceptSuggestion = useCallback(() => {
+    if (suggestion === null) return;
+    handleRef.current?.setText(suggestion, true);
+    handleRef.current?.focus();
+  }, [suggestion]);
 
   const rootEntries = useMemo(
     () =>
@@ -424,6 +446,21 @@ export function Composer({
                   : `Compacting ${contextTokens.toLocaleString()} tokens…`
               }
             />
+          )}
+          {showSuggestion && suggestion !== null && (
+            <div className="suggestion-chip">
+              <button type="button" className="suggestion-text" onClick={acceptSuggestion}>
+                {suggestion}
+              </button>
+              <button
+                type="button"
+                className="suggestion-dismiss"
+                aria-label="Dismiss suggestion"
+                onClick={() => setDismissedSuggestion(suggestion)}
+              >
+                ×
+              </button>
+            </div>
           )}
           <div
             className={["composer-host", running ? "busy" : "", isShell ? "shell" : ""]
