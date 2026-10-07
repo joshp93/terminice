@@ -18,6 +18,10 @@
   --accent-fill: #2f6b4c;
   --accent-fill-hover: #3a8059;
   --accent-on-fill: #eafff3;
+  /* The ring around whatever the keyboard is currently on. It has to read as
+     an unmistakable edge against its own background, which the accent border
+     does not — it sits too close to the plain border in both themes. */
+  --focus-ring: #e6ebf2;
 }
 
 :root[data-theme="light"] {
@@ -39,6 +43,7 @@
   --accent-fill: #1f7a4d;
   --accent-fill-hover: #17603c;
   --accent-on-fill: #ffffff;
+  --focus-ring: #2a2f36;
 }
 
 :root {
@@ -358,6 +363,34 @@ body {
   overflow: hidden;
 }
 
+.tool-card:focus-within {
+  border-color: var(--focus-ring);
+  border-left-color: var(--focus-ring);
+}
+
+.tool-summary:focus-visible {
+  outline: none;
+}
+
+.tool-preview {
+  padding: 0 11px 7px 26px;
+  cursor: pointer;
+}
+
+.tool-preview pre {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+.tool-preview.failed pre {
+  color: var(--danger-text);
+}
+
 .tool-summary {
   display: flex;
   align-items: baseline;
@@ -649,6 +682,8 @@ body {
 
 .slash-item.active {
   background: var(--selection);
+  outline: 1px solid var(--focus-ring);
+  outline-offset: -1px;
 }
 
 .slash-label {
@@ -766,12 +801,16 @@ body {
 }
 
 .dialog-option.focused {
-  border-color: var(--accent-border);
+  border-color: var(--focus-ring);
 }
 
 .dialog-option.selected {
   border-color: var(--accent-border);
   background: var(--panel-raised);
+}
+
+.dialog-option.selected.focused {
+  border-color: var(--focus-ring);
 }
 
 .dialog-option.negative.focused {

@@ -139,6 +139,19 @@ it with the user rather than quietly changing it.
   into chasing that in the wrong place.
 - **The formatting toolbar's active states are `on` and `mixed`.** There is no `active`
   class on a format button; `stateClass` emits `on`, `mixed` or nothing.
-- **Shift+Tab cycles the permission mode, so outdent moved to `Mod-[`.** The composer
-  intercepts Shift+Tab in the capture phase before CodeMirror sees it. `Mod-]` still
-  indents.
+- **Shift+Tab cycles the permission mode, so indent moved to `Mod+]`.** The composer
+  intercepts Shift+Tab in the capture phase before CodeMirror sees it. `Mod+[` still
+  outdents. Likewise, while Enter is set to send, a bare Tab leaves the composer for the
+  Send button instead of inserting a tab — a key that sends should not also be the key
+  that inserts whitespace.
+- **Sessions change over the control channel, not by sending a command.** `set_model` and
+  `set_permission_mode` exist as control requests, and they are the only way the app
+  learns what happened: sending `/config model=…` as a message changes the setting with
+  nothing reporting back, so the header keeps showing the old value. `set_model` replies
+  with nothing at all, which is why the model in the header comes from the
+  `get_context_usage` reading that follows it — that is also what resolves an alias like
+  `sonnet` to the model actually in use.
+- **Hover must not be able to steal the keyboard's selection.** A list can shift under a
+  stationary pointer as it scrolls, and the browser reports that as movement over
+  whatever is now beneath the cursor. `useHoverIntent` ignores anything under a few
+  pixels, which is what keeps arrow-key navigation from being undone a frame later.

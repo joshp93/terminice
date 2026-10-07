@@ -15,11 +15,29 @@ export type ToolCardProps = {
   hooks: HookNote[];
 };
 
+/** How many lines of output a collapsed card shows. */
+const PREVIEW_LINES = 2;
+
 /**
- * Renders a tool call, collapsed to one line until it is opened.
+ * Takes the first lines of a result, and counts what is left.
  *
- * The command is always visible in the summary; expanding reveals the exact
- * input that was sent and everything the tool returned.
+ * @param text - The full result.
+ * @param count - How many lines to keep.
+ * @returns The lines to show and how many were held back.
+ */
+function previewOf(text: string, count: number): { lines: string[]; hidden: number } {
+  const trimmed = text.replace(/\s+$/, "");
+  if (trimmed.length === 0) return { lines: [], hidden: 0 };
+  const lines = trimmed.split("\n");
+  return { lines: lines.slice(0, count), hidden: Math.max(0, lines.length - count) };
+}
+
+/**
+ * Renders a tool call, collapsed to its summary and the start of its output.
+ *
+ * Collapsed, the command stays visible and so do the first couple of lines the
+ * tool printed, so a run is readable without opening anything. Expanding
+ * reveals the exact input, the whole output and any hook that ran around it.
  *
  * @param props - The call and its result.
  * @returns The rendered tool card.
@@ -27,6 +45,7 @@ export type ToolCardProps = {
 export function ToolCard({ name, detail, input, result, status, hooks }: ToolCardProps) {
   const [open, setOpen] = useState(false);
   const expandable = input.length > 0 || result.length > 0;
+  const preview = previewOf(result, PREVIEW_LINES);
   const notable = hooks.filter(
     (hook) => (hook.exitCode !== null && hook.exitCode !== 0) || hook.output.trim().length > 0,
   );
@@ -43,7 +62,11 @@ export function ToolCard({ name, detail, input, result, status, hooks }: ToolCar
         <span className={`tool-status ${status}`} aria-hidden="true" />
         <span className="tool-name">{name}</span>
         {detail.length > 0 && <span className="tool-detail">{detail}</span>}
-        {expandable && <span className="tool-disclosure">{open ? "hide" : "show"}</span>}
+        {expandable && (
+          <span className="tool-disclosure">
+            {open ? "hide" : preview.hidden > 0 ? `show ${preview.hidden} more` : "show"}
+          </span>
+        )}
       </button>
 
       {hooks.length > 0 && (
@@ -60,6 +83,18 @@ export function ToolCard({ name, detail, input, result, status, hooks }: ToolCar
               {hook.exitCode !== null && hook.exitCode !== 0 ? ` · exit ${hook.exitCode}` : ""}
             </span>
           ))}
+        </div>
+      )}
+
+      {!open && preview.lines.length > 0 && (
+        <div
+          className={status === "error" ? "tool-preview failed" : "tool-preview"}
+          onClick={() => setOpen(true)}
+        >
+          <pre>
+            {preview.lines.join("\n")}
+            {preview.hidden > 0 ? "\n…" : ""}
+          </pre>
         </div>
       )}
 

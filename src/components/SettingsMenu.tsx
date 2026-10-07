@@ -22,20 +22,45 @@ export type SettingsMenuProps = {
  */
 export function SettingsMenu({ settings, onChange, open, onOpenChange }: SettingsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
+
+    const controls = (): HTMLElement[] => {
+      const panel = panelRef.current;
+      if (!panel) return [];
+      return Array.from(panel.querySelectorAll<HTMLElement>("button:not([disabled])"));
+    };
+
+    controls()[0]?.focus();
+
     const closeOnOutsideClick = (event: PointerEvent): void => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) onOpenChange(false);
     };
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") onOpenChange(false);
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        onOpenChange(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = controls();
+      if (focusable.length === 0) return;
+      const current = focusable.indexOf(document.activeElement as HTMLElement);
+      const step = event.shiftKey ? -1 : 1;
+      const next = (current + step + focusable.length) % focusable.length;
+      focusable[next]?.focus();
+      event.preventDefault();
+      event.stopPropagation();
     };
+
     document.addEventListener("pointerdown", closeOnOutsideClick);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsideClick);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", onKeyDown, true);
     };
   }, [open, onOpenChange]);
 
@@ -53,7 +78,7 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
         <CogIcon />
       </button>
       {open && (
-        <div className="settings-panel" role="dialog" aria-label="Settings">
+        <div className="settings-panel" role="dialog" aria-label="Settings" ref={panelRef} tabIndex={-1}>
           <SegmentedChoice
             label="Enter key"
             value={settings.enterBehaviour}

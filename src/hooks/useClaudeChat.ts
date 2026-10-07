@@ -60,6 +60,7 @@ export type ClaudeSession = {
   interrupt: () => void;
   resolve: (resolution: PromptResolution) => void;
   setPermissionMode: (mode: string) => void;
+  setModel: (value: string) => void;
   cyclePermissionMode: () => void;
   refreshSessions: () => void;
   refreshMcp: () => void;
@@ -217,6 +218,9 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   /**
    * Re-reads the CLI's own context breakdown.
    *
+   * This is also the authoritative source for the model in use: `set_model`
+   * reports nothing back, but the next reading names the model it switched to.
+   *
    * @param backendId - The session to ask.
    */
   const askContext = useCallback(
@@ -224,7 +228,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       request(backendId, { subtype: "get_context_usage" }, (envelope) => {
         const usage = readContextUsage(envelope.response);
         if (!usage) return;
-        patchState(backendId, (state) => ({ ...state, contextUsage: usage }));
+        patchState(backendId, (state) => ({
+          ...state,
+          contextUsage: usage,
+          model: usage.model || state.model,
+        }));
       });
     },
     [request, patchState],
@@ -590,6 +598,32 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     [request, patchState],
   );
 
+  /**
+   * Switches the model used for the rest of the session.
+   *
+   * `set_model` answers with nothing, so the model shown in the header comes
+   * from the context reading that follows rather than from the value asked for:
+   * the CLI resolves aliases like `sonnet` to whatever that means today.
+   *
+   * @param value - The model to switch to, as the CLI names it.
+   */
+  const setModel = useCallback(
+    (value: string) => {
+      const active = activeRef.current;
+      if (active === null) return;
+      request(active, { subtype: "set_model", model: value }, (envelope) => {
+        if (envelope.subtype === "error") {
+          patchState(active, (state) =>
+            withNotice(state, `Could not switch model: ${envelope.error}`),
+          );
+          return;
+        }
+        askContext(active);
+      });
+    },
+    [request, patchState, askContext],
+  );
+
   const cyclePermissionMode = useCallback(() => {
     const active = activeRef.current;
     const record = active === null ? undefined : storeRef.current.get(active);
@@ -661,6 +695,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     interrupt,
     resolve,
     setPermissionMode,
+    setModel,
     cyclePermissionMode,
     refreshSessions: loadTranscripts,
     refreshMcp,

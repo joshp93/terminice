@@ -53,6 +53,7 @@ export function Composer({
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
+  const sendButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleRef = useRef<ComposerHandle | null>(null);
   const menuRef = useRef(menu);
   const sendRef = useRef(onSend);
@@ -149,6 +150,17 @@ export function Composer({
   const toggleList = useCallback((kind: ListKind) => handleRef.current?.toggleList(kind), []);
   const toggleCodeBlock = useCallback(() => handleRef.current?.toggleCodeBlock(), []);
 
+  /**
+   * Puts a menu entry into the composer without sending it.
+   *
+   * @param entry - The entry to insert.
+   */
+  const insertEntry = useCallback((entry: MenuEntry) => {
+    setSubmenus([]);
+    setHighlight(0);
+    if (entry.label.startsWith("/")) handleRef.current?.setText(`${entry.label} `);
+  }, []);
+
   const handleKeyDownCapture = useCallback(
     (event: React.KeyboardEvent) => {
       const handle = handleRef.current;
@@ -177,29 +189,46 @@ export function Composer({
         return;
       }
 
-      if (!menuOpen) return;
+      if (menuOpen) {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          event.stopPropagation();
+          setHighlight((current) => Math.min(current + 1, Math.max(entries.length - 1, 0)));
+          return;
+        }
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          event.stopPropagation();
+          setHighlight((current) => Math.max(current - 1, 0));
+          return;
+        }
+        if (event.key === "Enter") {
+          const entry = entries[highlight];
+          if (!entry) return;
+          event.preventDefault();
+          event.stopPropagation();
+          choose(entry);
+          return;
+        }
+        if (event.key === "Tab") {
+          const entry = entries[highlight];
+          event.preventDefault();
+          event.stopPropagation();
+          if (entry) insertEntry(entry);
+          return;
+        }
+        return;
+      }
 
-      if (event.key === "ArrowDown") {
+      // With Enter sending, Tab is a way out of the composer rather than a
+      // keystroke the text needs.
+      if (event.key === "Tab" && submitsRef.current()) {
         event.preventDefault();
         event.stopPropagation();
-        setHighlight((current) => Math.min(current + 1, Math.max(entries.length - 1, 0)));
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        event.stopPropagation();
-        setHighlight((current) => Math.max(current - 1, 0));
-        return;
-      }
-      if (event.key === "Enter") {
-        const entry = entries[highlight];
-        if (!entry) return;
-        event.preventDefault();
-        event.stopPropagation();
-        choose(entry);
+        sendButtonRef.current?.focus();
       }
     },
-    [choose, entries, highlight, menuOpen, submenus.length],
+    [choose, entries, highlight, insertEntry, menuOpen, submenus.length],
   );
 
   useEffect(() => {
@@ -275,7 +304,7 @@ export function Composer({
             </button>
           )}
         </div>
-        <button type="button" className="send" onClick={submit}>
+        <button type="button" className="send" ref={sendButtonRef} onClick={submit}>
           Send
         </button>
       </div>

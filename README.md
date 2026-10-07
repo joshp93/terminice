@@ -14,9 +14,11 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **Approvals in the GUI** — anything Claude wants to do that needs permission arrives as
   a card with Allow / Always / Deny. Interactive questions arrive as cards with buttons
   and tick boxes, and `n` opens a notes pane beside a choice, which is sent with the
-  answer.
-- **Tool calls you can open** — every call is a one-line card showing the command; expand
-  it for the exact input, the full output and any hook that ran around it.
+  answer. In the notes pane Enter sends and `Ctrl+Enter` starts a new line — the *Enter
+  key* setting is about the composer, not about answering a question.
+- **Tool calls you can open** — every call shows the command and the first couple of lines
+  it printed; expanding it reveals the exact input, the whole output and any hook that ran
+  around it. Cards take a focus ring, by keyboard or mouse.
 - **Slash menu** — `/` opens a filterable list of all 74 commands, with real pickers for
   models, effort, permissions, MCP servers and Claude's own settings.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
@@ -142,17 +144,18 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `Enter` | Sends, unless *Enter key* is set to new line |
 | `Shift+Enter` | Inserts a newline |
 | `Ctrl+Enter` | Always sends |
-| `Tab` / `Ctrl+]` | Indent the line, and list items with it |
+| `Tab` | With the slash menu open, puts the entry in the composer without sending it; otherwise, when Enter sends, moves focus to the Send button |
+| `Ctrl+]` / `Ctrl+[` | Indent / outdent the line, and list items with it |
 | `Shift+Tab` | **Cycle the permission mode** (Ask → Plan → Accept edits → Auto → Don't ask) |
-| `Ctrl+[` | Outdent the line |
 | `Esc` | Clears the composer; pressed again, stops a running turn |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
 | `Ctrl+E` | Inline code |
 | `Ctrl+Shift+X` | Strikethrough |
 
-(`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch — outdent moved to
-`Ctrl+[` to make room.
+(`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch, so indenting moved to
+`Ctrl+]` — and while Enter is set to send, Tab leaves the composer rather than inserting
+one, since a keystroke that sends should not also be how you get a tab.
 
 **Formatting buttons.** With a selection they apply to it; with nothing selected they
 *arm* a style, so the next character typed is wrapped. Pressing the same style again
@@ -189,22 +192,31 @@ so Enter usually takes what you meant; arrows move, and clicking works too.
 Every one of the CLI's 74 commands is listed, including the ones that refuse to run
 outside a terminal — those fail with the CLI's own message rather than being hidden here.
 
+`Enter` runs the highlighted entry. `Tab` puts it in the composer instead, so you can add
+arguments before sending it.
+
 Entries that need more than a yes/no open a **submenu**: the parent closes, the submenu
 takes its place, and its header names the parent with *esc to go back*. Real pickers are
 built for:
 
 | Command | Picker built from |
 |---|---|
-| `/model` | The CLI's `models[]`, with descriptions |
+| `/model` | The CLI's `models[]`, with descriptions, and the current one marked |
 | `/effort` | The levels the current model advertises |
 | `/config` | Every key `/config` documents, with its legal values |
 | `/mcp` | Live server list from `mcp_status` |
 | `/context` | The CLI's own category breakdown, with token counts |
-| `/output-style`, `/color`, `/agents` | The values the CLI lists for each |
+| `/output-style`, `/color` | The values the CLI lists for each |
+| `/plugins`, `/skills` | What the CLI announced it had loaded |
 | `/resume` | Past transcripts for this directory, newest first |
 
 Two entries are terminice's own, not the CLI's: **Terminice settings** (theme, Enter key —
 a separate file from Claude's settings) and **`/resume`**.
+
+Changing the model or the permission mode goes over the control channel rather than being
+sent as a `/config …` message. That distinction matters: a message changes the setting
+without anything telling the app it happened, so the header would have kept showing the
+old value.
 
 The command catalogue, the model list and the context breakdown all come from the CLI's
 `initialize` response rather than being hardcoded, so a new command or model appears here

@@ -48,6 +48,8 @@ export type ContextUsage = {
   maxTokens: number;
   /** Whole-number percentage, exactly as `/context` reports it. */
   percentage: number;
+  /** The model actually in use, as the CLI reports it. */
+  model: string;
 };
 
 /** One MCP server and its current state. */
@@ -282,6 +284,7 @@ export function readContextUsage(payload: unknown): ContextUsage | null {
     totalTokens: asNumber(record.totalTokens) ?? 0,
     maxTokens: asNumber(record.maxTokens) ?? 0,
     percentage: asNumber(record.percentage) ?? 0,
+    model: asText(record.model),
   };
 }
 

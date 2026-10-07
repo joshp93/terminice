@@ -39,6 +39,12 @@ export type SlashMenuHost = {
   sessions: SessionSummary[];
   /** Sends a line to Claude as though it had been typed. */
   runCommand: (command: string) => void;
+  /** Switches the permission mode over the control channel. */
+  setPermissionMode: (mode: string) => void;
+  /** Switches the model over the control channel. */
+  setModel: (value: string) => void;
+  /** The model in use, as the CLI reports it. */
+  currentModel: string;
   /** Puts text in the composer without sending it. Defaults to sending. */
   fillComposer?: (text: string) => void;
   /** Opens terminice's own settings, which are separate from Claude's. */
@@ -140,15 +146,20 @@ function valueEntry(
  * Builds the `/model` submenu.
  *
  * @param models - The models the CLI offers.
- * @param send - Sends a command line to Claude.
+ * @param current - The model in use, marked in the list.
+ * @param choose - Switches the model over the control channel.
  * @returns The menu entry.
  */
-function modelEntry(models: ModelInfo[], send: (command: string) => void): MenuEntry {
+function modelEntry(
+  models: ModelInfo[],
+  current: string,
+  choose: (value: string) => void,
+): MenuEntry {
   return entry({
     id: "command:model",
     label: "/model",
     detail: "Choose the model for this session",
-    hint: "<model>",
+    hint: current,
     submenu: () =>
       models.map((model) =>
         entry({
@@ -156,7 +167,8 @@ function modelEntry(models: ModelInfo[], send: (command: string) => void): MenuE
           label: model.displayName,
           detail: model.description,
           hint: model.value,
-          run: () => send(`/model ${model.value}`),
+          selected: model.resolvedModel === current,
+          run: () => choose(model.value),
         }),
       ),
   });
@@ -234,10 +246,20 @@ function mcpEntry(
 /**
  * Builds the `/config` submenu from the keys the CLI documents.
  *
+ * Two of the keys have a control request of their own, and going through it is
+ * what keeps the header in step — sending `/config model=…` as a message
+ * changes the model without anything telling us it happened.
+ *
  * @param send - Sends a command line to Claude.
+ * @param host - The application actions, for the keys that bypass messaging.
  * @returns The menu entry.
  */
-function configEntry(send: (command: string) => void): MenuEntry {
+function configEntry(send: (command: string) => void, host: SlashMenuHost): MenuEntry {
+  const direct: Record<string, (value: string) => void> = {
+    model: host.setModel,
+    permissionMode: host.setPermissionMode,
+  };
+
   return entry({
     id: "command:config",
     label: "/config",
@@ -258,13 +280,12 @@ function configEntry(send: (command: string) => void): MenuEntry {
                     entry({
                       id: `config:${config.key}:${value}`,
                       label: value,
-                      run: () => send(`/config ${config.key}=${value}`),
+                      run: () =>
+                        direct[config.key]?.(value) ?? send(`/config ${config.key}=${value}`),
                     }),
                   ),
           run:
-            config.values.length === 0
-              ? () => send(`/config ${config.key}=`)
-              : undefined,
+            config.values.length === 0 ? () => send(`/config ${config.key}=`) : undefined,
         }),
       ),
   });
@@ -373,12 +394,9 @@ function buildCurated(host: SlashMenuHost): Map<string, MenuEntry> {
   const send = host.runCommand;
   const curated = new Map<string, MenuEntry>();
 
-  curated.set(
-    "model",
-    modelEntry(catalogue?.models ?? [], send),
-  );
+  curated.set("model", modelEntry(catalogue?.models ?? [], host.currentModel, host.setModel));
   curated.set("effort", effortEntry(catalogue?.models ?? [], send));
-  curated.set("config", configEntry(send));
+  curated.set("config", configEntry(send, host));
   curated.set("mcp", mcpEntry(host.mcpServers, send, host.refreshMcp));
   curated.set("context", contextEntry(host.contextUsage, send));
   curated.set(
@@ -599,7 +617,7 @@ export function buildRootEntries(host: SlashMenuHost): MenuEntry[] {
             label: describePermissionMode(mode),
             detail: mode,
             selected: mode === host.permissionMode,
-            run: () => host.runCommand(`/config permissionMode=${mode}`),
+            run: () => host.setPermissionMode(mode),
           }),
         ),
     }),

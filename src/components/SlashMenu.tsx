@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from "react";
+import { useHoverIntent } from "../hooks/useHoverIntent";
 import type { MenuEntry } from "../lib/slashMenu";
 
 /** Props for {@link SlashMenu}. */
@@ -30,6 +31,7 @@ export function SlashMenu({
   onChoose,
 }: SlashMenuProps) {
   const listRef = useRef<HTMLUListElement | null>(null);
+  const hover = useHoverIntent(onHighlight);
 
   useLayoutEffect(() => {
     const item = listRef.current?.children[highlight];
@@ -52,7 +54,7 @@ export function SlashMenu({
               role="option"
               aria-selected={index === highlight}
               className={index === highlight ? "slash-item active" : "slash-item"}
-              onMouseMove={() => onHighlight(index)}
+              onMouseMove={hover(index)}
               onClick={() => onChoose(entry)}
             >
               <span className="slash-label">

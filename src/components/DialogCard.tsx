@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useHoverIntent } from "../hooks/useHoverIntent";
 import type {
   PermissionChoice,
   Prompt,
@@ -71,6 +72,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   );
   const notesRef = useRef<HTMLTextAreaElement | null>(null);
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
+  const hover = useHoverIntent(setFocus);
 
   const questions: QuestionModel[] = prompt.kind === "question" ? prompt.questions : [];
   const choices: PermissionChoice[] = prompt.kind === "permission" ? prompt.choices : [];
@@ -187,6 +189,14 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         if (event.key === "Escape") {
           notesRef.current?.blur();
           event.preventDefault();
+          return;
+        }
+        // The notes pane is part of the answer, so Enter answers rather than
+        // starting a new line. That holds whatever the composer is set to do;
+        // the setting is about the composer, not about this.
+        if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          if (focus.kind === "option") chooseOption(focus.question, focus.option);
         }
         return;
       }
@@ -273,7 +283,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    onMouseMove={() => setFocus({ kind: "choice", index })}
+                    onMouseMove={hover({ kind: "choice", index })}
                     onClick={() => chooseChoice(index)}
                   >
                     <span className="dialog-option-body">
@@ -322,9 +332,11 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                         ]
                           .filter(Boolean)
                           .join(" ")}
-                        onMouseMove={() =>
-                          setFocus({ kind: "option", question: questionNumber, option: optionNumber })
-                        }
+                        onMouseMove={hover({
+                          kind: "option",
+                          question: questionNumber,
+                          option: optionNumber,
+                        })}
                         onClick={() => chooseOption(questionNumber, optionNumber)}
                       >
                         {question.multiSelect && (
@@ -361,7 +373,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
             ]
               .filter(Boolean)
               .join(" ")}
-            onMouseMove={() => setFocus({ kind: "submit" })}
+            onMouseMove={hover({ kind: "submit" })}
             onClick={() => {
               if (answered) resolveQuestions(selections, notes);
             }}
@@ -387,7 +399,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         <div className="dialog-notes">
           <div className="dialog-notes-header">
             <span className="dialog-notes-title">{focusedOption?.option.label}</span>
-            <span className="dialog-notes-hint">sent with your answer</span>
+            <span className="dialog-notes-hint">Enter sends · Ctrl+Enter for a new line</span>
           </div>
           <textarea
             ref={notesRef}
