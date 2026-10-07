@@ -72,6 +72,10 @@ it with the user rather than quietly changing it.
    `run_command`, `execute_command` are all rejected). The terminal UI handles `!` itself,
    so parity means running the command here and handing Claude the result in the wrappers
    the CLI uses, `<bash-input>` and `<bash-stdout>`/`<bash-stderr>`.
+   Deliberate addition: a `<bash-exit-code>`. Verified against real transcripts that the
+   CLI sends no exit code and no extra message fields, which leaves failure to be inferred
+   from an empty stderr — a command can fail quietly and look like one that worked. Do not
+   remove it to "match the format"; it is the one thing here that is better than parity.
 
 ## Code style
 

@@ -589,7 +589,8 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
           shellContextRef.current = [
             ...shellContextRef.current,
             `<bash-input> ${command}</bash-input>`,
-            `<bash-stdout>${output.stdout}</bash-stdout><bash-stderr>${output.stderr}</bash-stderr>`,
+            `<bash-stdout>${output.stdout}</bash-stdout><bash-stderr>${output.stderr}</bash-stderr>` +
+              `<bash-exit-code>${output.code ?? "unknown"}</bash-exit-code>`,
           ];
         })
         .catch((error: unknown) => {

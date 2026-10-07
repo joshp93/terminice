@@ -254,6 +254,12 @@ The command runs in bash, appears in the transcript with its output, and is hand
 Claude wrapped as `<bash-input>` and `<bash-stdout>`/`<bash-stderr>` — the same tags Claude
 Code uses — so the model reads it the way it always has.
 
+One addition: a `<bash-exit-code>` alongside them. Claude Code's own wrapper stops at the
+output, which leaves success and failure to be inferred from whether stderr happens to be
+empty — a command can fail silently and look identical to one that worked. With the code
+present, the model reports "failed (exit 1)" and "succeeded (exit 0)" correctly, including
+across several commands in one message.
+
 **It travels with your next message rather than being sent on its own.** Running `!ls`
 should not make Claude reply, and a user message is what starts a turn; the output waits
 until you next say something, which is when Claude would have seen it anyway.
