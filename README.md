@@ -37,8 +37,9 @@ Markdown, with a rich composer that writes the Markdown for you.
   reports how much it freed. The bar does not track a percentage, because the CLI does not
   report one — see below.
 - **The path follows the session, not the launch directory.** The CLI repeats its `init`
-  event when the working directory changes, so the header updates when Claude moves — and
-  `!` commands run where the session actually is rather than where it started.
+  event when the working directory changes, so the header updates when Claude moves — a
+  turn later, since `init` opens a turn rather than firing the moment `cd` runs. `!`
+  commands run where the session actually is rather than where it started.
 
 ## Architecture
 
