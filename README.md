@@ -145,7 +145,8 @@ pnpm app          # dev: Vite + the Tauri shell with hot reload
 `pnpm app:build` leaves a portable `terminice.exe` in `src-tauri/target/release/` — about
 3.4 MB with nothing beside it, because the frontend is compiled in and the window is the
 system's own webview — alongside a WiX MSI and an NSIS setup in `bundle/`. The NSIS setup
-is the one to install: it puts the binary in `C:\Program Files` and adds it to `PATH`.
+is the one to install: it installs per-user, needs no admin rights, and adds itself to
+`PATH`.
 
 ### Configuration
 
@@ -349,8 +350,8 @@ ourselves.
 - **How you get a `terminice` command depends on the platform.** The app opens the
   directory given as `argv[1]` when that is a directory, and the working directory
   otherwise, so `terminice` from inside a project opens that project.
-  - **Windows** — the NSIS installer asks for admin, installs to
-    `C:\Program Files\terminice`, and appends that to the machine `PATH`. The uninstaller
+  - **Windows** — the NSIS installer is per-user, so it asks for no admin rights, installs
+    under `%LOCALAPPDATA%\terminice`, and appends that to your `PATH`. The uninstaller
     takes it back off.
   - **Linux** — the `.deb` and `.rpm` put the binary in `/usr/bin`, which is already on
     `PATH`. Nothing to configure.
