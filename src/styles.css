@@ -16,7 +16,6 @@
   --accent: #7dd3a0;
   --accent-border: #2f6b4c;
   --accent-fill: #2f6b4c;
-  --accent-fill-hover: #3a8059;
   --accent-on-fill: #eafff3;
   /* The ring around whatever the keyboard is currently on. It has to read as
      an unmistakable edge against its own background, which the accent border
@@ -41,7 +40,6 @@
   --accent: #1a6b45;
   --accent-border: #7fc4a0;
   --accent-fill: #1f7a4d;
-  --accent-fill-hover: #17603c;
   --accent-on-fill: #ffffff;
   --focus-ring: #2a2f36;
 }
@@ -820,17 +818,14 @@ body {
 .dialog-option.submit-answer {
   margin-top: 9px;
   justify-content: center;
-  border-color: var(--accent-border);
-  background: var(--accent-fill);
-  color: var(--accent-on-fill);
   font-weight: 600;
 }
 
 .dialog-option.submit-answer.disabled {
   border-color: var(--border);
-  background: transparent;
   color: var(--text-dim);
   font-weight: 400;
+  cursor: default;
 }
 
 .dialog-option-body {
@@ -1040,15 +1035,111 @@ body {
   height: var(--composer-line);
   padding: 0 20px;
   border-radius: 8px;
-  border: 1px solid var(--accent-border);
-  background: var(--accent-fill);
-  color: var(--accent-on-fill);
   cursor: pointer;
   align-self: end;
 }
 
-.send:hover {
-  background: var(--accent-fill-hover);
+/*
+ * Green buttons rest as an outline and fill on hover, selection or focus. The
+ * fill is a scaled pseudo-element rather than a colour change so it spreads
+ * from the middle outwards, which is what makes the state readable at a glance.
+ * `isolation` keeps the negative-z child above the button's own background but
+ * below its label.
+ */
+.green-button {
+  background-color: var(--bg);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.green-button,
+.segment {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  transition:
+    color 0.4s ease,
+    border-color 0.4s ease;
+}
+
+.green-button::before,
+.segment::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--accent-fill);
+  transform: scale(0);
+  transition: transform 0.4s ease;
+}
+
+.green-button:hover::before,
+.green-button:focus-visible::before,
+.segment:hover::before,
+.segment:focus-visible::before,
+.segment.active::before {
+  transform: scale(1);
+}
+
+.green-button:hover,
+.green-button:focus-visible,
+.segment:hover,
+.segment:focus-visible,
+.segment.active {
+  color: var(--accent-on-fill);
+}
+
+.green-button.disabled::before {
+  transform: scale(0);
+}
+
+.green-button:focus-visible,
+.segment:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 7px;
+  padding: 5px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.progress-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: progress-fill 1.6s ease-in-out infinite;
+}
+
+@keyframes progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.progress-label {
+  color: var(--accent);
+  font-size: 11.5px;
+  white-space: nowrap;
 }
 
 .cm-editor {

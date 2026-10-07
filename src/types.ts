@@ -53,6 +53,8 @@ export type ChatState = {
   /** Loaded skill names. */
   skills: string[];
   permissionMode: string;
+  /** True while the CLI is summarising the conversation. */
+  compacting: boolean;
 };
 
 /** Creates an empty chat state. */
@@ -70,6 +72,7 @@ export function createChatState(): ChatState {
     plugins: [],
     skills: [],
     permissionMode: "default",
+    compacting: false,
   };
 }
 

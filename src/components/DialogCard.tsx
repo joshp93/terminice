@@ -185,6 +185,12 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      const step = (delta: number): void => {
+        const next = Math.min(Math.max(settledIndex + delta, 0), targets.length - 1);
+        const target = targets[next];
+        if (target) setFocus(target);
+      };
+
       if (event.target === notesRef.current) {
         if (event.key === "Escape") {
           notesRef.current?.blur();
@@ -197,23 +203,28 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
           event.preventDefault();
           if (focus.kind === "option") chooseOption(focus.question, focus.option);
+          return;
+        }
+        // Arrows and Tab walk the options rather than the text, so the notes
+        // pane is not a trap: leave it and carry on choosing.
+        const forward = event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey);
+        const backward = event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey);
+        if (forward || backward) {
+          event.preventDefault();
+          event.stopPropagation();
+          notesRef.current?.blur();
+          step(forward ? 1 : -1);
         }
         return;
       }
 
-      const move = (delta: number): void => {
-        const next = Math.min(Math.max(settledIndex + delta, 0), targets.length - 1);
-        const target = targets[next];
-        if (target) setFocus(target);
-      };
-
       if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
-        move(1);
+        step(1);
         event.preventDefault();
         return;
       }
       if (event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey)) {
-        move(-1);
+        step(-1);
         event.preventDefault();
         return;
       }
@@ -368,6 +379,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
             className={[
               "dialog-option",
               "submit-answer",
+              "green-button",
               answered ? "" : "disabled",
               focus.kind === "submit" ? "focused" : "",
             ]

@@ -192,10 +192,41 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
   if (subtype === "status") {
     const status = asText(message.status);
     if (status === "requesting") return { ...state, busy: true };
-    if (status === "idle") return { ...state, busy: false };
+    if (status === "idle") return { ...state, busy: false, compacting: false };
+    if (status === "compacting") return { ...state, busy: true, compacting: true };
   }
 
+  if (subtype === "compact_boundary") return applyCompactBoundary(state, message);
+
   return state;
+}
+
+/**
+ * Records the end of a compaction.
+ *
+ * The CLI reports this as a boundary carrying token counts rather than as a
+ * series of progress steps, so this is where the only real figures come from —
+ * and it is what the bar is waiting on to disappear.
+ */
+function applyCompactBoundary(state: ChatState, message: Json): ChatState {
+  const metadata = asRecord(message.compact_metadata);
+  const before = asNumber(metadata?.pre_tokens) ?? 0;
+  const after = asNumber(metadata?.post_tokens) ?? 0;
+  const dropped = asNumber(metadata?.cumulative_dropped_tokens) ?? Math.max(0, before - after);
+
+  return {
+    ...state,
+    busy: false,
+    compacting: false,
+    entries: [
+      ...state.entries,
+      {
+        id: nextId("notice"),
+        role: "notice",
+        text: `Compacted: ${before.toLocaleString()} → ${after.toLocaleString()} tokens, ${dropped.toLocaleString()} freed.`,
+      },
+    ],
+  };
 }
 
 /**
@@ -337,6 +368,7 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
     entries: [...state.entries, ...additions, ...denials],
     streaming: "",
     busy: false,
+    compacting: false,
     costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
   };
 

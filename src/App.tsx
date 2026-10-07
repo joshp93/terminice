@@ -123,6 +123,7 @@ export function App() {
           onSend={chat.send}
           menu={menu}
           running={chat.state.busy}
+          compacting={chat.state.compacting}
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}
         />

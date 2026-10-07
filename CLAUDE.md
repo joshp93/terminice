@@ -155,3 +155,8 @@ it with the user rather than quietly changing it.
   stationary pointer as it scrolls, and the browser reports that as movement over
   whatever is now beneath the cursor. `useHoverIntent` ignores anything under a few
   pixels, which is what keeps arrow-key navigation from being undone a frame later.
+- **Compaction is reported as a start and an end, not as progress.** The CLI emits
+  `system/status` with `status: "compacting"` when it begins and `system/compact_boundary`
+  when it finishes, carrying `pre_tokens`, `post_tokens` and `cumulative_dropped_tokens`.
+  There are no steps in between, so the bar sweeps rather than inventing a percentage —
+  the only real figures arrive at the end. Those are worth showing when they do.

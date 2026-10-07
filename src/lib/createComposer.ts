@@ -67,6 +67,10 @@ export type ComposerHandle = {
   setText: (text: string) => void;
   clear: () => void;
   insertText: (text: string) => void;
+  /** True when the caret is at the very start, with nothing selected. */
+  caretAtStart: () => boolean;
+  /** True when the caret is at the very end, with nothing selected. */
+  caretAtEnd: () => boolean;
   toggleFormat: (id: FormatId) => void;
   toggleList: (kind: ListKind) => void;
   toggleCodeBlock: () => void;
@@ -541,6 +545,14 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const range = view.state.selection.main;
       replaceRange(view, range.from, range.to, text, range.from + text.length);
       view.focus();
+    },
+    caretAtStart: () => {
+      const range = view.state.selection.main;
+      return range.from === range.to && range.from === 0;
+    },
+    caretAtEnd: () => {
+      const range = view.state.selection.main;
+      return range.from === range.to && range.to === view.state.doc.length;
     },
     toggleFormat: (id) => toggleFormat(view, id),
     toggleList: (kind) => toggleList(view, kind),

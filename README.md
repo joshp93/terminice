@@ -27,7 +27,8 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **Formatting that reads the document** — the toolbar reflects the Markdown around the
   caret, so it shows what is actually there rather than only a pending toggle.
 - **Context from the CLI itself** — the header percentage is what `/context` reports, not
-  a ratio computed here.
+  a ratio computed here. Compaction shows a bar above the composer while it runs, then
+  reports how much it freed.
 
 ## Architecture
 
@@ -145,6 +146,7 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `Shift+Enter` | Inserts a newline |
 | `Ctrl+Enter` | Always sends |
 | `Tab` | With the slash menu open, puts the entry in the composer without sending it; otherwise, when Enter sends, moves focus to the Send button |
+| `↑` / `↓` | At the very start or very end of the message, steps back and forward through prompts you have already sent |
 | `Ctrl+]` / `Ctrl+[` | Indent / outdent the line, and list items with it |
 | `Shift+Tab` | **Cycle the permission mode** (Ask → Plan → Accept edits → Auto → Don't ask) |
 | `Esc` | Clears the composer; pressed again, stops a running turn |
@@ -156,6 +158,11 @@ ignored, so a hand-edited file cannot stop the app from starting.
 (`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch, so indenting moved to
 `Ctrl+]` — and while Enter is set to send, Tab leaves the composer rather than inserting
 one, since a keystroke that sends should not also be how you get a tab.
+
+**Prompt recall.** `↑` at the very start of a message steps back through what you have
+already sent, and `↓` at the very end steps forward again. Past the newest entry you get
+back whatever you were half-way through typing, so browsing never costs a draft. Both the
+composer and the commands you run from the `/` menu go into that history.
 
 **Formatting buttons.** With a selection they apply to it; with nothing selected they
 *arm* a style, so the next character typed is wrapped. Pressing the same style again

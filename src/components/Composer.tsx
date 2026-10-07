@@ -5,6 +5,7 @@ import type { FormatId } from "../lib/richFormat";
 import type { ListKind } from "../lib/listMarkers";
 import { buildRootEntries, filterEntries, type MenuEntry, type SlashMenuHost } from "../lib/slashMenu";
 import { FormatToolbar } from "./FormatToolbar";
+import { ProgressBar } from "./ProgressBar";
 import { SlashMenu } from "./SlashMenu";
 
 /** Props for {@link Composer}. */
@@ -16,6 +17,8 @@ export type ComposerProps = {
   menu: SlashMenuHost;
   /** Whether a turn is running, which shows the stop button. */
   running: boolean;
+  /** Whether the CLI is summarising the conversation. */
+  compacting: boolean;
   onStop: () => void;
   /** Cycles the permission mode; bound to Shift+Tab. */
   onCycleMode: () => void;
@@ -48,6 +51,7 @@ export function Composer({
   onSend,
   menu,
   running,
+  compacting,
   onStop,
   onCycleMode,
 }: ComposerProps) {
@@ -61,6 +65,12 @@ export function Composer({
   const runningRef = useRef(running);
   const stopRef = useRef(onStop);
   const cycleRef = useRef(onCycleMode);
+  /** Prompts that have been sent, oldest first, for recall with the arrows. */
+  const historyRef = useRef<string[]>([]);
+  /** Where recall currently sits, or null when editing the unsent draft. */
+  const historyIndexRef = useRef<number | null>(null);
+  /** What was typed but not sent, kept while browsing history. */
+  const draftRef = useRef("");
 
   const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
   const [submenus, setSubmenus] = useState<{ label: string; entries: MenuEntry[] }[]>([]);
@@ -76,16 +86,35 @@ export function Composer({
 
   const sessionSignature = menu.sessions.map((item) => `${item.id}:${item.live ? 1 : 0}`).join("|");
 
+  /**
+   * Adds a prompt to the recall history.
+   *
+   * @param text - What was sent.
+   */
+  const remember = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return;
+    if (historyRef.current.at(-1) === trimmed) return;
+    historyRef.current = [...historyRef.current, trimmed];
+    historyIndexRef.current = null;
+    draftRef.current = "";
+  }, []);
+
   const rootEntries = useMemo(
     () =>
       buildRootEntries({
         ...menuRef.current,
         fillComposer: (text: string) => handleRef.current?.setText(text),
+        runCommand: (command: string) => {
+          remember(command);
+          menuRef.current.runCommand(command);
+        },
       }),
     // The host's functions are read through a ref, so the menu only needs
     // rebuilding when the data behind it changes. The session list is compared
     // by signature because it is rebuilt on every render.
     [
+      remember,
       menu.catalogue,
       menu.contextUsage,
       menu.mcpServers,
@@ -128,7 +157,40 @@ export function Composer({
     const text = handle.getText();
     handle.clear();
     if (text.trim().length === 0) return;
+    remember(text);
     sendRef.current(text);
+  }, [remember]);
+
+  /**
+   * Steps through what has already been sent.
+   *
+   * Reaching the newest entry restores whatever was half-typed, so browsing
+   * back and forward never costs the draft.
+   *
+   * @param delta - -1 for older, 1 for newer.
+   */
+  const recall = useCallback((delta: number) => {
+    const handle = handleRef.current;
+    const history = historyRef.current;
+    if (!handle || history.length === 0) return;
+
+    const index = historyIndexRef.current;
+    if (index === null) {
+      if (delta > 0) return;
+      draftRef.current = handle.getText();
+      historyIndexRef.current = history.length - 1;
+    } else {
+      const next = index + delta;
+      if (next < 0) return;
+      if (next >= history.length) {
+        historyIndexRef.current = null;
+        handle.setText(draftRef.current);
+        return;
+      }
+      historyIndexRef.current = next;
+    }
+
+    handle.setText(history[historyIndexRef.current]);
   }, []);
 
   const choose = useCallback((entry: MenuEntry) => {
@@ -183,6 +245,8 @@ export function Composer({
         }
         if (handle.getText().length > 0) {
           handle.clear();
+          historyIndexRef.current = null;
+          draftRef.current = "";
           return;
         }
         if (runningRef.current) stopRef.current();
@@ -220,6 +284,22 @@ export function Composer({
         return;
       }
 
+      // Recalling a prompt takes the arrow keys only at the edges of the text,
+      // so moving around inside a message still works normally. Once browsing
+      // has started, the arrows stay in history whatever the caret is doing.
+      if (event.key === "ArrowUp" && (historyIndexRef.current !== null || handle.caretAtStart())) {
+        event.preventDefault();
+        event.stopPropagation();
+        recall(-1);
+        return;
+      }
+      if (event.key === "ArrowDown" && (historyIndexRef.current !== null || handle.caretAtEnd())) {
+        event.preventDefault();
+        event.stopPropagation();
+        recall(1);
+        return;
+      }
+
       // With Enter sending, Tab is a way out of the composer rather than a
       // keystroke the text needs.
       if (event.key === "Tab" && submitsRef.current()) {
@@ -228,7 +308,7 @@ export function Composer({
         sendButtonRef.current?.focus();
       }
     },
-    [choose, entries, highlight, insertEntry, menuOpen, submenus.length],
+    [choose, entries, highlight, insertEntry, menuOpen, recall, submenus.length],
   );
 
   useEffect(() => {
@@ -287,6 +367,7 @@ export function Composer({
           />
         )}
         <div className="composer-field">
+          {compacting && <ProgressBar label="Compacting…" />}
           <div
             className={running ? "composer-host busy" : "composer-host"}
             ref={hostRef}
@@ -304,7 +385,7 @@ export function Composer({
             </button>
           )}
         </div>
-        <button type="button" className="send" ref={sendButtonRef} onClick={submit}>
+        <button type="button" className="send green-button" ref={sendButtonRef} onClick={submit}>
           Send
         </button>
       </div>
