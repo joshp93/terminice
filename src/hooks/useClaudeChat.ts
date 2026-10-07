@@ -37,6 +37,8 @@ type SessionRecord = {
   status: string;
   /** True when the process is still alive but not on screen. */
   parked: boolean;
+  /** How long this session's turn may stay silent before it is interrupted. */
+  silenceMs: number;
 };
 
 /** The session API the UI consumes. */
@@ -68,6 +70,15 @@ export type ClaudeSession = {
  * which case silence is exactly what should happen.
  */
 const SILENCE_TIMEOUT_MS = 20_000;
+
+/**
+ * How long a slash command may stay silent.
+ *
+ * Commands are given longer because several of them — `/doctor` most of all —
+ * do their work before saying anything, and interrupting them would make a
+ * working command look broken.
+ */
+const COMMAND_SILENCE_TIMEOUT_MS = 120_000;
 
 /** How many finished-but-loaded sessions to keep before closing the oldest. */
 const MAX_PARKED = 3;
@@ -179,17 +190,19 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   const armSilence = useCallback(
     (backendId: string) => {
       clearSilence();
+      const record = storeRef.current.get(backendId);
+      const timeout = record?.silenceMs ?? SILENCE_TIMEOUT_MS;
       silenceRef.current = setTimeout(() => {
-        const record = storeRef.current.get(backendId);
-        if (!record || !record.state.busy || record.prompts.length > 0) return;
+        const current = storeRef.current.get(backendId);
+        if (!current || !current.state.busy || current.prompts.length > 0) return;
         request(backendId, { subtype: "interrupt" });
         patchState(backendId, (state) =>
           withNotice(
             { ...state, busy: false, streaming: "" },
-            "Claude produced no output for 20 seconds, so the turn was interrupted. Anything that needs a terminal of its own can only be run outside terminice.",
+            `Claude produced no output for ${Math.round(timeout / 1000)} seconds, so the turn was interrupted. A tool that needs a terminal of its own can only be run outside terminice.`,
           ),
         );
-      }, SILENCE_TIMEOUT_MS);
+      }, timeout);
     },
     [clearSilence, request, patchState],
   );
@@ -396,6 +409,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
             prompts: [],
             status: "running",
             parked: false,
+            silenceMs: SILENCE_TIMEOUT_MS,
           });
           activeRef.current = id;
           bump();
@@ -416,6 +430,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
             prompts: [],
             status: "unavailable",
             parked: false,
+            silenceMs: SILENCE_TIMEOUT_MS,
           });
           activeRef.current = id;
           bump();
@@ -481,6 +496,12 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       if (!record || record.status !== "running") return;
       if (text.trim().length === 0) return;
 
+      storeRef.current.set(active, {
+        ...record,
+        silenceMs: text.trimStart().startsWith("/")
+          ? COMMAND_SILENCE_TIMEOUT_MS
+          : SILENCE_TIMEOUT_MS,
+      });
       patchState(active, (state) => withUserMessage(state, text));
       writeLine(active, {
         type: "user",
@@ -518,7 +539,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
               annotations: resolution.annotations,
             });
 
-      storeRef.current.set(active, { ...record, prompts: record.prompts.slice(1) });
+      storeRef.current.set(active, {
+        ...record,
+        prompts: record.prompts.slice(1),
+        silenceMs: SILENCE_TIMEOUT_MS,
+      });
       bump();
       writeLine(active, line);
       armSilence(active);
