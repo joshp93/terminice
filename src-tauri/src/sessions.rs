@@ -198,7 +198,7 @@ pub fn list_sessions(cwd: String, limit: usize) -> Vec<SessionSummary> {
         return Vec::new();
     };
 
-    let mut sessions: Vec<SessionSummary> = entries
+    let mut sessions: Vec<(PathBuf, SessionSummary)> = entries
         .flatten()
         .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
         .filter_map(|entry| {
@@ -211,16 +211,26 @@ pub fn list_sessions(cwd: String, limit: usize) -> Vec<SessionSummary> {
                 .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
                 .map(|since| since.as_millis() as u64)
                 .unwrap_or(0);
-            Some(SessionSummary {
-                id,
-                modified,
-                bytes: metadata.len(),
-                preview: read_preview(&path),
-            })
+            Some((
+                path,
+                SessionSummary {
+                    id,
+                    modified,
+                    bytes: metadata.len(),
+                    preview: String::new(),
+                },
+            ))
         })
         .collect();
 
-    sessions.sort_by(|a, b| b.modified.cmp(&a.modified));
+    sessions.sort_by(|a, b| b.1.modified.cmp(&a.1.modified));
     sessions.truncate(limit);
+
     sessions
+        .into_iter()
+        .map(|(path, mut summary)| {
+            summary.preview = read_preview(&path);
+            summary
+        })
+        .collect()
 }

@@ -1,4 +1,4 @@
-import { useRef, type MouseEvent } from "react";
+import { type MouseEvent, useRef } from "react";
 
 /**
  * Builds hover handlers that only fire on genuine pointer movement.
@@ -11,7 +11,9 @@ import { useRef, type MouseEvent } from "react";
  * @param apply - Called with the value under a genuinely moved pointer.
  * @returns A function that builds a hover handler for one value.
  */
-export function useHoverIntent<T>(apply: (value: T) => void): (value: T) => (event: MouseEvent) => void {
+export function useHoverIntent<T>(
+  apply: (value: T) => void,
+): (value: T) => (event: MouseEvent) => void {
   const last = useRef({ x: Number.NaN, y: Number.NaN });
 
   return (value: T) => (event: MouseEvent) => {

@@ -106,16 +106,6 @@ export const CLAUDE_CONFIG_KEYS: ClaudeConfigKey[] = Object.entries(RAW_VALUES).
   }),
 );
 
-/**
- * Finds a setting by name.
- *
- * @param key - The setting name.
- * @returns The setting, or undefined when the CLI does not define it.
- */
-export function findConfigKey(key: string): ClaudeConfigKey | undefined {
-  return CLAUDE_CONFIG_KEYS.find((entry) => entry.key === key);
-}
-
 /** The permission modes the CLI accepts, in the order it lists them. */
 export const PERMISSION_MODES = ["default", "plan", "acceptEdits", "auto", "dontAsk"] as const;
 

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useReducer, useRef } from "react";
+import { PERMISSION_MODES } from "../lib/claudeConfig";
 import {
   applyClaudeLine,
   latestAssistantText,
@@ -12,9 +13,11 @@ import {
 } from "../lib/claudeProtocol";
 import {
   allowTool,
+  type ControlEnvelope,
   controlRequest,
   controlSuccess,
   denyTool,
+  type InboundRequest,
   readContextUsage,
   readControlResponse,
   readFileSuggestions,
@@ -22,23 +25,20 @@ import {
   readInitialize,
   readMcpServers,
   readUsage,
-  type ControlEnvelope,
-  type InboundRequest,
 } from "../lib/controlProtocol";
-import { PERMISSION_MODES } from "../lib/claudeConfig";
-import { readPrompt, type Prompt, type PromptResolution } from "../lib/dialogModels";
-import { asRecord, asText, parseJsonLine, type Json } from "../lib/json";
+import { type Prompt, type PromptResolution, readPrompt } from "../lib/dialogModels";
+import { asRecord, asText, type Json, parseJsonLine } from "../lib/json";
 import { nextId } from "../lib/nextId";
 import {
   forgetInterrupted,
   listSessions,
   readSessionHistory,
   rememberInterrupted,
-  takeInterrupted,
   type SessionSummary,
+  takeInterrupted,
 } from "../lib/sessions";
 import { runShellCommand } from "../lib/shell";
-import { createChatState, type ChatState, type ClaudeEvent } from "../types";
+import { type ChatState, type ClaudeEvent, createChatState } from "../types";
 
 /** A loaded Claude session, whether or not it is the one on screen. */
 type SessionRecord = {
@@ -154,18 +154,15 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
    * @param backendId - The session to change.
    * @param change - Produces the session's new state.
    */
-  const patchState = useCallback(
-    (backendId: string, change: (state: ChatState) => ChatState) => {
-      const store = storeRef.current;
-      const record = store.get(backendId);
-      if (!record) return;
-      const next = change(record.state);
-      if (next === record.state) return;
-      store.set(backendId, { ...record, state: next });
-      bump();
-    },
-    [],
-  );
+  const patchState = useCallback((backendId: string, change: (state: ChatState) => ChatState) => {
+    const store = storeRef.current;
+    const record = store.get(backendId);
+    if (!record) return;
+    const next = change(record.state);
+    if (next === record.state) return;
+    store.set(backendId, { ...record, state: next });
+    bump();
+  }, []);
 
   /**
    * Writes one message to a session's stdin.
@@ -226,7 +223,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const timeout = record?.silenceMs ?? SILENCE_TIMEOUT_MS;
       silenceRef.current = setTimeout(() => {
         const current = storeRef.current.get(backendId);
-        if (!current || !current.state.busy || current.prompts.length > 0) return;
+        if (!current?.state.busy || current.prompts.length > 0) return;
         request(backendId, { subtype: "interrupt" });
         patchState(backendId, (state) =>
           withNotice(
@@ -551,15 +548,14 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const active = activeRef.current;
       if (active === null) return;
       const record = storeRef.current.get(active);
-      if (!record || record.status !== "running") return;
+      if (record?.status !== "running") return;
       if (text.trim().length === 0) return;
 
       // Local command output goes ahead of what the user wrote, in the wrappers
       // Claude Code itself uses, so the model reads it the way it always has.
       const pending = shellContextRef.current;
       shellContextRef.current = [];
-      const payload =
-        pending.length === 0 ? text : `${pending.join("\n")}\n\n${text}`;
+      const payload = pending.length === 0 ? text : `${pending.join("\n")}\n\n${text}`;
 
       storeRef.current.set(active, {
         ...record,
@@ -715,6 +711,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       );
 
       if (live) {
+        if (activeRef.current !== live.backendId) standDown();
         activeRef.current = live.backendId;
         storeRef.current.set(live.backendId, { ...live, parked: false });
         bump();

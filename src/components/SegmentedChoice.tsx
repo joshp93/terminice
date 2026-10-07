@@ -27,7 +27,7 @@ export function SegmentedChoice<T extends string>({
   return (
     <div className="setting">
       <span className="setting-label">{label}</span>
-      <div className="segmented" role="group" aria-label={label}>
+      <fieldset className="segmented" aria-label={label}>
         {options.map((option) => (
           <button
             key={option.value}
@@ -39,7 +39,7 @@ export function SegmentedChoice<T extends string>({
             {option.label}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }

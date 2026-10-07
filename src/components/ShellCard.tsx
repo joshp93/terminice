@@ -47,15 +47,23 @@ export function ShellCard({ command, stdout, stderr, code, running }: ShellCardP
         ) : (
           failed && <span className="shell-exit">exit {code}</span>
         )}
-        {hidden > 0 && <span className="tool-disclosure">{open ? "hide" : `show ${hidden} more`}</span>}
+        {hidden > 0 && (
+          <span className="tool-disclosure">{open ? "hide" : `show ${hidden} more`}</span>
+        )}
       </button>
       {shown.length > 0 && (
-        <div className="shell-output" onClick={() => hidden > 0 && setOpen(true)}>
+        <button
+          type="button"
+          className="shell-output"
+          aria-label={`Expand ${command} output`}
+          disabled={hidden === 0}
+          onClick={() => setOpen(true)}
+        >
           <pre>
             {shown.join("\n")}
             {!open && hidden > 0 ? "\n…" : ""}
           </pre>
-        </div>
+        </button>
       )}
     </div>
   );

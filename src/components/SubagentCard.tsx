@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { useExpansion } from "./ExpansionContext";
 import type { ChatEntry } from "../types";
+import { useExpansion } from "./ExpansionContext";
 
 /** Props for {@link SubagentCard}. */
 export type SubagentCardProps = {

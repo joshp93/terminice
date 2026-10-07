@@ -181,6 +181,9 @@ body {
 
 .segmented {
   display: flex;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
   border: 1px solid var(--border);
   border-radius: 7px;
   overflow: hidden;
@@ -381,6 +384,13 @@ body {
 }
 
 .tool-preview {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   padding: 0 11px 7px 26px;
   cursor: pointer;
 }
@@ -466,11 +476,19 @@ body {
 }
 
 .shell-output {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
   border-top: 1px solid var(--border);
   padding: 7px 11px;
   cursor: pointer;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: a failed tool preview and a shell output are different elements, so the rules never compete. */
 .shell-output pre {
   margin: 0;
   color: var(--text-dim);
@@ -576,6 +594,7 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: a failed tool preview and an expanded tool body are different elements, so the rules never compete. */
 .tool-body pre {
   margin: 0;
   padding: 7px 9px;
@@ -968,6 +987,7 @@ body {
   margin-bottom: 8px;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: a failed tool preview and a dialog code block are different elements, so the rules never compete. */
 .dialog-code pre {
   margin: 0;
   padding: 8px 10px;
@@ -1160,6 +1180,7 @@ body {
 }
 
 .green-button,
+/* biome-ignore lint/style/noDescendingSpecificity: the earlier rule only sets a border on a segment beside another segment, which is a property this transition does not touch. */
 .segment {
   transition:
     background-color 0.3s ease,
@@ -1289,6 +1310,7 @@ body {
   padding: 8px 10px;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: a failed tool preview and a thinking block are different elements, so the rules never compete. */
 .thinking-body pre {
   margin: 0;
   max-height: 320px;

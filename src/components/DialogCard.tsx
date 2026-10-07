@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useHoverIntent } from "../hooks/useHoverIntent";
 import type {
   PermissionChoice,
@@ -115,6 +115,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
     if (notesOpen) notesRef.current?.focus();
   }, [notesOpen]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a rebuilt row list has to bring its settled row back into view even when the index is unchanged.
   useEffect(() => {
     rowRefs.current[settledIndex]?.scrollIntoView({ block: "nearest" });
   }, [settledIndex, targets]);
@@ -172,7 +173,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
     const updated = { ...selections, [question.question]: next };
     setSelections(updated);
 
-    if (!question.multiSelect && questions.every((entry) => (updated[entry.question] ?? []).length > 0)) {
+    if (
+      !question.multiSelect &&
+      questions.every((entry) => (updated[entry.question] ?? []).length > 0)
+    ) {
       resolveQuestions(updated, notes);
     }
   };
@@ -331,7 +335,9 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
           questions.map((question, questionNumber) => (
             <div className="dialog-question" key={question.question}>
               <div className="dialog-question-header">
-                {question.header.length > 0 && <span className="dialog-chip">{question.header}</span>}
+                {question.header.length > 0 && (
+                  <span className="dialog-chip">{question.header}</span>
+                )}
                 <span className="dialog-question-text">{question.question}</span>
                 <span className="dialog-kind">
                   {question.multiSelect ? "choose any" : "choose one"}

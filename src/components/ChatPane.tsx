@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ChatState } from "../types";
 import { EmptyChat } from "./EmptyChat";
-import { ExpansionProvider, type Expansion } from "./ExpansionContext";
+import { type Expansion, ExpansionProvider } from "./ExpansionContext";
 import { MessageBubble } from "./MessageBubble";
 import { TranscriptItem } from "./TranscriptItem";
-import type { ChatState } from "../types";
 
 /** Props for {@link ChatPane}. */
 export type ChatPaneProps = {
@@ -30,6 +30,7 @@ export function ChatPane({ state }: ChatPaneProps) {
 
   const empty = state.entries.length === 0 && state.streaming.length === 0 && !state.busy;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the transcript and the streaming text are what this effect follows, not what it reads.
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [state.entries, state.streaming]);

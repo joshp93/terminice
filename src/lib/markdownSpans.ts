@@ -29,24 +29,6 @@ export function nodeRepresentsFormat(node: SyntaxNode, id: FormatId): boolean {
 }
 
 /**
- * Collects the styles whose span encloses a node, including the node itself.
- *
- * Markdown nests emphasis, so walking outwards is what makes a caret inside
- * `***both***` report both bold and italic.
- *
- * @param node - The innermost node at the position of interest.
- * @returns Every style found on the way to the root.
- */
-export function formatsAtPosition(node: SyntaxNode | null): Set<FormatId> {
-  const found = new Set<FormatId>();
-  for (let current: SyntaxNode | null = node; current; current = current.parent) {
-    const id = NODE_FORMATS[current.name];
-    if (id) found.add(id);
-  }
-  return found;
-}
-
-/**
  * Reads the marker positions of a style node.
  *
  * The markers are the node's first and last children.
@@ -78,11 +60,7 @@ export function findStyleNode(
   to: number,
 ): SyntaxNode | null {
   for (let current: SyntaxNode | null = node; current; current = current.parent) {
-    if (
-      nodeRepresentsFormat(current, id) &&
-      current.from <= from &&
-      current.to >= to
-    ) {
+    if (nodeRepresentsFormat(current, id) && current.from <= from && current.to >= to) {
       return current;
     }
   }
@@ -125,52 +103,6 @@ export type MarkDeletion = {
   to: number;
 };
 
-/** The edits that strip a style's markers, and the selection that survives. */
-export type UnwrapPlan = {
-  deletions: MarkDeletion[];
-  anchor: number;
-  head: number;
-};
-
-/**
- * Plans the removal of every marker belonging to a set of style nodes.
- *
- * Text between the markers is left untouched, and the selection is shifted by
- * however many characters were deleted before each of its ends.
- *
- * @param nodes - The style nodes to strip.
- * @param from - Start of the range that should stay selected.
- * @param to - End of that range.
- * @returns The deletions and the resulting selection, or null when there is nothing to remove.
- */
-export function planUnwrap(
-  nodes: readonly SyntaxNode[],
-  from: number,
-  to: number,
-): UnwrapPlan | null {
-  const deletions: MarkDeletion[] = [];
-  for (const node of nodes) {
-    const span = spanOf(node);
-    if (!span) continue;
-    deletions.push({ from: span.openFrom, to: span.openTo });
-    deletions.push({ from: span.closeFrom, to: span.closeTo });
-  }
-  if (deletions.length === 0) return null;
-
-  deletions.sort((a, b) => a.from - b.from);
-  const shiftBefore = (position: number): number =>
-    deletions.reduce(
-      (total, deletion) => (deletion.to <= position ? total + (deletion.to - deletion.from) : total),
-      0,
-    );
-
-  return {
-    deletions,
-    anchor: from - shiftBefore(from),
-    head: to - shiftBefore(to),
-  };
-}
-
 /** Node names that represent a block of code rather than inline code. */
 const CODE_BLOCK_NODES = new Set(["FencedCode", "CodeBlock"]);
 
@@ -185,16 +117,6 @@ export function findCodeBlock(node: SyntaxNode | null): SyntaxNode | null {
     if (CODE_BLOCK_NODES.has(current.name)) return current;
   }
   return null;
-}
-
-/**
- * Whether a node sits inside a fenced or indented code block.
- *
- * @param node - The innermost node at the position of interest.
- * @returns True when a code block encloses the node.
- */
-export function isInsideCodeBlock(node: SyntaxNode | null): boolean {
-  return findCodeBlock(node) !== null;
 }
 
 /**
@@ -279,12 +201,7 @@ export function spansCover(nodes: readonly SyntaxNode[], from: number, to: numbe
  * @param to - End of the range.
  * @returns The style's state across the range.
  */
-export function styleStateInRange(
-  tree: Tree,
-  id: FormatId,
-  from: number,
-  to: number,
-): StyleState {
+export function styleStateInRange(tree: Tree, id: FormatId, from: number, to: number): StyleState {
   const nodes = styleNodesInRange(tree, id, from, to);
   if (nodes.length === 0) return "off";
   return spansCover(nodes, from, to) ? "on" : "mixed";

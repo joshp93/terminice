@@ -1,5 +1,5 @@
-import { useExpansion } from "./ExpansionContext";
 import type { HookNote } from "../lib/toolResults";
+import { useExpansion } from "./ExpansionContext";
 
 /** Props for {@link ToolCard}. */
 export type ToolCardProps = {
@@ -90,15 +90,17 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
       )}
 
       {!open && preview.lines.length > 0 && (
-        <div
+        <button
+          type="button"
           className={status === "error" ? "tool-preview failed" : "tool-preview"}
+          aria-label={`Expand ${name} output`}
           onClick={() => toggle(id)}
         >
           <pre>
             {preview.lines.join("\n")}
             {preview.hidden > 0 ? "\n…" : ""}
           </pre>
-        </div>
+        </button>
       )}
 
       {open && (
@@ -119,7 +121,9 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
             <div className="tool-section">
               <span className="tool-section-title">Hooks</span>
               {notable.map((hook) => (
-                <pre key={hook.hookId}>{`${hook.name} → ${hook.outcome}\n${hook.output}`.trim()}</pre>
+                <pre key={hook.hookId}>
+                  {`${hook.name} → ${hook.outcome}\n${hook.output}`.trim()}
+                </pre>
               ))}
             </div>
           )}

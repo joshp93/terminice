@@ -1,6 +1,4 @@
-import { CLAUDE_CONFIG_KEYS, PERMISSION_MODES, describePermissionMode } from "./claudeConfig";
-import { rankByMatch } from "./fuzzyMatch";
-import type { SessionSummary } from "./sessions";
+import { CLAUDE_CONFIG_KEYS, describePermissionMode, PERMISSION_MODES } from "./claudeConfig";
 import type {
   AgentInfo,
   ContextUsage,
@@ -10,6 +8,8 @@ import type {
   PluginInfo,
   SlashCommandInfo,
 } from "./controlProtocol";
+import { rankByMatch } from "./fuzzyMatch";
+import type { SessionSummary } from "./sessions";
 
 /** One row in the slash menu, or in a submenu it opens. */
 export type MenuEntry = {
@@ -284,8 +284,7 @@ function configEntry(send: (command: string) => void, host: SlashMenuHost): Menu
                         direct[config.key]?.(value) ?? send(`/config ${config.key}=${value}`),
                     }),
                   ),
-          run:
-            config.values.length === 0 ? () => send(`/config ${config.key}=`) : undefined,
+          run: config.values.length === 0 ? () => send(`/config ${config.key}=`) : undefined,
         }),
       ),
   });
@@ -330,7 +329,12 @@ function contextEntry(usage: ContextUsage | null, send: (command: string) => voi
             hint: `${category.tokens.toLocaleString()} tokens`,
           }),
         ),
-        entry({ id: "context:compact", label: "Compact now", detail: "Free up context", run: () => send("/compact") }),
+        entry({
+          id: "context:compact",
+          label: "Compact now",
+          detail: "Free up context",
+          run: () => send("/compact"),
+        }),
       ];
     },
   });
@@ -409,35 +413,44 @@ function buildCurated(host: SlashMenuHost): Map<string, MenuEntry> {
       send,
     ),
   );
-  curated.set("clear", entry({
-    id: "command:clear",
-    label: "/clear",
-    detail: "Start a new session with empty context",
-    run: () => host.newSession(),
-  }));
-  curated.set("compact", entry({
-    id: "command:compact",
-    label: "/compact",
-    detail: "Summarise the conversation to free up context",
-    run: () => send("/compact"),
-  }));
+  curated.set(
+    "clear",
+    entry({
+      id: "command:clear",
+      label: "/clear",
+      detail: "Start a new session with empty context",
+      run: () => host.newSession(),
+    }),
+  );
+  curated.set(
+    "compact",
+    entry({
+      id: "command:compact",
+      label: "/compact",
+      detail: "Summarise the conversation to free up context",
+      run: () => send("/compact"),
+    }),
+  );
 
   const agents = catalogue?.agents ?? [];
-  curated.set("agents", entry({
-    id: "command:agents",
-    label: "/agents",
-    detail: `${agents.length} subagent(s) loaded`,
-    submenu: () =>
-      agents.length === 0
-        ? [entry({ id: "agents:none", label: "No subagents loaded" })]
-        : agents.map((agent: AgentInfo) =>
-            entry({
-              id: `agents:${agent.name}`,
-              label: agent.name,
-              detail: agent.description,
-            }),
-          ),
-  }));
+  curated.set(
+    "agents",
+    entry({
+      id: "command:agents",
+      label: "/agents",
+      detail: `${agents.length} subagent(s) loaded`,
+      submenu: () =>
+        agents.length === 0
+          ? [entry({ id: "agents:none", label: "No subagents loaded" })]
+          : agents.map((agent: AgentInfo) =>
+              entry({
+                id: `agents:${agent.name}`,
+                label: agent.name,
+                detail: agent.description,
+              }),
+            ),
+    }),
+  );
 
   return curated;
 }

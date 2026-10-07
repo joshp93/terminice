@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatPane } from "./components/ChatPane";
 import { Composer } from "./components/Composer";
 import { DialogCard } from "./components/DialogCard";
@@ -118,7 +118,10 @@ export function App() {
       <main className="workspace">
         <ChatPane state={chat.state} />
       </main>
-      <div className={chat.prompt ? "composer-slot hidden" : "composer-slot"} inert={chat.prompt !== null}>
+      <div
+        className={chat.prompt ? "composer-slot hidden" : "composer-slot"}
+        inert={chat.prompt !== null}
+      >
         <Composer
           submitsOnEnter={() => settings.enterBehaviour === "send"}
           onSend={chat.send}

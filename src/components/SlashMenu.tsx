@@ -33,6 +33,7 @@ export function SlashMenu({
   const listRef = useRef<HTMLUListElement | null>(null);
   const hover = useHoverIntent(onHighlight);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a rebuilt entry list scrolls its highlighted row back into view even when the index has not moved.
   useLayoutEffect(() => {
     const item = listRef.current?.children[highlight];
     if (item instanceof HTMLElement) item.scrollIntoView({ block: "nearest" });

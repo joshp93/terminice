@@ -1,5 +1,5 @@
-import { asArray, asRecord, asText, prettyJson, type Json } from "./json";
 import type { InboundRequest } from "./controlProtocol";
+import { asArray, asRecord, asText, type Json, prettyJson } from "./json";
 
 /** How the user resolved a card. */
 export type PromptResolution =

@@ -1,10 +1,10 @@
 import { memo } from "react";
+import type { ChatEntry } from "../types";
 import { MessageBubble } from "./MessageBubble";
 import { ShellCard } from "./ShellCard";
 import { SubagentCard } from "./SubagentCard";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCard } from "./ToolCard";
-import type { ChatEntry } from "../types";
 
 /** Props for {@link TranscriptItem}. */
 export type TranscriptItemProps = {

@@ -1,13 +1,3 @@
-import { EditorState, Prec } from "@codemirror/state";
-import {
-  Decoration,
-  EditorView,
-  keymap,
-  placeholder,
-  ViewPlugin,
-  type DecorationSet,
-  type ViewUpdate,
-} from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
@@ -16,23 +6,23 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
+import { EditorState, Prec } from "@codemirror/state";
+import {
+  Decoration,
+  type DecorationSet,
+  EditorView,
+  keymap,
+  placeholder,
+  ViewPlugin,
+  type ViewUpdate,
+} from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import { MONO_FONT_STACK } from "./fonts";
 import {
-  codeBlockText,
-  findCodeBlock,
-  findStyleNode,
-  spanOf,
-  spansCover,
-  stripMarkers,
-  styleAppliesAt,
-  styleNodesInRange,
-  styleStateInRange,
-  type StyleState,
-} from "./markdownSpans";
-import {
   INDENT_UNIT,
+  type LineEdit,
+  type ListKind,
   parseListLine,
   planIndent,
   planListBackspace,
@@ -41,19 +31,29 @@ import {
   planOutdent,
   readListMarker,
   renumberOrderedLines,
-  type LineEdit,
-  type ListKind,
 } from "./listMarkers";
 import {
-  FORMATS,
-  FORMAT_MARKERS,
+  codeBlockText,
+  findCodeBlock,
+  findStyleNode,
+  type StyleState,
+  spanOf,
+  spansCover,
+  stripMarkers,
+  styleAppliesAt,
+  styleNodesInRange,
+  styleStateInRange,
+} from "./markdownSpans";
+import {
   closingMarkers,
   createInlineState,
+  FORMAT_MARKERS,
+  FORMATS,
+  type FormatId,
+  type InlineState,
   planToggle,
   planTypedCharacter,
   wrapOffsets,
-  type FormatId,
-  type InlineState,
 } from "./richFormat";
 
 /** Everything the toolbar needs to render the composer's current state. */
@@ -313,7 +313,14 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const markers = FORMAT_MARKERS[id];
       const inner = stripMarkers(nodes, from, to, view.state.sliceDoc(from, to));
       const insert = markers + inner + markers;
-      replaceRange(view, from, to, insert, from + markers.length, from + markers.length + inner.length);
+      replaceRange(
+        view,
+        from,
+        to,
+        insert,
+        from + markers.length,
+        from + markers.length + inner.length,
+      );
       return;
     }
 

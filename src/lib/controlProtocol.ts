@@ -1,4 +1,4 @@
-import { asArray, asNumber, asRecord, asText, parseJsonLine, type Json } from "./json";
+import { asArray, asNumber, asRecord, asText, type Json } from "./json";
 
 /** One slash command as the CLI describes it. */
 export type SlashCommandInfo = {
@@ -107,7 +107,10 @@ export type ControlEnvelope = {
  * @param request - The request body, including its subtype.
  * @returns The message to write to the session.
  */
-export function controlRequest(requestId: string, request: Json & { subtype: string }): ControlRequest {
+export function controlRequest(
+  requestId: string,
+  request: Json & { subtype: string },
+): ControlRequest {
   return { type: "control_request", request_id: requestId, request };
 }
 
@@ -128,7 +131,10 @@ export function allowTool(
   const result: Json = { behavior: "allow" };
   if (updatedInput !== undefined) result.updatedInput = updatedInput;
   if (updatedPermissions !== undefined) result.updatedPermissions = updatedPermissions;
-  return { type: "control_response", response: { subtype: "success", request_id: requestId, response: result } };
+  return {
+    type: "control_response",
+    response: { subtype: "success", request_id: requestId, response: result },
+  };
 }
 
 /**
@@ -372,7 +378,8 @@ export function readFileSuggestions(payload: unknown): string[] {
  * @param payload - The response body.
  * @returns Each server with its status.
  */
-export function readMcpServers(payload: unknown): McpServerInfo[] {  return asArray(asRecord(payload)?.mcpServers).flatMap((entry): McpServerInfo[] => {
+export function readMcpServers(payload: unknown): McpServerInfo[] {
+  return asArray(asRecord(payload)?.mcpServers).flatMap((entry): McpServerInfo[] => {
     const item = asRecord(entry);
     const name = item ? asText(item.name) : "";
     return name ? [{ name, status: asText(item?.status) || "unknown" }] : [];
@@ -409,14 +416,4 @@ export function readPlugins(value: unknown): PluginInfo[] {
  */
 export function readNames(value: unknown): string[] {
   return asArray(value).map(asText).filter(Boolean);
-}
-
-/**
- * Decodes one line of stream-json output.
- *
- * @param line - A single line.
- * @returns The decoded object, or null when it is not one.
- */
-export function decodeLine(line: string): Json | null {
-  return parseJsonLine(line);
 }

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createComposer, type ComposerHandle, type ComposerStatus } from "../lib/createComposer";
+import { type ComposerHandle, type ComposerStatus, createComposer } from "../lib/createComposer";
 import { subscribeToFileDrops } from "../lib/fileDrops";
+import type { ListKind } from "../lib/listMarkers";
 import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
-import type { ListKind } from "../lib/listMarkers";
-import { buildRootEntries, filterEntries, type MenuEntry, type SlashMenuHost } from "../lib/slashMenu";
+import {
+  buildRootEntries,
+  filterEntries,
+  type MenuEntry,
+  type SlashMenuHost,
+} from "../lib/slashMenu";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
 import { ProgressBar } from "./ProgressBar";
@@ -152,7 +157,14 @@ export function Composer({
   const mentionQuery = mention?.query ?? null;
 
   const fileEntries = useMemo<MenuEntry[]>(
-    () => files.map((path) => ({ id: `file:${path}`, label: path, detail: "", hint: "", selected: false })),
+    () =>
+      files.map((path) => ({
+        id: `file:${path}`,
+        label: path,
+        detail: "",
+        hint: "",
+        selected: false,
+      })),
     [files],
   );
 
@@ -197,6 +209,7 @@ export function Composer({
     handleRef.current?.focus();
   }, [suggestion]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the host is read through a ref, so these are the inputs buildRootEntries consumes rather than values the factory closes over directly.
   const rootEntries = useMemo(
     () =>
       buildRootEntries({
@@ -246,6 +259,7 @@ export function Composer({
     setPlaceAbove(window.innerHeight - row.getBoundingClientRect().bottom < MENU_ROOM);
   }, [menuOpen, mentionOpen]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: moving through the menu changes the list, which is the signal to put the highlight back on its first entry.
   useEffect(() => {
     setHighlight(0);
   }, [entries.length, submenu]);
@@ -478,7 +492,19 @@ export function Composer({
         sendButtonRef.current?.focus();
       }
     },
-    [choose, entries, highlight, insertEntry, menuOpen, recall, submenus.length],
+    [
+      choose,
+      chooseFile,
+      entries,
+      fileEntries,
+      fileHighlight,
+      highlight,
+      insertEntry,
+      menuOpen,
+      mentionOpen,
+      recall,
+      submenus.length,
+    ],
   );
 
   useEffect(() => {

@@ -1,7 +1,7 @@
-import { FORMATS, formatShortcutLabel, type FormatId } from "../lib/richFormat";
 import type { ComposerStatus } from "../lib/createComposer";
 import type { ListKind } from "../lib/listMarkers";
 import type { StyleState } from "../lib/markdownSpans";
+import { FORMATS, type FormatId, formatShortcutLabel } from "../lib/richFormat";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {

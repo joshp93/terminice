@@ -10,11 +10,15 @@ pnpm app                  # dev: Vite + Tauri shell with hot reload
 pnpm app:build            # distributable bundle
 pnpm typecheck            # tsc --noEmit — run this after every frontend change
 pnpm build                # frontend assets only
+pnpm lint                 # biome check — lints and formatting-checks the whole project
+pnpm lint:fix             # the same, applying every fix it can
+pnpm format               # biome format --write
 cd src-tauri && cargo test
 ```
 
-Always run `pnpm typecheck` after touching TypeScript. There is no Biome or ESLint config
-here — do not introduce one.
+Always run `pnpm typecheck` after touching TypeScript. Biome is the linter and formatter
+for everything it can parse — TypeScript, JSON and CSS — configured by `biome.json`. Rust
+is outside its reach, so `src-tauri` is still governed by `cargo` and `cargo clippy`.
 
 ## Architecture decisions — do not relitigate
 

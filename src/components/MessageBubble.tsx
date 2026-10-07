@@ -1,8 +1,8 @@
 import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkBreaks from "remark-breaks";
-import rehypeSanitize from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
+import rehypeSanitize from "rehype-sanitize";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 
 const REMARK_PLUGINS = [remarkGfm];
 const REMARK_PLUGINS_WITH_BREAKS = [remarkGfm, remarkBreaks];

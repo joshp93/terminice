@@ -142,6 +142,11 @@ pnpm app          # dev: Vite + the Tauri shell with hot reload
 | `pnpm typecheck` | `tsc --noEmit` |
 | `cd src-tauri && cargo test` | Rust unit tests |
 
+`pnpm app:build` leaves a portable `terminice.exe` in `src-tauri/target/release/` — about
+3.4 MB with nothing beside it, because the frontend is compiled in and the window is the
+system's own webview — alongside a WiX MSI and an NSIS setup in `bundle/`. The NSIS setup
+is the one to install: it puts the binary in `C:\Program Files` and adds it to `PATH`.
+
 ### Configuration
 
 Settings live in `~/.config/terminice-settings.json`, written by the settings menu.
@@ -341,8 +346,19 @@ ourselves.
 - **Hook events carry no tool-use id**, so a hook is attributed to the newest unfinished
   call with a matching name. With parallel tool calls that can be the wrong card; the chip
   names the hook itself so the guess is inspectable.
-- **No CLI launcher shim.** The app reads its directory from `argv[1]` or the working
-  directory, but nothing installs a `terminice` command onto `PATH`.
+- **How you get a `terminice` command depends on the platform.** The app opens the
+  directory given as `argv[1]` when that is a directory, and the working directory
+  otherwise, so `terminice` from inside a project opens that project.
+  - **Windows** — the NSIS installer asks for admin, installs to
+    `C:\Program Files\terminice`, and appends that to the machine `PATH`. The uninstaller
+    takes it back off.
+  - **Linux** — the `.deb` and `.rpm` put the binary in `/usr/bin`, which is already on
+    `PATH`. Nothing to configure.
+  - **macOS** — nothing is added. The `.app` goes to `/Applications` and a command needs a
+    symlink into `/usr/local/bin`, which is not created for you.
+- **Every invocation is a new instance.** Nothing wraps the binary, so `terminice` in a
+  second terminal opens a second window rather than handing the directory to the running
+  one. That is deliberate.
 - **Images are not supported.** The CLI's stream-json takes text; image input needs the
   Agent SDK rather than the CLI.
 - **Subagents are not rendered separately.** Their text arrives on the same stream as the

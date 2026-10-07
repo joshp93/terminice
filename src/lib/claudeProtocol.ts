@@ -1,19 +1,15 @@
+import type { ChatEntry, ChatState } from "../types";
+import { readFastMode, readNames, readPlugins } from "./controlProtocol";
 import { describeToolUse } from "./describeToolUse";
-import {
-  readFastMode,
-  readNames,
-  readPlugins,
-} from "./controlProtocol";
-import { asArray, asNumber, asRecord, asText, parseJsonLine, prettyJson, type Json } from "./json";
+import { asArray, asNumber, asRecord, asText, type Json, parseJsonLine, prettyJson } from "./json";
 import { nextId } from "./nextId";
 import {
   describeToolResult,
+  type HookNote,
   hookMatcher,
   readHookNote,
   readResultText,
-  type HookNote,
 } from "./toolResults";
-import type { ChatEntry, ChatState } from "../types";
 
 function appendEntry(state: ChatState, entry: ChatEntry): ChatState {
   return { ...state, entries: [...state.entries, entry] };
@@ -150,16 +146,6 @@ export function withNotice(state: ChatState, text: string): ChatState {
 }
 
 /**
- * Empties the transcript while keeping the session's metadata.
- *
- * @param state - The current chat state.
- * @returns The chat state with no entries.
- */
-export function withEmptyTranscript(state: ChatState): ChatState {
-  return { ...state, entries: [], streaming: "", busy: false };
-}
-
-/**
  * Records a local command in the transcript, before it has finished.
  *
  * @param state - The current chat state.
@@ -193,9 +179,7 @@ export function withShellResult(
   return {
     ...state,
     entries: state.entries.map((entry) =>
-      entry.id === id && entry.role === "shell"
-        ? { ...entry, ...output, running: false }
-        : entry,
+      entry.id === id && entry.role === "shell" ? { ...entry, ...output, running: false } : entry,
     ),
   };
 }
@@ -274,7 +258,7 @@ function withSubagentOutput(state: ChatState, parentId: string, message: Json): 
     (entry) => entry.role === "subagent" && entry.toolUseId === parentId,
   );
   const agent = index >= 0 ? state.entries[index] : null;
-  if (!agent || agent.role !== "subagent") return state;
+  if (agent?.role !== "subagent") return state;
 
   const kind = asText(message.type);
   let inner = agent.entries;

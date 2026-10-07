@@ -14,9 +14,6 @@ export type ShellOutput = {
  * @param cwd - The directory to run it in.
  * @returns What the command printed.
  */
-export async function runShellCommand(
-  command: string,
-  cwd: string | null,
-): Promise<ShellOutput> {
+export async function runShellCommand(command: string, cwd: string | null): Promise<ShellOutput> {
   return invoke<ShellOutput>("run_shell_command", { command, cwd });
 }

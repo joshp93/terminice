@@ -1,4 +1,4 @@
-import { asArray, asNumber, asRecord, asText, prettyJson, type Json } from "./json";
+import { asArray, asNumber, asRecord, asText, type Json, prettyJson } from "./json";
 
 /** A hook that ran around a tool call. */
 export type HookNote = {

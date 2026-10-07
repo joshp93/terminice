@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
+import type { Settings } from "../types";
 import { CogIcon } from "./CogIcon";
 import { SegmentedChoice } from "./SegmentedChoice";
-import type { Settings } from "../types";
 
 /** Props for {@link SettingsMenu}. */
 export type SettingsMenuProps = {
@@ -78,7 +78,13 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
         <CogIcon />
       </button>
       {open && (
-        <div className="settings-panel" role="dialog" aria-label="Settings" ref={panelRef} tabIndex={-1}>
+        <div
+          className="settings-panel"
+          role="dialog"
+          aria-label="Settings"
+          ref={panelRef}
+          tabIndex={-1}
+        >
           <SegmentedChoice
             label="Enter key"
             value={settings.enterBehaviour}
