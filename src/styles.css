@@ -549,8 +549,10 @@ body {
 .stop {
   position: absolute;
   right: 7px;
-  top: 50%;
-  transform: translateY(-50%);
+  /* Anchored to the field's bottom rather than its middle: the progress bar
+     sits above the textbox, so centring would leave the button stranded
+     between the two when compaction starts. */
+  bottom: 8px;
   width: 28px;
   height: 28px;
   display: grid;
