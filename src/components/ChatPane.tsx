@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { EmptyChat } from "./EmptyChat";
 import { MessageBubble } from "./MessageBubble";
 import { ShellCard } from "./ShellCard";
 import { ToolCard } from "./ToolCard";
@@ -20,13 +21,16 @@ export type ChatPaneProps = {
 export function ChatPane({ state }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  const empty = state.entries.length === 0 && state.streaming.length === 0 && !state.busy;
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [state.entries, state.streaming]);
 
   return (
     <section className="pane">
-      <div className="transcript">
+      <div className={empty ? "transcript empty" : "transcript"}>
+        {empty && <EmptyChat />}
         {state.entries.map((entry) => (
           <TranscriptItem key={entry.id} entry={entry} />
         ))}

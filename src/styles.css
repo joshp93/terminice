@@ -226,9 +226,25 @@ body {
 }
 
 .transcript {
+  flex: 1 1 auto;
   padding: 16px 18px 24px;
   overflow-y: auto;
   min-height: 0;
+}
+
+.chat-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.chat-empty-logo {
+  width: 140px;
+  height: 140px;
+  opacity: 0.9;
+  user-select: none;
+  pointer-events: none;
 }
 
 .bubble {
