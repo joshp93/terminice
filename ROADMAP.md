@@ -250,37 +250,35 @@ than writing anything new.
 
 `ChatPane` renders every entry in `state.entries` as DOM, and keeps up to
 `HISTORY_LIMIT = 200` replayed messages on resume. A long session with a few large tool
-outputs means a lot of nodes, and every streaming token re-renders the pane because
-`patchState` bumps unconditionally for every event.
+outputs means a lot of nodes.
 
 ### What we know
 
 **Verified by reading the code**, not measured:
 
 - `ChatPane` maps the whole array on every render.
-- `useClaudeChat`'s `patchState` calls `bump()` whether or not the state actually changed,
-  so `system/thinking_tokens` — which arrives hundreds of times per turn — re-renders the
-  transcript each time. That is a real cost that has nothing to do with transcript length.
 - Expanded tool bodies are already held out of the DOM while collapsed (D5), which is the
   single biggest mitigation and is already in place.
 
-**Inference, and the reason this section is cautious:** nobody has measured this. Every
-claim about virtualisation being *needed* is currently a guess. It should be measured
-before it is built.
+**The re-render churn that used to sit on top of this has been fixed** in `fefa125`.
+`patchState` now compares references and skips the write and the bump when a reducer
+returns the state it was handed, and `ChatPane` memoises its rows. Measured over a captured
+stream of 1,282 events: renders fell from 1,282 to 820, and only 3 of those 820 changed the
+entries the rows are keyed on — so **row renders fell from 1,282 to 3**.
+
+**The remaining question is purely about node count**, which is a different thing from how
+often the pane renders. Nobody has measured that, so any claim that virtualisation is
+*needed* is still a guess.
 
 ### How to implement
 
 **Step 0 — measure.** Open a long session and use the React DevTools profiler, or simply
-log render duration in `ChatPane`. Two numbers decide everything: how long the pane takes
-to render at 200 entries, and how much of that is the transcript versus the streaming
-re-render. If the answer is "under 16ms", this feature is not worth building and the entry
-should be closed.
+log render duration in `ChatPane`. There is one number left to get: how long the pane takes
+to render at 200 entries. If the answer is "under 16ms", this feature is not worth building
+and the entry should be closed.
 
-**Fix the unconditional bump first — it is cheaper than virtualisation and probably worth
-more.** `patchState` can compare the produced state to the previous one and skip `bump()`
-when nothing changed. `system/thinking_tokens` firing a full transcript re-render several
-hundred times a turn is a straightforward bug regardless of length. This is a small change
-in one place and should be done whether or not virtualisation follows.
+**The re-render fix is done**, and it was the cheap half — it removed the waste that had
+nothing to do with transcript length. What remains is whether length alone is a problem.
 
 **If it is still needed, prefer an incremental step over a windowing library.**
 
@@ -306,11 +304,11 @@ it into a worst case on demand.
 3. **Anchoring.** New entries arriving while the user has scrolled up must not shift what
    they are reading under them.
 
-**Recommendation: do the `bump` fix now, measure, and only then decide.** Listing this as
-"not yet justified" is a more honest position than building it because the original plan
-named it.
+**Recommendation: measure before deciding.** Listing this as "not yet justified" is a more
+honest position than building it because the original plan named it. The cheap wins are
+already taken; what is left is a much smaller question.
 
-**Effort: small for the fix, medium for the cap, large for true virtualisation.**
+**Effort: medium for the cap, large for true virtualisation.**
 
 ---
 
@@ -394,7 +392,7 @@ the feature is available to this account at all.
 | 1 | **D2** | No unknowns, no protocol work, immediately visible, and it is a prerequisite for E8 rendering well |
 | 2 | **E17** | One probe, then a few lines. Cheapest real feature — but only if the probe says it is available |
 | 3 | **E12** | One probe, then generalising machinery that already exists |
-| 4 | **E16** | The `bump` fix is worth doing regardless; the rest waits on measurement |
+| 4 | **E16** | Little left to do — the wasteful re-rendering is already fixed, so this now waits on a measurement rather than on work |
 | 5 | **E8** | The largest, and the only one that requires refactoring code other features depend on |
 
 D2 first is not arbitrary: E8 renders nested transcripts, and nested transcripts need
@@ -408,5 +406,5 @@ inherits it rather than inventing a second mechanism.
 | D2 | Nothing |
 | E8 | A probe confirming `--forward-subagent-text` only adds frames |
 | E12 | A probe for the `file_suggestions` request and response shape |
-| E16 | A measurement, and the `patchState` fix |
+| E16 | A measurement of render time at long transcript lengths |
 | E17 | A probe for `fast_mode_state` on this account, and whether `/fast` works headlessly |
