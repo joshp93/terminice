@@ -18,7 +18,12 @@ Markdown, with a rich composer that writes the Markdown for you.
   key* setting is about the composer, not about answering a question.
 - **Tool calls you can open** — every call shows the command and the first couple of lines
   it printed; expanding it reveals the exact input, the whole output and any hook that ran
-  around it. Cards take a focus ring, by keyboard or mouse.
+  around it. Cards take a focus ring, by keyboard or mouse, and **Expand all** opens every
+  one at once.
+- **Subagents get their own card** — when Claude delegates, the agent's conversation is
+  nested inside the call that spawned it rather than interleaved with the main one, where
+  it would read as things Claude never said. Collapsed by default; opening it shows what
+  the agent said and did, then the report it handed back.
 - **Reasoning, kept out of the way** — the thinking behind a reply is recorded above it,
   collapsed to its opening line. While a turn is still running, the wait shows how many
   reasoning tokens have been spent so far.
@@ -27,6 +32,11 @@ Markdown, with a rich composer that writes the Markdown for you.
   says why, so Claude revises rather than retries.
 - **Slash menu** — `/` opens a filterable list of all 74 commands, with real pickers for
   models, effort, permissions, MCP servers and Claude's own settings.
+- **`@` file mentions** — two characters after an `@` open a menu of matching files, built
+  from the CLI's own index rather than a directory walk of our own, so it agrees with what
+  Claude Code's terminal offers.
+- **Fast mode** — while it is serving, the composer turns orange and carries a flame. See
+  below for why it is normally off.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
   bulleted and numbered lists, all with keyboard shortcuts, plus auto-pairing brackets
   and file-drop.
@@ -201,7 +211,9 @@ nested.
 
 **Other behaviours.** Brackets, quotes and backticks pair themselves; typing an opening
 bracket over a selection wraps it. Asterisks pair only mid-word, so starting a bullet
-with `*` still works. Dropping files inserts their paths. User messages render with
+with `*` still works. Dropping files inserts their paths, and two characters after an `@`
+open the file menu — `Enter` or `Tab` takes the highlighted one, replacing what was typed
+after the `@` and leaving the rest of the message alone. User messages render with
 single newlines preserved.
 
 ## Slash commands
@@ -283,6 +295,16 @@ ourselves.
 
 ## Known limitations
 
+- **Fast mode is off unless your organisation allows it.** `/fast` refuses in a session
+  driven over stream-json until that session opts in, so the app passes
+  `--settings {"fastMode":true}` at launch. That only clears the SDK's own gate: an
+  organisation's policy still overrides it, and the CLI's reason changes from
+  `sdk_opt_in_required` to `preference`. Opting in cannot force it on. On the machine this
+  was built on the account is blocked by policy, so the composer stays its normal colour
+  and the reason is available on hover whenever it is on.
+- **Subagent output is only forwarded because a flag asks for it.** `--forward-subagent-text`
+  is passed for every session, and it multiplies stream volume: a subagent's reasoning is
+  forwarded too. A session that never delegates pays nothing for it.
 - **Prompt suggestions are nearly always absent.** The app asks for them with
   `--prompt-suggestions`, and the CLI answers with a `prompt_suggestion` message only when
   its own rollout has the feature switched on for the account — on this machine
@@ -328,10 +350,10 @@ ourselves.
 
 ## Roadmap
 
-Five features are planned in detail in [ROADMAP.md](ROADMAP.md) — expand-all for tool and
-reasoning cards, subagent output, `@` file mentions, transcript virtualisation and fast
-mode. Each entry there covers what it is, what the CLI actually offers, how to build it and
-what has to be probed first.
+[ROADMAP.md](ROADMAP.md) planned five features; four are now built — expand-all, subagent
+output, `@` file mentions and fast mode. What is left there is **transcript
+virtualisation**, which the document argues against building until someone measures a long
+session's render time, since the wasteful re-rendering has already been fixed.
 
 Beyond those:
 

@@ -1,19 +1,23 @@
-# Roadmap — five remaining features
+# Roadmap — what is left
 
-The implementation plan for **D2, E8, E12, E16 and E17**, the five items left open after
-[PLAN.md](PLAN.md) was completed. Each section says what the feature is, what the app does
-today, what is actually known about the CLI's side of it, and how to build it.
+**Four of these five are built** (`25be8b7`): expand-all, subagent output, `@` file
+mentions and fast mode. Each of those sections now records the work and what the CLI
+turned out to do, and says what was actually verified rather than what was assumed. **E16
+is the only one still open**, and the argument there is that it should not be built yet.
 
 Everything marked **Verified** was observed directly against the installed CLI
 (`claude` 2.1.291) or read out of the binary's own strings. Anything else is inference and
-says so. Where a probe is still needed, that is called out rather than guessed — the two
-questions that sank PLAN.md's timelines were both answered in a single probe each.
+says so. Where a probe was still needed, it is now answered, and the answer is recorded in
+the section rather than left as a question — the two unknowns that shaped this document
+both turned out to be settleable in a single probe each.
 
 Ordering is at the end.
 
 ---
 
 ## D2 — Expand all
+
+> **Shipped.** The pane owns the state; the cards read it from a context.
 
 ### What it is
 
@@ -84,6 +88,9 @@ no protocol work.
 
 ## E8 — Subagent output
 
+> **Shipped.** The one thing that needed confirming was confirmed: the flag tags frames,
+> it does not change the ones already there.
+
 ### What it is
 
 When Claude delegates to a subagent, that agent's text arrives on the same stream as the
@@ -110,9 +117,14 @@ data; nothing has to be reconstructed.
 `init` message currently lists this tool as `Task` for backward compatibility". Match both
 names rather than one.
 
-**Inferred** — that forwarding only *adds* subagent frames rather than changing existing
-ones. The flag is opt-in and the main stream already works, so this is very likely, but it
-is the one thing worth confirming in a probe before building on it.
+**Verified** — forwarding only *adds* frames. A probe with the flag on produced the same
+shape of stream with 19 extra frames carrying a non-null `parent_tool_use_id`; the main
+conversation was untouched. The risk that this feature might change what was already
+working did not materialise.
+
+**Verified** — the nested frames are complete. A subagent's own `assistant`, `user` and
+hook events arrive tagged like the main agent's, so its transcript can be built with the
+same code rather than a reduced imitation of it.
 
 ### How to implement
 
@@ -177,6 +189,8 @@ addressable by depth is the bulk of it, and it touches every handler in `claudeP
 
 ## E12 — `@` file mentions
 
+> **Shipped.** The probe below was run, and the answer is in "What we know".
+
 ### What it is
 
 Claude Code's terminal UI suggests files as you type `@`, and the mention pins the file
@@ -202,10 +216,11 @@ approximate it — a naive `read_dir` would offer a very different, much worse l
 shape; the binary marks it `@internal` and "Wire shape pending a dedicated SDKAttachment
 schema".
 
-**Open question — needs one probe.** The exact request and response fields for
-`file_suggestions`. This is the same shape of unknown as `supportedDialogKinds` in PLAN.md,
-and it took one probe to settle that. Send the request with a query of `pac` in this
-repository and read what comes back.
+**Verified by probe** — the request is `{subtype: "file_suggestions", query}` and the
+response is `{suggestions: [{path}], cwd}`, capped at 15. A path inside the session comes
+back relative to `cwd`; the CLI's own skills come back absolute, which is how the two are
+told apart without guessing. An empty query returns the top-level listing. The query is
+matched against the index, so `pac` finds `package.json` from anywhere in the tree.
 
 ### How to implement
 
@@ -314,6 +329,9 @@ already taken; what is left is a much smaller question.
 
 ## E17 — Fast mode
 
+> **Shipped, but switched off on this machine.** The probe was run, and it turns out the
+> account is blocked by organisation policy, so the flame will not appear here.
+
 ### What it is
 
 Claude Code has a fast mode — the same model with faster output. The app reads `init` and
@@ -321,6 +339,13 @@ ignores `fast_mode_state` entirely, so there is no way to see whether it is on, 
 change it.
 
 ### What we know
+
+**Verified by probe** — `fast_mode_state` reads `"off"` on this machine, and the reason is
+`sdk_opt_in_required` without a settings flag and `preference` with one. `/fast` exists as
+a builtin command and refuses with the CLI's own explanation in both cases: *"Fast mode is
+not available in the Agent SDK"*, then *"Fast mode has been disabled by your
+organization"* once the session has opted in. So the opt-in is necessary and not
+sufficient, and this account is blocked by policy rather than by anything the app does.
 
 **Verified from the binary's own schema:**
 
@@ -385,26 +410,22 @@ the feature is available to this account at all.
 
 ---
 
-## Suggested order
+## What happened
 
-| Order | Item | Why here |
-|---|---|---|
-| 1 | **D2** | No unknowns, no protocol work, immediately visible, and it is a prerequisite for E8 rendering well |
-| 2 | **E17** | One probe, then a few lines. Cheapest real feature — but only if the probe says it is available |
-| 3 | **E12** | One probe, then generalising machinery that already exists |
-| 4 | **E16** | Little left to do — the wasteful re-rendering is already fixed, so this now waits on a measurement rather than on work |
-| 5 | **E8** | The largest, and the only one that requires refactoring code other features depend on |
-
-D2 first is not arbitrary: E8 renders nested transcripts, and nested transcripts need
-somewhere for their expansion state to live. Building D2's state ownership first means E8
-inherits it rather than inventing a second mechanism.
-
-## What each needs before it starts
-
-| Item | Blocker |
+| Item | Outcome |
 |---|---|
-| D2 | Nothing |
-| E8 | A probe confirming `--forward-subagent-text` only adds frames |
-| E12 | A probe for the `file_suggestions` request and response shape |
-| E16 | A measurement of render time at long transcript lengths |
-| E17 | A probe for `fast_mode_state` on this account, and whether `/fast` works headlessly |
+| **D2** | Shipped. The prediction held: building it first meant E8's nested rows inherited the expansion state rather than inventing a second mechanism. |
+| **E8** | Shipped. The largest of the five, and the only one that needed the reducers refactored to build entries rather than whole states, so they could run at any depth. |
+| **E12** | Shipped. The slash menu turned out to be reusable as-is; most of the work was the reader that separates project paths from the CLI's own skill paths. |
+| **E16** | **Not built, deliberately.** The wasteful re-rendering was fixed in `fefa125` and nobody has measured whether node count alone is a problem. |
+| **E17** | Shipped and unreachable here: the account is blocked by organisation policy, so the flame will not appear on this machine. |
+
+## What each was waiting on, and how it resolved
+
+| Item | Blocker | Answer |
+|---|---|---|
+| D2 | Nothing | — |
+| E8 | Whether the flag changes the existing stream | It does not; it only adds tagged frames |
+| E12 | The `file_suggestions` request and response shape | `{subtype, query}` → `{suggestions: [{path}], cwd}`, 15 max |
+| E16 | A measurement of render time at long transcript lengths | Still not taken |
+| E17 | Fast mode's state on this account | `off`, blocked by organisation policy |

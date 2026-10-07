@@ -219,3 +219,34 @@ it with the user rather than quietly changing it.
   `estimated_tokens_delta` — hundreds of them per turn, and they are estimates, not the
   model's own count. How much text a block holds is the provider's business: the same
   session can return a full chain of thought on one turn and an empty block on the next.
+- **`--forward-subagent-text` only adds frames; it does not change the ones already there.**
+  A subagent's `assistant`, `user` and hook events arrive tagged with the `tool_use_id` of
+  the call that spawned them, and the main conversation is untouched — verified with the
+  flag on and off, with 19 extra tagged frames and no difference to the rest. That is what
+  makes it safe to pass unconditionally. The `Task` tool is also named `Agent` now, and the
+  CLI's own `tools` list still says `Task`, so match both.
+- **The reducers build entries, not states, so they can run at any depth.** `assistantEntries`,
+  `withToolResults` and `withHook` each take and return a `ChatEntry[]`, and the top-level
+  handlers are thin wrappers over them. That is what lets a subagent's card hold a real
+  transcript — with its own tool calls paired to their results and its own hooks attached —
+  rather than a reduced imitation of one. Adding a handler that works on `ChatState`
+  directly will quietly make subagents second-class; add it to the entry level instead.
+- **Card expansion lives in the pane, not in the cards.** It travels by context
+  (`ExpansionContext`) rather than props because a subagent card contains a transcript, so
+  the nesting depth is not known when the pane renders. It is stored as a default plus the
+  ids that disagree with it, so "expand all" also covers entries that have not arrived yet.
+  The context value must be memoised: a new value on every render would defeat
+  `TranscriptItem`'s memo and re-render every row.
+- **`file_suggestions` is asked as `{subtype, query}` and answers `{suggestions: [{path}], cwd}`.**
+  Capped at 15, and an empty query returns the top-level listing. The tell for filtering is
+  in the paths themselves: anything inside the session comes back relative to `cwd`, while
+  the CLI's own skills come back absolute. The index behind it is `git ls-files` plus
+  ripgrep, honouring the ignore files — do not replace it with a directory walk, which
+  would offer a different and worse list.
+- **Fast mode needs an opt-in, and an organisation can override it anyway.** `/fast` exists
+  as a builtin and refuses in an SDK session with `fast_mode_disabled_reason:
+  "sdk_opt_in_required"` until the session passes `--settings {"fastMode":true}`; with that,
+  the reason moves to `preference` if policy forbids it. Read the state from `init` and from
+  every result message — it changes mid-session — and note the legal values are only `on`,
+  `cooldown` and `off`. The CLI ignores anything else, so an unrecognised value means
+  "nothing was said" rather than a new state to render.
