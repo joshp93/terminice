@@ -18,6 +18,9 @@ pub fn run() {
             claude::close_claude,
             sessions::list_sessions,
             sessions::read_session_history,
+            sessions::remember_interrupted,
+            sessions::forget_interrupted,
+            sessions::take_interrupted,
             settings::load_settings,
             settings::save_settings,
         ])

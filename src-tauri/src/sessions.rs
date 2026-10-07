@@ -2,6 +2,7 @@
 
 use crate::home;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -131,6 +132,60 @@ pub fn read_session_history(cwd: String, id: String, limit: usize) -> Vec<Histor
 
     let start = messages.len().saturating_sub(limit);
     messages.split_off(start)
+}
+
+/// Path of the record of sessions left waiting on a decision.
+fn interrupted_path() -> Option<PathBuf> {
+    home::home_dir().map(|dir| dir.join(".config").join("terminice-interrupted.json"))
+}
+
+fn read_interrupted() -> HashMap<String, String> {
+    interrupted_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_interrupted(map: &HashMap<String, String>) -> Result<(), String> {
+    let path = interrupted_path().ok_or("no home directory is available")?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let text = serde_json::to_string_pretty(map).map_err(|error| error.to_string())?;
+    std::fs::write(path, text).map_err(|error| error.to_string())
+}
+
+/// Records that a session is waiting on a decision.
+///
+/// Written when the prompt arrives rather than when the session ends, so a
+/// crash or a hard close cannot lose it.
+#[tauri::command]
+pub fn remember_interrupted(session_id: String, tool: String) -> Result<(), String> {
+    if session_id.is_empty() {
+        return Ok(());
+    }
+    let mut map = read_interrupted();
+    map.insert(session_id, tool);
+    write_interrupted(&map)
+}
+
+/// Forgets that a session was waiting, once the decision has been made.
+#[tauri::command]
+pub fn forget_interrupted(session_id: String) -> Result<(), String> {
+    let mut map = read_interrupted();
+    if map.remove(&session_id).is_none() {
+        return Ok(());
+    }
+    write_interrupted(&map)
+}
+
+/// Reads and clears what a session was waiting on, if anything.
+#[tauri::command]
+pub fn take_interrupted(session_id: String) -> Option<String> {
+    let mut map = read_interrupted();
+    let tool = map.remove(&session_id)?;
+    let _ = write_interrupted(&map);
+    Some(tool)
 }
 
 /// Lists past sessions for a working directory, newest first.

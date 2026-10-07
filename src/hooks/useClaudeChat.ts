@@ -25,7 +25,14 @@ import { PERMISSION_MODES } from "../lib/claudeConfig";
 import { readPrompt, type Prompt, type PromptResolution } from "../lib/dialogModels";
 import { asRecord, asText, parseJsonLine, type Json } from "../lib/json";
 import { nextId } from "../lib/nextId";
-import { listSessions, readSessionHistory, type SessionSummary } from "../lib/sessions";
+import {
+  forgetInterrupted,
+  listSessions,
+  readSessionHistory,
+  rememberInterrupted,
+  takeInterrupted,
+  type SessionSummary,
+} from "../lib/sessions";
 import { createChatState, type ChatState, type ClaudeEvent } from "../types";
 
 /** A loaded Claude session, whether or not it is the one on screen. */
@@ -270,6 +277,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       if (record.prompts.some((entry) => entry.requestId === prompt.requestId)) return;
       clearSilence();
       store.set(backendId, { ...record, prompts: [...record.prompts, prompt] });
+      rememberInterrupted(record.state.sessionId ?? "", prompt.toolName);
       bump();
     },
     [clearSilence, writeLine],
@@ -379,10 +387,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   /**
    * Starts a session process and makes it the active one.
    *
-   * @param options - A session id to resume, and whether to replay its history.
+   * @param options - A session id to resume, whether to replay its history, and
+   *   whether to report a decision that was lost when the app last closed.
    */
   const spawn = useCallback(
-    (options: { resume?: string; replay?: boolean } = {}) => {
+    (options: { resume?: string; replay?: boolean; announceInterrupted?: boolean } = {}) => {
       const dir = cwdRef.current;
       if (dir === null) return;
 
@@ -419,6 +428,18 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
           if (options.resume && options.replay) {
             void readSessionHistory(dir, options.resume, HISTORY_LIMIT).then((messages) => {
               if (messages.length > 0) patchState(id, (state) => withHistory(state, messages));
+            });
+          }
+
+          if (options.resume && options.announceInterrupted) {
+            void takeInterrupted(options.resume).then((tool) => {
+              if (tool === null) return;
+              patchState(id, (state) =>
+                withNotice(
+                  state,
+                  `This session was interrupted while a ${tool} approval was waiting. The CLI does not keep an unanswered request across restarts, so tell Claude to carry on and it will ask again.`,
+                ),
+              );
             });
           }
         })
@@ -544,6 +565,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         prompts: record.prompts.slice(1),
         silenceMs: SILENCE_TIMEOUT_MS,
       });
+      if (record.prompts.length === 1) forgetInterrupted(record.state.sessionId ?? "");
       bump();
       writeLine(active, line);
       armSilence(active);
@@ -598,7 +620,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       }
 
       standDown();
-      spawn({ resume: id, replay: true });
+      spawn({ resume: id, replay: true, announceInterrupted: true });
     },
     [handshake, spawn, standDown],
   );

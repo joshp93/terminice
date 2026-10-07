@@ -53,3 +53,41 @@ export async function readSessionHistory(
     return [];
   }
 }
+
+/**
+ * Records that a session is waiting on a decision.
+ *
+ * Written as soon as the prompt arrives rather than when the session ends, so
+ * that a crash or a hard close cannot lose it.
+ *
+ * @param sessionId - The session holding the prompt.
+ * @param tool - The tool it is waiting to run.
+ */
+export function rememberInterrupted(sessionId: string, tool: string): void {
+  if (sessionId.length === 0) return;
+  void invoke("remember_interrupted", { sessionId, tool }).catch(() => undefined);
+}
+
+/**
+ * Forgets that a session was waiting, once the decision has been made.
+ *
+ * @param sessionId - The session that was waiting.
+ */
+export function forgetInterrupted(sessionId: string): void {
+  if (sessionId.length === 0) return;
+  void invoke("forget_interrupted", { sessionId }).catch(() => undefined);
+}
+
+/**
+ * Reads and clears what a session was waiting on, if anything.
+ *
+ * @param sessionId - The session to ask about.
+ * @returns The tool it was waiting on, or null when there is no record.
+ */
+export async function takeInterrupted(sessionId: string): Promise<string | null> {
+  try {
+    return await invoke<string | null>("take_interrupted", { sessionId });
+  } catch {
+    return null;
+  }
+}
