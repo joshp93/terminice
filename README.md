@@ -327,12 +327,16 @@ ourselves.
 
 ## Roadmap
 
-1. **Subagent output** — `--forward-subagent-text` tags blocks with `parent_tool_use_id`;
-   render them nested.
-2. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
+Five features are planned in detail in [ROADMAP.md](ROADMAP.md) — expand-all for tool and
+reasoning cards, subagent output, `@` file mentions, transcript virtualisation and fast
+mode. Each entry there covers what it is, what the CLI actually offers, how to build it and
+what has to be probed first.
+
+Beyond those:
+
+1. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
    instance over a socket.
-3. **Conversation branching** — edit an earlier turn and re-run from there.
-4. **Virtualise the transcript** once transcripts get long.
+2. **Conversation branching** — edit an earlier turn and re-run from there.
 
 ## Layout
 
