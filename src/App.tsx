@@ -28,8 +28,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = settings.theme;
-  }, [settings.theme]);
+    const root = document.documentElement;
+    root.dataset.theme = settings.theme;
+    root.dataset.composerFont = settings.composerFontSize;
+    root.dataset.chatFont = settings.chatFontSize;
+  }, [settings.theme, settings.composerFontSize, settings.chatFontSize]);
 
   const chat = useClaudeChat(cwd);
 

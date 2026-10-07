@@ -13,7 +13,9 @@ export type ChatPaneProps = {
 /**
  * Renders the chat transcript.
  *
- * Scrolls to the newest content as entries arrive.
+ * Scrolls to the newest content as entries arrive. The scroll is coalesced to
+ * one per frame, because streamed text changes many times between frames and
+ * each scroll would otherwise measure the whole transcript again.
  *
  * Every card in the transcript is collapsed by default, and the pane owns that
  * state rather than the cards themselves. It is tracked as a default plus the
@@ -25,6 +27,7 @@ export type ChatPaneProps = {
  */
 export function ChatPane({ state }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<number | null>(null);
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [exceptions, setExceptions] = useState<ReadonlySet<string>>(new Set());
 
@@ -32,8 +35,19 @@ export function ChatPane({ state }: ChatPaneProps) {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the transcript and the streaming text are what this effect follows, not what it reads.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
+    if (frameRef.current !== null) return;
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      endRef.current?.scrollIntoView({ block: "end" });
+    });
   }, [state.entries, state.streaming]);
+
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    },
+    [],
+  );
 
   const toggle = useCallback((id: string) => {
     setExceptions((current) => {

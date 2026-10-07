@@ -13,12 +13,27 @@ pnpm build                # frontend assets only
 pnpm lint                 # biome check — lints and formatting-checks the whole project
 pnpm lint:fix             # the same, applying every fix it can
 pnpm format               # biome format --write
+pnpm test                 # vitest run — `pretest` runs `pnpm lint` first
+pnpm test:watch           # vitest, in watch mode
 cd src-tauri && cargo test
 ```
 
 Always run `pnpm typecheck` after touching TypeScript. Biome is the linter and formatter
 for everything it can parse — TypeScript, JSON and CSS — configured by `biome.json`. Rust
 is outside its reach, so `src-tauri` is still governed by `cargo` and `cargo clippy`.
+
+Tests are Vitest, colocated beside the file they cover as `*.test.ts` or `*.test.tsx`, and
+run in jsdom. `src/test/setup.ts` loads the jest-dom matchers and the jsdom polyfills
+CodeMirror needs; `src/test/tauriMock.ts` stands in for the Tauri IPC bridge and is
+aliased as `@test/tauriMock`, so a test that needs IPC starts with:
+
+```ts
+vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
+```
+
+Commands are then answered with `routeInvoke("command_name", handler)`, and a Channel the
+app created is driven with `sessionChannel().emit(event)`. Reach for a test double only
+where the code actually crosses into Tauri; `src/lib` is mostly pure and needs none.
 
 ## Architecture decisions — do not relitigate
 
@@ -144,9 +159,21 @@ it with the user rather than quietly changing it.
   call with a matching name. That is a heuristic; with parallel tool calls it can attribute
   a hook to the wrong card, which is why the chip shows the hook's own name rather than
   claiming certainty.
-- **The silence guard must stand down while a prompt is outstanding.** A CLI waiting for
-  the user is silent by design. `armSilence` bails out when the session has pending
-  prompts, or the guard would interrupt every approval request after 20 seconds.
+- **The silence guard must stand down for both kinds of silence that are not faults.** A
+  CLI waiting for the user is silent by design, and so is a CLI waiting on a tool: while a
+  tool runs the model is not generating, so nothing is streamed for its whole life. The
+  guard therefore bails out when the session has pending prompts *and* allows a tool far
+  longer (`TOOL_SILENCE_TIMEOUT_MS`, ten minutes, against twenty seconds) — otherwise a test
+  run, a build or a long search is interrupted part-way through for the crime of taking a
+  while. This was not theoretical: building terminice through terminice killed every command
+  that ran longer than twenty seconds, because the app's own guard fired at its own tool.
+- **`armSilence` has to be armed from the state *after* the event, not before it.** The
+  guard picks its allowance by asking whether a tool is out, and the event that starts the
+  tool is the very event being applied — arming first asks a transcript that has not heard
+  about the tool yet, gets "no tool", and hands the turn the twenty-second allowance anyway.
+  `armSilenceAfter` exists for that reason and reads the store itself; do not fold it back
+  into the top of `handleEvent`, and note the `result` branch returns before it because the
+  turn is over and the guard should be clear rather than armed.
 - **`system/init` repeats, and that is the only signal for a directory change.** The CLI
   re-sends it with a new `cwd` whenever the session moves — verified by having Claude run
   `cd /d/apps && pwd` and watching init arrive again reporting `D:\apps`. Nothing else
@@ -264,3 +291,64 @@ it with the user rather than quietly changing it.
   the same reason. The child still gets a console and its streams are pipes either way, so
   output capture is unaffected — the shell tests cover that and fail if the flag ever
   breaks it.
+- **Local command output has two caps, one per consumer, and they are not
+  interchangeable.** Both live in `src/lib/outputLimits.ts`: `capForModel` (30,000
+  characters) is applied where the output is wrapped in `<bash-stdout>` and handed to
+  Claude, and `capForDisplay` (1,000,000) where it is stored in the transcript entry and
+  rendered. `shell.rs` returns output in full on purpose — capping it there, as it once
+  did, applies the model's limit to the card as well and loses the output everywhere.
+  Neither number should be moved to a single choke point; they bound different things.
+- **`!` only counts as the first character.** `shellCommandIn` tests the prefix before
+  trimming, so a line typed with leading whitespace is an ordinary message for Claude —
+  which matches the terminal UI, where `!` is entered as the first key of an empty prompt.
+  `isShell` is derived from `shellCommandIn` rather than repeating the test, so the
+  styling and what actually runs cannot drift apart; they once did, and `"  !ls"` ran
+  locally while looking like prose.
+- **A streaming pane must not measure the layout per token.** `state.streaming` changes
+  once per streamed character, and a `scrollIntoView` on that dependency forces a
+  synchronous layout of the whole transcript each time. `ChatPane` coalesces it to one
+  scroll per animation frame and cancels the pending frame on unmount.
+- **Green buttons are one visual language, and the fill is the whole of it.** They rest as
+  an outline, fill on hover *or* focus, and draw no focus ring of their own — the fill is
+  the indicator, and two indicators for one state reads as a mistake. The Send button and
+  the dialog's submit share it; a new button that looks green joins by taking the
+  `green-button` class rather than by copying the colours. Two things break it if touched:
+  dropping `:not(.disabled)` from the fill rule makes an inactive button fill, and deleting
+  the `disabled` class makes it look ready when it is not. An inactive button is grey, and
+  it keeps the focus ring *because* it never fills — otherwise a keyboard-focused Send on an
+  empty composer would show nothing at all.
+- **The formatting toolbar is deliberately not part of that family.** It was tried and
+  reverted: `.format-button` keeps its own quiet treatment, where `on` is a raised panel
+  and `mixed` is dashed, because a toolbar of six permanently-filled buttons competes with
+  the text it is there to format. Do not "unify" it with the green buttons again.
+- **An interrupt is not an error, and the CLI cannot tell you that.** It reports a stop the
+  same way it reports a fault, which is why the transcript used to show a bare "the turn
+  ended with an error" for a keypress the reader had just made. The host knows what the CLI
+  does not: `interrupt` sets `interrupted` on the session record, `settleInterrupt` spends
+  it when the result arrives, and `applyResultEvent` records a notice instead of an error.
+  The silence guard sets the same flag, so its notice is neutral rather than blaming the
+  reader. Do not "simplify" this by reading a subtype off the result — there is no field
+  that distinguishes the two.
+- **A message sent mid-turn is queued, and the end of the turn is what releases it.** The
+  CLI says nothing about picking a message up, so `send` marks a user entry `queued` when
+  the session was already busy, and `applyResultEvent` takes the mark off every waiting
+  message when a turn ends. That is the only signal there is; a per-message acknowledgement
+  does not exist to be read.
+- **The free-text answer is a row in the option list, not a pane beside it.** A
+  single-select question is laid out with one more row than the CLI sent it —
+  `rowsForQuestion` appends "Type your own response", and that row is focused, hovered and
+  chosen by exactly the same machinery as a suggested option. What sets it apart is only
+  that its box opens on being reached instead of on `n`, and that its answer is the typed
+  text rather than its own label. `answerFor` is the one place that knows this, so an empty
+  or whitespace-only box is no answer and the card cannot be sent on it. The box follows the
+  row exactly as an option's notes follow theirs — open while the row has the keyboard or the
+  pointer, closed the moment either moves away — so `typedQuestion` must not also keep it
+  open for a row that is merely still selected. The text is kept per question, so leaving the
+  row and coming back does not lose it, and picking a suggested option clears it as picking
+  any other single-select option would.
+- **Escape closes a card without answering, and that is a refusal.** `PromptResolution`
+  carries a `dismiss` kind for it, and `responseFor` turns it into a deny whose message asks
+  Claude to clarify — never into an allow, because a card nobody answered is not consent. In
+  a text box the first Escape belongs to the box and only blurs it; the card closes on the
+  next one. The pane's own Escape is swallowed there, so do not move the card's handler
+  ahead of it.

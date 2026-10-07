@@ -20,7 +20,7 @@ export type ThinkingBlockProps = {
 export function ThinkingBlock({ id, text }: ThinkingBlockProps) {
   const { isOpen, toggle } = useExpansion();
   const open = isOpen(id);
-  const preview = text.trim().split("\n")[0] ?? "";
+  const preview = text.trim().split("\n")[0];
 
   return (
     <div className={open ? "thinking-block open" : "thinking-block"}>

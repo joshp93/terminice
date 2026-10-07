@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::ipc::Channel;
 use uuid::Uuid;
@@ -34,7 +34,9 @@ impl ClaudeEvent {
 }
 
 struct Session {
-    stdin: ChildStdin,
+    /// Held behind its own lock so a write that blocks cannot hold up the
+    /// registry, and so writes to the same session still serialise.
+    stdin: Arc<Mutex<ChildStdin>>,
 }
 
 /// Registry of live Claude sessions.
@@ -92,28 +94,40 @@ pub fn start_claude(
         .0
         .lock()
         .map_err(|error| error.to_string())?
-        .insert(id.clone(), Session { stdin });
+        .insert(id.clone(), Session {
+            stdin: Arc::new(Mutex::new(stdin)),
+        });
 
     Ok(id)
 }
 
 /// Writes one newline-terminated JSON message to a Claude session.
+///
+/// The registry is only held long enough to clone the session's writer, because
+/// a write blocks for as long as the child declines to read. Holding the
+/// registry across it would let one wedged session stall every other command,
+/// including the closes that run when the window shuts.
 #[tauri::command]
 pub fn send_claude_line(
     state: tauri::State<'_, ClaudeSessions>,
     id: String,
     line: String,
 ) -> Result<(), String> {
-    let mut sessions = state.0.lock().map_err(|error| error.to_string())?;
-    let session = sessions
-        .get_mut(&id)
-        .ok_or_else(|| format!("unknown claude session: {id}"))?;
-    session
-        .stdin
+    let writer = {
+        let sessions = state.0.lock().map_err(|error| error.to_string())?;
+        sessions
+            .get(&id)
+            .ok_or_else(|| format!("unknown claude session: {id}"))?
+            .stdin
+            .clone()
+    };
+
+    let mut stdin = writer.lock().map_err(|error| error.to_string())?;
+    stdin
         .write_all(line.as_bytes())
-        .and_then(|_| session.stdin.write_all(b"\n"))
-        .and_then(|_| session.stdin.flush())
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+    stdin.write_all(b"\n").map_err(|error| error.to_string())?;
+    stdin.flush().map_err(|error| error.to_string())
 }
 
 /// Stops tracking a Claude session, which ends it by closing its stdin.

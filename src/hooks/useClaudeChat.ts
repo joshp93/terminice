@@ -2,7 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { PERMISSION_MODES } from "../lib/claudeConfig";
 import {
-  applyClaudeLine,
+  applyClaudeMessage,
   latestAssistantText,
   withError,
   withHistory,
@@ -29,6 +29,8 @@ import {
 import { type Prompt, type PromptResolution, readPrompt } from "../lib/dialogModels";
 import { asRecord, asText, type Json, parseJsonLine } from "../lib/json";
 import { nextId } from "../lib/nextId";
+import { capForDisplay, capForModel } from "../lib/outputLimits";
+import { hasRunningTool } from "../lib/runningTools";
 import {
   forgetInterrupted,
   listSessions,
@@ -49,6 +51,8 @@ type SessionRecord = {
   status: string;
   /** True when the process is still alive but not on screen. */
   parked: boolean;
+  /** True while a turn is being wound up because we asked it to stop. */
+  interrupted: boolean;
   /** How long this session's turn may stay silent before it is interrupted. */
   silenceMs: number;
 };
@@ -81,11 +85,22 @@ export type ClaudeSession = {
  * How long a session may produce no output at all before it is interrupted.
  *
  * A silent session is the worst failure mode: the transcript simply stops with
- * no indication why. Real work emits events continuously, so this much total
- * silence means something is wedged — unless the CLI is waiting on the user, in
- * which case silence is exactly what should happen.
+ * no indication why. Generating emits events continuously, so this much total
+ * silence means something is wedged — unless the CLI is waiting on the user, or
+ * waiting on a tool, in which case silence is exactly what should happen.
  */
 const SILENCE_TIMEOUT_MS = 20_000;
+
+/**
+ * How long a tool may run without producing output before it is treated as hung.
+ *
+ * Far longer than a turn's silence allowance because a tool is silent by design
+ * for its whole life, and the only thing worth interrupting is one that has
+ * genuinely stopped making progress. A build, a test run or a long search takes
+ * as long as it takes; the Stop button is there for a tool the reader has lost
+ * patience with, and this is the backstop for one that will never return.
+ */
+const TOOL_SILENCE_TIMEOUT_MS = 600_000;
 
 /**
  * How long a slash command may stay silent.
@@ -220,10 +235,15 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     (backendId: string) => {
       clearSilence();
       const record = storeRef.current.get(backendId);
-      const timeout = record?.silenceMs ?? SILENCE_TIMEOUT_MS;
+      const timeout = record
+        ? hasRunningTool(record.state)
+          ? TOOL_SILENCE_TIMEOUT_MS
+          : record.silenceMs
+        : SILENCE_TIMEOUT_MS;
       silenceRef.current = setTimeout(() => {
         const current = storeRef.current.get(backendId);
         if (!current?.state.busy || current.prompts.length > 0) return;
+        storeRef.current.set(backendId, { ...current, interrupted: true });
         request(backendId, { subtype: "interrupt" });
         patchState(backendId, (state) =>
           withNotice(
@@ -359,6 +379,40 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     [request, patchState, enqueuePrompt, askContext, askMcp],
   );
 
+  /**
+   * Arms the silence guard, unless the turn is not the thing being waited on.
+   *
+   * Read from the store rather than passed in, and called only once an event has
+   * been applied: whether a tool is out — and so which allowance the turn gets —
+   * is a fact about the transcript, not about the event that has just arrived.
+   *
+   * @param backendId - The session to watch.
+   */
+  const armSilenceAfter = useCallback(
+    (backendId: string) => {
+      const record = storeRef.current.get(backendId);
+      if (record?.state.busy !== true || record.prompts.length > 0) return;
+      armSilence(backendId);
+    },
+    [armSilence],
+  );
+
+  /**
+   * Spends the interrupt flag when the turn it was set for reports a result.
+   *
+   * The CLI reports an interrupt the same way it reports a fault, so knowing we
+   * asked for the stop is the only thing that tells the two apart.
+   *
+   * @param backendId - The session the result came from.
+   * @returns True when this result closes out an interrupt we asked for.
+   */
+  const settleInterrupt = useCallback((backendId: string): boolean => {
+    const record = storeRef.current.get(backendId);
+    if (record?.interrupted !== true) return false;
+    storeRef.current.set(backendId, { ...record, interrupted: false });
+    return true;
+  }, []);
+
   const handleEvent = useCallback(
     (backendId: string, event: ClaudeEvent) => {
       if (event.kind === "stderr") return;
@@ -381,11 +435,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
 
       const record = storeRef.current.get(backendId);
       if (!record) return;
-      if (record.state.busy && record.prompts.length === 0) armSilence(backendId);
 
       const message = parseJsonLine(event.line);
       if (!message) return;
 
+      const type = asText(message.type);
       const response = readControlResponse(message);
       if (response) {
         const reply = repliesRef.current.get(response.requestId);
@@ -402,14 +456,21 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         return;
       }
 
-      patchState(backendId, (state) => applyClaudeLine(state, event.line));
+      const stopping = type === "result" && settleInterrupt(backendId);
 
-      if (asText(message.type) === "result") {
+      patchState(backendId, (state) =>
+        applyClaudeMessage(state, message, { interrupted: stopping }),
+      );
+
+      if (type === "result") {
         clearSilence();
         askContext(backendId);
+        return;
       }
+
+      armSilenceAfter(backendId);
     },
-    [armSilence, clearSilence, enqueuePrompt, patchState, askContext],
+    [armSilenceAfter, clearSilence, enqueuePrompt, patchState, askContext, settleInterrupt],
   );
 
   handlerRef.current = handleEvent;
@@ -452,6 +513,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
             prompts: [],
             status: "running",
             parked: false,
+            interrupted: false,
             silenceMs: SILENCE_TIMEOUT_MS,
           });
           activeRef.current = id;
@@ -485,6 +547,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
             prompts: [],
             status: "unavailable",
             parked: false,
+            interrupted: false,
             silenceMs: SILENCE_TIMEOUT_MS,
           });
           activeRef.current = id;
@@ -524,10 +587,15 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   /**
    * Steps off the active session, keeping it alive when it is waiting on an
    * answer so that the prompt can be recovered by reattaching.
+   *
+   * Nothing is left on screen afterwards: a parked session stays in the store
+   * but must not stay active, or the next message would be written to a session
+   * the user can no longer see.
    */
   const standDown = useCallback(() => {
     const active = activeRef.current;
     if (active === null) return;
+    activeRef.current = null;
     const record = storeRef.current.get(active);
     if (!record) return;
 
@@ -557,13 +625,15 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       shellContextRef.current = [];
       const payload = pending.length === 0 ? text : `${pending.join("\n")}\n\n${text}`;
 
+      const queued = record.state.busy;
+
       storeRef.current.set(active, {
         ...record,
         silenceMs: text.trimStart().startsWith("/")
           ? COMMAND_SILENCE_TIMEOUT_MS
           : SILENCE_TIMEOUT_MS,
       });
-      patchState(active, (state) => withUserMessage(state, text));
+      patchState(active, (state) => withUserMessage(state, text, queued));
       writeLine(active, {
         type: "user",
         message: { role: "user", content: [{ type: "text", text: payload }] },
@@ -598,11 +668,18 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
 
       void runShellCommand(command, liveCwd)
         .then((output) => {
-          patchState(active, (state) => withShellResult(state, id, output));
+          patchState(active, (state) =>
+            withShellResult(state, id, {
+              stdout: capForDisplay(output.stdout),
+              stderr: capForDisplay(output.stderr),
+              code: output.code,
+            }),
+          );
           shellContextRef.current = [
             ...shellContextRef.current,
             `<bash-input> ${command}</bash-input>`,
-            `<bash-stdout>${output.stdout}</bash-stdout><bash-stderr>${output.stderr}</bash-stderr>` +
+            `<bash-stdout>${capForModel(output.stdout)}</bash-stdout>` +
+              `<bash-stderr>${capForModel(output.stderr)}</bash-stderr>` +
               `<bash-exit-code>${output.code ?? "unknown"}</bash-exit-code>`,
           ];
         })
@@ -619,6 +696,8 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     const active = activeRef.current;
     if (active === null) return;
     clearSilence();
+    const record = storeRef.current.get(active);
+    if (record) storeRef.current.set(active, { ...record, interrupted: true });
     request(active, { subtype: "interrupt" });
     patchState(active, (state) => ({ ...state, busy: false, streaming: "" }));
   }, [clearSilence, request, patchState]);
@@ -804,6 +883,13 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
  * @returns The message to write back to the CLI.
  */
 function responseFor(prompt: Prompt, resolution: PromptResolution): unknown {
+  if (resolution.kind === "dismiss") {
+    return denyTool(
+      prompt.requestId,
+      "The user closed this without answering. Ask them to clarify what they want before continuing.",
+    );
+  }
+
   if (resolution.kind === "permission") {
     return resolution.choice === "deny"
       ? denyTool(prompt.requestId, "The user denied this tool call.")

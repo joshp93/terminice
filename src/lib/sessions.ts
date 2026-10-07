@@ -62,6 +62,7 @@ export async function readSessionHistory(
  *
  * @param sessionId - The session holding the prompt.
  * @param tool - The tool it is waiting to run.
+ * @returns Nothing; a failure to record is swallowed.
  */
 export function rememberInterrupted(sessionId: string, tool: string): void {
   if (sessionId.length === 0) return;
@@ -72,6 +73,7 @@ export function rememberInterrupted(sessionId: string, tool: string): void {
  * Forgets that a session was waiting, once the decision has been made.
  *
  * @param sessionId - The session that was waiting.
+ * @returns Nothing; a failure to record is swallowed.
  */
 export function forgetInterrupted(sessionId: string): void {
   if (sessionId.length === 0) return;

@@ -10,6 +10,22 @@ export type SubagentCardProps = {
 };
 
 /**
+ * Summarises how far an agent has got.
+ *
+ * An agent whose frames were never forwarded records no steps at all, so an
+ * empty transcript only means "starting" while the agent is still running —
+ * once it has finished, saying so would be wrong.
+ *
+ * @param entry - The subagent card being summarised.
+ * @returns A short label for the card's summary line.
+ */
+function progressLabel(entry: SubagentCardProps["entry"]): string {
+  const steps = entry.entries.length;
+  if (steps > 0) return `${steps} step${steps === 1 ? "" : "s"}`;
+  return entry.status === "running" ? "starting…" : "no steps";
+}
+
+/**
  * Renders a subagent's conversation, nested inside the call that spawned it.
  *
  * Collapsed by default, like every other card, because a subagent's working is
@@ -35,9 +51,7 @@ export function SubagentCard({ entry, children }: SubagentCardProps) {
         <span className={`tool-status ${entry.status}`} aria-hidden="true" />
         <span className="subagent-name">Subagent</span>
         {entry.label.length > 0 && <span className="subagent-label">{entry.label}</span>}
-        <span className="subagent-steps">
-          {steps === 0 ? "starting…" : `${steps} step${steps === 1 ? "" : "s"}`}
-        </span>
+        <span className="subagent-steps">{progressLabel(entry)}</span>
         <span className="tool-disclosure">{open ? "hide" : "show"}</span>
       </button>
 

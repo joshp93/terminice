@@ -137,7 +137,9 @@ const editorTheme = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
     color: "inherit",
-    fontSize: "13.5px",
+    // Read from the document rather than fixed here, so the composer font size
+    // setting applies without rebuilding the editor.
+    fontSize: "var(--composer-font-size)",
   },
   ".cm-content": {
     fontFamily: MONO_FONT_STACK,

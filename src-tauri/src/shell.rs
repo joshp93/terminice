@@ -6,6 +6,10 @@ use serde::Serialize;
 use std::process::Command;
 
 /// What a local command produced.
+///
+/// Output is returned in full. Capping it belongs at the point it is handed to
+/// the model, not here, so that the transcript can show everything the command
+/// printed.
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellOutput {
@@ -13,10 +17,6 @@ pub struct ShellOutput {
     pub stderr: String,
     pub code: Option<i32>,
 }
-
-/// Output is kept in full for the transcript but capped before it reaches the
-/// model, so one careless command cannot consume the whole context window.
-const MAX_STDIO: usize = 30_000;
 
 /// Where Git for Windows usually puts bash when it is not on `PATH`.
 #[cfg(windows)]
@@ -46,17 +46,6 @@ pub fn shell_program() -> Option<String> {
         .or_else(|| find_on_path("cmd.exe"))
 }
 
-fn truncate(text: String) -> String {
-    if text.len() <= MAX_STDIO {
-        return text;
-    }
-    let mut cut = MAX_STDIO;
-    while cut > 0 && !text.is_char_boundary(cut) {
-        cut -= 1;
-    }
-    format!("{}\n… output truncated at {MAX_STDIO} bytes", &text[..cut])
-}
-
 fn execute(command: String, cwd: Option<String>) -> Result<ShellOutput, String> {
     let program = shell_program().ok_or("no shell was found to run the command with")?;
     let mut process = if program.ends_with("cmd.exe") {
@@ -79,8 +68,8 @@ fn execute(command: String, cwd: Option<String>) -> Result<ShellOutput, String> 
         .map_err(|error| format!("could not run the command: {error}"))?;
 
     Ok(ShellOutput {
-        stdout: truncate(String::from_utf8_lossy(&output.stdout).into_owned()),
-        stderr: truncate(String::from_utf8_lossy(&output.stderr).into_owned()),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         code: output.status.code(),
     })
 }
@@ -133,5 +122,23 @@ mod tests {
             "stdout was {:?}",
             output.stdout
         );
+    }
+
+    /// The cap belongs where the output is handed to the model, so a command
+    /// that prints more than the old limit still reaches the transcript whole.
+    #[test]
+    fn returns_output_larger_than_the_model_cap_in_full() {
+        let output = execute("printf 'x%.0s' {1..40000}".to_string(), None).expect("command runs");
+        assert_eq!(output.stdout.len(), 40_000, "stdout was not returned whole");
+        assert!(!output.stdout.contains("truncated"));
+    }
+
+    #[test]
+    fn separates_stdout_from_stderr() {
+        let output =
+            execute("echo to-out; echo to-err >&2".to_string(), None).expect("command runs");
+        assert!(output.stdout.contains("to-out"), "stdout was {:?}", output.stdout);
+        assert!(!output.stdout.contains("to-err"), "stderr leaked into stdout");
+        assert!(output.stderr.contains("to-err"), "stderr was {:?}", output.stderr);
     }
 }

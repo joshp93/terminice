@@ -389,6 +389,9 @@ export function readMcpServers(payload: unknown): McpServerInfo[] {
 /**
  * Reads the plugin list from a `system/init` event.
  *
+ * A plugin the CLI ships without a version reports the literal `builtin`, which
+ * is what the slash menu shows in place of a version number.
+ *
  * @param value - The event's `plugins` field.
  * @returns Each plugin's name, version and source.
  */

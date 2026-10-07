@@ -15,7 +15,13 @@ export type ClaudeEvent =
 
 /** One item in the chat transcript. */
 export type ChatEntry =
-  | { id: string; role: "user"; text: string }
+  | {
+      id: string;
+      role: "user";
+      text: string;
+      /** True while the CLI has not yet picked this message up. */
+      queued?: boolean;
+    }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "thinking"; text: string }
   | {
@@ -95,7 +101,11 @@ export type ChatState = {
   fastModeReason: string | null;
 };
 
-/** Creates an empty chat state. */
+/**
+ * Creates an empty chat state.
+ *
+ * @returns A chat state with no entries and nothing known about a session.
+ */
 export function createChatState(): ChatState {
   return {
     entries: [],
@@ -125,13 +135,30 @@ export type EnterBehaviour = "send" | "newline";
 /** Colour scheme for the whole application. */
 export type ThemeName = "dark" | "light";
 
+/** How large the text is, in the two places it can be set. */
+export type FontScale = "small" | "medium" | "large";
+
 /** Settings persisted to `~/.config/terminice-settings.json`. */
 export type Settings = {
   enterBehaviour: EnterBehaviour;
   theme: ThemeName;
+  /** Size of the text in the composer. */
+  composerFontSize: FontScale;
+  /** Size of the text in the transcript. */
+  chatFontSize: FontScale;
 };
 
-/** Creates the settings used when no file exists yet. */
+/**
+ * Creates the settings used when no file exists yet.
+ *
+ * @returns The default settings: Enter sends, the theme is dark, and both font
+ *   sizes are medium.
+ */
 export function createDefaultSettings(): Settings {
-  return { enterBehaviour: "send", theme: "dark" };
+  return {
+    enterBehaviour: "send",
+    theme: "dark",
+    composerFontSize: "medium",
+    chatFontSize: "medium",
+  };
 }

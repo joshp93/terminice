@@ -103,15 +103,17 @@ export function readToolUses(
  *
  * @param state - The current chat state.
  * @param text - The message text.
+ * @param queued - True when a turn was already running, so the CLI has yet to
+ *   pick this message up.
  * @returns The updated chat state.
  */
-export function withUserMessage(state: ChatState, text: string): ChatState {
+export function withUserMessage(state: ChatState, text: string, queued = false): ChatState {
   return {
     ...state,
     busy: true,
     thinkingTokens: 0,
     suggestion: null,
-    entries: [...state.entries, { id: nextId("user"), role: "user", text }],
+    entries: [...state.entries, { id: nextId("user"), role: "user", text, queued }],
   };
 }
 
@@ -203,6 +205,12 @@ export function withHistory(
   return { ...state, entries, streaming: "", busy: false };
 }
 
+/** What the caller knows about an event that the event itself does not say. */
+export type ApplyOptions = {
+  /** True when this result is the one that answers an interrupt we asked for. */
+  interrupted?: boolean;
+};
+
 /**
  * Applies one newline-delimited JSON event from a Claude session.
  *
@@ -211,12 +219,34 @@ export function withHistory(
  *
  * @param state - The current chat state.
  * @param line - One line of stream-json output.
+ * @param options - What the caller knows about the event.
  * @returns The updated chat state.
  */
-export function applyClaudeLine(state: ChatState, line: string): ChatState {
+export function applyClaudeLine(
+  state: ChatState,
+  line: string,
+  options: ApplyOptions = {},
+): ChatState {
   const message = parseJsonLine(line);
-  if (!message) return state;
+  return message ? applyClaudeMessage(state, message, options) : state;
+}
 
+/**
+ * Applies one already-decoded event from a Claude session.
+ *
+ * The hook decodes each line once to look for control messages, so it hands the
+ * decoded object on rather than making this parse the same line again.
+ *
+ * @param state - The current chat state.
+ * @param message - The decoded stream-json event.
+ * @param options - What the caller knows about the event.
+ * @returns The updated chat state.
+ */
+export function applyClaudeMessage(
+  state: ChatState,
+  message: Json,
+  options: ApplyOptions = {},
+): ChatState {
   // Subagent output rides the same stream as everything else and is told apart
   // only by the call it belongs to, so it is routed before anything else can
   // mistake it for the main conversation.
@@ -233,7 +263,7 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
     case "user":
       return applyUserEvent(state, message);
     case "result":
-      return applyResultEvent(state, message);
+      return applyResultEvent(state, message, options.interrupted === true);
     case "prompt_suggestion":
       return { ...state, suggestion: asText(message.suggestion) || null };
     default:
@@ -351,6 +381,11 @@ function assistantEntries(content: unknown): ChatEntry[] {
 /**
  * Fills in what the tools in one `user` message produced.
  *
+ * `tool_use_result` describes the message rather than any one block, so it is
+ * only attached when the message carries a single result. Parallel calls share
+ * one message, and giving each of them that one object would show every card
+ * the same output and lose the rest.
+ *
  * @param entries - The entries to update.
  * @param message - The decoded `user` line.
  * @returns The updated entries, or the same array when it carried no results.
@@ -362,6 +397,7 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
     .filter((block): block is Json => block !== null && asText(block.type) === "tool_result");
   if (results.length === 0) return entries;
 
+  const structured = results.length === 1 ? message.tool_use_result : undefined;
   const next = [...entries];
 
   for (const block of results) {
@@ -377,7 +413,7 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
     if (existing && existing.role === "tool") {
       next[index] = {
         ...existing,
-        result: describeToolResult(existing.name, message.tool_use_result, text),
+        result: describeToolResult(existing.name, structured, text),
         status: isError ? "error" : "ok",
       };
       continue;
@@ -580,11 +616,33 @@ function applyUserEvent(state: ChatState, message: Json): ChatState {
   return entries === state.entries ? state : { ...state, entries };
 }
 
-function applyResultEvent(state: ChatState, message: Json): ChatState {
+/**
+ * Records the end of a turn.
+ *
+ * An interrupt is reported as an error by the CLI, but it is not one: the user
+ * asked for it, so it is recorded as a notice instead. The CLI says nothing
+ * useful in that case, which is what leaves a bare "an error occurred" to be
+ * shown otherwise.
+ *
+ * A turn ending is also what tells the CLI to pick up anything the user sent
+ * while it was working, so the queued marks come off here.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `result` line.
+ * @param interrupted - True when this is the result of an interrupt we asked for.
+ * @returns The updated chat state.
+ */
+function applyResultEvent(state: ChatState, message: Json, interrupted: boolean): ChatState {
   let next = state;
   const additions: ChatEntry[] = [];
 
-  if (message.is_error === true) {
+  if (interrupted) {
+    additions.push({
+      id: nextId("notice"),
+      role: "notice",
+      text: "You interrupted the turn.",
+    });
+  } else if (message.is_error === true) {
     additions.push({
       id: nextId("error"),
       role: "error",
@@ -608,7 +666,7 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
 
   next = {
     ...state,
-    entries: [...state.entries, ...additions, ...denials],
+    entries: [...withSettledQueue(state.entries), ...additions, ...denials],
     streaming: "",
     busy: false,
     compacting: false,
@@ -617,4 +675,16 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
   };
 
   return withFastMode(next, message);
+}
+
+/**
+ * Takes the queued mark off every message waiting to be picked up.
+ *
+ * @param entries - The transcript entries.
+ * @returns The entries, with nothing left marked as queued.
+ */
+function withSettledQueue(entries: ChatEntry[]): ChatEntry[] {
+  return entries.map((entry) =>
+    entry.role === "user" && entry.queued === true ? { ...entry, queued: false } : entry,
+  );
 }

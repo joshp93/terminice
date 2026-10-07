@@ -61,10 +61,17 @@ export const TranscriptItem = memo(function TranscriptItem({ entry }: Transcript
       );
     case "error":
       return <div className="error-banner">{entry.text}</div>;
+    case "user":
+      return (
+        <div className="bubble user">
+          {entry.queued === true && <span className="queued-badge">Queued</span>}
+          <MessageBubble text={entry.text} preserveLineBreaks />
+        </div>
+      );
     default:
       return (
         <div className={`bubble ${entry.role}`}>
-          <MessageBubble text={entry.text} preserveLineBreaks={entry.role === "user"} />
+          <MessageBubble text={entry.text} preserveLineBreaks={false} />
         </div>
       );
   }

@@ -84,8 +84,12 @@ const RAW_VALUES: Record<string, string[]> = {
 /**
  * Turns a camel-cased key into a readable label.
  *
+ * Words are separated at case boundaries and at underscores or dashes, and the
+ * first character of the result is capitalised. Capitals inside the key are
+ * left alone, so a camel-cased key keeps the leading capital of each word.
+ *
  * @param key - A setting name such as `autoCompact`.
- * @returns A spaced, sentence-cased label such as `Auto compact`.
+ * @returns A spaced label such as `Auto Compact`.
  */
 export function humaniseKey(key: string): string {
   const spaced = key

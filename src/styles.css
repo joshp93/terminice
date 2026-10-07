@@ -55,9 +55,30 @@
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --composer-line: 44px;
 
+  /* Medium is the size the application was designed around, so it is what the
+     variables fall back to; the two other steps are set from the settings. */
+  --composer-font-size: 13.5px;
+  --chat-font-size: 14px;
+
   color-scheme: dark light;
   font-family: var(--font-ui);
   font-size: 14px;
+}
+
+:root[data-composer-font="small"] {
+  --composer-font-size: 12.5px;
+}
+
+:root[data-composer-font="large"] {
+  --composer-font-size: 15px;
+}
+
+:root[data-chat-font="small"] {
+  --chat-font-size: 13px;
+}
+
+:root[data-chat-font="large"] {
+  --chat-font-size: 15.5px;
 }
 
 :root[data-theme="light"] {
@@ -237,6 +258,7 @@ body {
   padding: 16px 18px 24px;
   overflow-y: auto;
   min-height: 0;
+  font-size: var(--chat-font-size);
 }
 
 .chat-empty {
@@ -286,6 +308,20 @@ body {
 
 .bubble.assistant {
   padding: 0 2px;
+}
+
+/* A message the CLI has not picked up yet, because a turn was still running. */
+.queued-badge {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .bubble.streaming {
@@ -842,12 +878,20 @@ body {
   font-size: 12px;
 }
 
+/*
+ * A card can ask several questions and carry a long plan, so it is capped at
+ * half the window and scrolls inside itself rather than pushing the transcript
+ * off screen. The cap is in vh rather than a percentage because the card is a
+ * grid item in an auto row, where a percentage would resolve against a height
+ * that depends on the card.
+ */
 .dialog-card {
   display: flex;
   gap: 12px;
   border-top: 1px solid var(--border);
   background: var(--panel);
   padding: 12px 14px;
+  max-height: 50vh;
 }
 
 .dialog-options {
@@ -857,6 +901,10 @@ body {
   flex-grow: 0;
   flex-shrink: 0;
   min-width: 0;
+  /* min-height, not height, is what lets this shrink below its content so the
+     overflow scrolls here rather than overflowing the card. */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dialog-question-header {
@@ -909,6 +957,12 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* A little more air between two questions than between their own rows, so a
+   card asking several does not read as one long list. */
+.dialog-question + .dialog-question {
+  margin-top: 8px;
 }
 
 .dialog-option.focused {
@@ -1035,6 +1089,7 @@ body {
   flex-direction: column;
   flex: 1 1 50%;
   min-width: 0;
+  min-height: 0;
   gap: 6px;
 }
 
@@ -1169,9 +1224,12 @@ body {
 }
 
 /*
- * Green buttons rest as an outline and fill in on hover, selection or focus.
- * The fill is an ordinary background transition, so the state change costs no
- * layout and nothing moves.
+ * Green buttons rest as an outline and fill in on hover or focus. The fill is
+ * an ordinary background transition, so the state change costs no layout and
+ * nothing moves.
+ *
+ * An inactive button is grey rather than green, and stays grey under the
+ * pointer: the fill is an offer to act, and there is nothing here to act on.
  */
 .green-button {
   background-color: var(--bg);
@@ -1203,7 +1261,13 @@ body {
   color: var(--text-dim);
 }
 
-.green-button:focus-visible,
+/*
+ * The fill is the ring for a green button, so it does not draw one as well —
+ * two indicators for one state reads as a mistake. An inactive button is the
+ * exception: it never fills, so without the ring a keyboard-focused Send on an
+ * empty composer would show nothing at all.
+ */
+.green-button.disabled:focus-visible,
 .segment:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;

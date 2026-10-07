@@ -6,54 +6,52 @@ use std::io;
 use std::path::PathBuf;
 
 /// What a bare Enter key does in the composer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EnterBehaviour {
     /// Enter sends the message; Shift+Enter inserts a newline.
+    #[default]
     Send,
     /// Enter inserts a newline; Ctrl+Enter sends the message.
     Newline,
 }
 
-impl Default for EnterBehaviour {
-    fn default() -> Self {
-        EnterBehaviour::Send
-    }
-}
-
 /// The colour scheme.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Theme {
     /// Dark background.
+    #[default]
     Dark,
     /// Light background.
     Light,
 }
 
-impl Default for Theme {
-    fn default() -> Self {
-        Theme::Dark
-    }
+/// How large the text is, in the two places it can be set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FontScale {
+    /// Smaller than the default.
+    Small,
+    /// The size the application was designed around.
+    #[default]
+    Medium,
+    /// Larger than the default.
+    Large,
 }
 
 /// Everything the application persists between runs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     /// What Enter does in the composer.
     pub enter_behaviour: EnterBehaviour,
     /// Colour scheme.
     pub theme: Theme,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Settings {
-            enter_behaviour: EnterBehaviour::default(),
-            theme: Theme::default(),
-        }
-    }
+    /// Size of the text in the composer.
+    pub composer_font_size: FontScale,
+    /// Size of the text in the transcript.
+    pub chat_font_size: FontScale,
 }
 
 /// Returns the path of the settings file.
@@ -96,13 +94,15 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{EnterBehaviour, Settings, Theme};
+    use super::{EnterBehaviour, FontScale, Settings, Theme};
 
     #[test]
     fn defaults_to_send_and_dark() {
         let settings = Settings::default();
         assert_eq!(settings.enter_behaviour, EnterBehaviour::Send);
         assert_eq!(settings.theme, Theme::Dark);
+        assert_eq!(settings.composer_font_size, FontScale::Medium);
+        assert_eq!(settings.chat_font_size, FontScale::Medium);
     }
 
     #[test]
@@ -110,12 +110,18 @@ mod tests {
         let settings = Settings {
             enter_behaviour: EnterBehaviour::Newline,
             theme: Theme::Light,
+            composer_font_size: FontScale::Large,
+            chat_font_size: FontScale::Small,
         };
         let json = serde_json::to_string(&settings).expect("serialises");
         assert!(json.contains("\"enterBehaviour\":\"newline\""), "{json}");
         assert!(json.contains("\"theme\":\"light\""), "{json}");
+        assert!(json.contains("\"composerFontSize\":\"large\""), "{json}");
+        assert!(json.contains("\"chatFontSize\":\"small\""), "{json}");
         let parsed: Settings = serde_json::from_str(&json).expect("parses");
         assert_eq!(parsed.theme, Theme::Light);
+        assert_eq!(parsed.composer_font_size, FontScale::Large);
+        assert_eq!(parsed.chat_font_size, FontScale::Small);
     }
 
     #[test]
@@ -123,6 +129,24 @@ mod tests {
         let parsed: Settings = serde_json::from_str("{}").expect("parses");
         assert_eq!(parsed.theme, Theme::Dark);
         assert_eq!(parsed.enter_behaviour, EnterBehaviour::Send);
+        assert_eq!(parsed.composer_font_size, FontScale::Medium);
+        assert_eq!(parsed.chat_font_size, FontScale::Medium);
+    }
+
+    #[test]
+    fn a_settings_file_without_font_sizes_still_loads() {
+        let parsed: Settings =
+            serde_json::from_str(r#"{"enterBehaviour":"newline","theme":"light"}"#).expect("parses");
+        assert_eq!(parsed.theme, Theme::Light);
+        assert_eq!(parsed.chat_font_size, FontScale::Medium);
+    }
+
+    /// The loader falls back wholesale rather than reading a partly-understood
+    /// file, so a scale the app does not know cannot be silently rounded.
+    #[test]
+    fn an_unknown_font_scale_is_rejected_rather_than_guessed() {
+        let parsed: Result<Settings, _> = serde_json::from_str(r#"{"composerFontSize":"huge"}"#);
+        assert!(parsed.is_err());
     }
 
     #[test]

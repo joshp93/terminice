@@ -31,9 +31,12 @@ export function nodeRepresentsFormat(node: SyntaxNode, id: FormatId): boolean {
 /**
  * Reads the marker positions of a style node.
  *
- * The markers are the node's first and last children.
+ * The markers are the node's first and last children. Any node whose children
+ * begin and end with a mark is read this way, which is every inline style and
+ * also a fenced code block; callers reach it only through
+ * {@link nodeRepresentsFormat}, so the distinction does not matter here.
  *
- * @param node - A node representing an inline style.
+ * @param node - A node whose first and last children are its markers.
  * @returns The marker ranges, or null when the node has no distinct pair.
  */
 export function spanOf(node: SyntaxNode): StyleSpan | null {

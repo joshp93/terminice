@@ -1,9 +1,12 @@
 import type { InboundRequest } from "./controlProtocol";
 import { asArray, asRecord, asText, type Json, prettyJson } from "./json";
+import { oneLine } from "./oneLine";
 
 /** How the user resolved a card. */
 export type PromptResolution =
   | { kind: "permission"; choice: "allow" | "always" | "deny"; permissions?: unknown }
+  /** The card was closed without an answer, so the request is refused. */
+  | { kind: "dismiss" }
   | {
       kind: "question";
       answers: Record<string, string>;
@@ -114,23 +117,26 @@ export function describeSuggestion(suggestion: unknown): string {
 /**
  * Summarises a tool input on one line.
  *
+ * The keys are tried in the order that names the tool's subject most precisely,
+ * and the first one that carries text wins. The result is collapsed to a single
+ * bounded line, because the card shows it as a title.
+ *
  * @param toolName - The tool being called.
  * @param input - Its input.
- * @returns A short description, or an empty string.
+ * @returns A short description, or the tool's own name when nothing is named.
  */
 function summarise(toolName: string, input: Record<string, unknown> | null): string {
   if (!input) return "";
-  const path = asText(input.file_path) || asText(input.path) || asText(input.notebook_path);
-  if (path) return path;
-  const command = asText(input.command);
-  if (command) return command.split("\n")[0];
-  const pattern = asText(input.pattern);
-  if (pattern) return pattern;
-  const url = asText(input.url);
-  if (url) return url;
-  const prompt = asText(input.prompt) || asText(input.description);
-  if (prompt) return prompt;
-  return toolName;
+  const detail =
+    asText(input.file_path) ||
+    asText(input.path) ||
+    asText(input.notebook_path) ||
+    asText(input.command) ||
+    asText(input.pattern) ||
+    asText(input.url) ||
+    asText(input.prompt) ||
+    asText(input.description);
+  return detail ? oneLine(detail) : toolName;
 }
 
 /**

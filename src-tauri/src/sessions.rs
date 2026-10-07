@@ -2,6 +2,7 @@
 
 use crate::home;
 use serde::Serialize;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -96,7 +97,7 @@ pub fn read_session_history(cwd: String, id: String, limit: usize) -> Vec<Histor
     };
 
     let mut messages: Vec<HistoryMessage> = Vec::new();
-    for line in std::io::BufReader::new(file).lines().flatten() {
+    for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
         let value: serde_json::Value = match serde_json::from_str(&line) {
             Ok(value) => value,
             Err(_) => continue,
@@ -223,7 +224,7 @@ pub fn list_sessions(cwd: String, limit: usize) -> Vec<SessionSummary> {
         })
         .collect();
 
-    sessions.sort_by(|a, b| b.1.modified.cmp(&a.1.modified));
+    sessions.sort_by_key(|entry| Reverse(entry.1.modified));
     sessions.truncate(limit);
 
     sessions

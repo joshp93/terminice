@@ -1,7 +1,14 @@
 import { useEffect, useRef } from "react";
-import type { Settings } from "../types";
+import type { FontScale, Settings } from "../types";
 import { CogIcon } from "./CogIcon";
 import { SegmentedChoice } from "./SegmentedChoice";
+
+/** The font sizes on offer, in the order they run. */
+const FONT_SCALES: readonly { value: FontScale; label: string }[] = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "large", label: "Large" },
+];
 
 /** Props for {@link SettingsMenu}. */
 export type SettingsMenuProps = {
@@ -102,6 +109,18 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
               { value: "light", label: "Light" },
             ]}
             onSelect={(theme) => onChange({ ...settings, theme })}
+          />
+          <SegmentedChoice
+            label="Composer text"
+            value={settings.composerFontSize}
+            options={FONT_SCALES}
+            onSelect={(composerFontSize) => onChange({ ...settings, composerFontSize })}
+          />
+          <SegmentedChoice
+            label="Chat text"
+            value={settings.chatFontSize}
+            options={FONT_SCALES}
+            onSelect={(chatFontSize) => onChange({ ...settings, chatFontSize })}
           />
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>

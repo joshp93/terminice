@@ -19,7 +19,27 @@ type FocusTarget =
   | { kind: "choice"; index: number }
   | { kind: "submit" };
 
-const NOTES_HINT = "press n to show notes";
+const NOTES_HINT = "press n for notes";
+const MOVING_HINT = "↑↓ to move, Enter to choose · esc to dismiss";
+const TICKING_HINT = "↑↓ to move, Enter or space to tick · esc to dismiss";
+
+/**
+ * The extra row a single-select question offers, alongside its own options.
+ *
+ * Picking it is what opens the box for answering in your own words, so the row
+ * is selected and navigated exactly like a suggested option and only the answer
+ * box sets it apart.
+ */
+const CUSTOM_LABEL = "Type your own response";
+
+/** One row of a question: a suggested option, or the row for a typed answer. */
+type QuestionRow = {
+  label: string;
+  description: string;
+  preview: string;
+  /** True for the row that stands in for an answer of the reader's own. */
+  typed: boolean;
+};
 
 /**
  * Keys an option's notes by the question and option it belongs to.
@@ -30,6 +50,59 @@ const NOTES_HINT = "press n to show notes";
  */
 function notesKey(question: string, label: string): string {
   return `${question}\u0000${label}`;
+}
+
+/**
+ * The rows a question offers, in the order the keyboard walks them.
+ *
+ * A single-select question gets one more row than the CLI sent it: the option
+ * to answer in the reader's own words. A multi-select question does not, because
+ * its answers are ticked and sent together, so there is nothing to replace.
+ *
+ * @param question - The question to lay out.
+ * @returns The suggested options, then the free-text row when there is one.
+ */
+function rowsForQuestion(question: QuestionModel): QuestionRow[] {
+  const rows: QuestionRow[] = question.options.map((option) => ({ ...option, typed: false }));
+  if (!question.multiSelect) {
+    rows.push({ label: CUSTOM_LABEL, description: "", preview: "", typed: true });
+  }
+  return rows;
+}
+
+/**
+ * The answer to one question.
+ *
+ * The free-text row stands in for an answer rather than annotating a suggested
+ * one, so when it is the row that was picked, what was typed is the answer —
+ * and an empty box is no answer at all.
+ *
+ * @param chosen - The labels ticked or picked.
+ * @param typed - What was typed into the free-text box.
+ * @returns The answer, or an empty string when the question has none yet.
+ */
+function answerFor(chosen: string[], typed: string): string {
+  if (chosen.includes(CUSTOM_LABEL)) return typed.trim();
+  return chosen.join(", ");
+}
+
+/**
+ * The question whose box for a typed answer belongs on screen.
+ *
+ * The box follows the row the way an option's notes do: it is open while the
+ * free-text row is the row under the keyboard or the pointer, so it needs no
+ * key to reach, and it closes the moment either moves away. What was typed is
+ * kept, so coming back finds it again.
+ *
+ * @param focus - The row the keyboard is on.
+ * @param questions - The card's questions.
+ * @returns The question, or null when no box belongs on screen.
+ */
+function typedQuestion(focus: FocusTarget, questions: QuestionModel[]): QuestionModel | null {
+  if (focus.kind !== "option") return null;
+  const question = questions[focus.question];
+  if (!question) return null;
+  return rowsForQuestion(question)[focus.option]?.typed === true ? question : null;
 }
 
 /**
@@ -57,12 +130,24 @@ function sameTarget(a: FocusTarget, b: FocusTarget): boolean {
  * single-select option reveals a notes pane beside it, and those notes travel
  * with the answer.
  *
+ * Beside its suggested options, a single-select question offers one more row:
+ * an answer in the reader's own words. Reaching it opens the box for that answer
+ * in the same pane the notes use, without needing a key, and the box closes
+ * again as soon as the row loses the keyboard or the pointer — the same way an
+ * option's notes behave. The row must hold at least one character before the
+ * card can be sent, and whatever has been typed is kept per question, so moving
+ * down the list and back does not lose it.
+ *
+ * Escape closes the card without answering, which leaves the tool call refused
+ * so Claude has to ask again rather than acting on a guess.
+ *
  * @param props - The prompt to render and the resolution callback.
  * @returns The rendered card.
  */
 export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const [expanded, setExpanded] = useState(false);
   const [focus, setFocus] = useState<FocusTarget>(() =>
@@ -71,13 +156,17 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
       : { kind: "choice", index: 0 },
   );
   const notesRef = useRef<HTMLTextAreaElement | null>(null);
+  const customRef = useRef<HTMLTextAreaElement | null>(null);
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const hover = useHoverIntent(setFocus);
 
   const questions: QuestionModel[] = prompt.kind === "question" ? prompt.questions : [];
   const choices: PermissionChoice[] = prompt.kind === "question" ? [] : prompt.choices;
 
-  const answered = questions.every((question) => (selections[question.question] ?? []).length > 0);
+  const answered = questions.every(
+    (question) =>
+      answerFor(selections[question.question] ?? [], custom[question.question] ?? "").length > 0,
+  );
   const needsSubmit = questions.some((question) => question.multiSelect);
 
   const targets = useMemo<FocusTarget[]>(() => {
@@ -86,7 +175,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
     }
     const rows: FocusTarget[] = [];
     questions.forEach((question, questionNumber) => {
-      question.options.forEach((_, optionNumber) => {
+      rowsForQuestion(question).forEach((_, optionNumber) => {
         rows.push({ kind: "option", question: questionNumber, option: optionNumber });
       });
     });
@@ -111,6 +200,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const notesOpen = notesId !== null && revealed.has(notesId);
   const notesValue = notesId !== null ? (notes[notesId] ?? "") : "";
 
+  const customQuestion = typedQuestion(focus, questions);
+  const customValue = customQuestion ? (custom[customQuestion.question] ?? "") : "";
+  const paneOpen = customQuestion !== null || notesOpen;
+
   useEffect(() => {
     if (notesOpen) notesRef.current?.focus();
   }, [notesOpen]);
@@ -125,18 +218,21 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
    *
    * @param chosen - The selected labels, by question.
    * @param recorded - The notes, by question and option.
+   * @param typed - The responses written by hand, by question.
    */
   const resolveQuestions = (
     chosen: Record<string, string[]>,
     recorded: Record<string, string>,
+    typed: Record<string, string>,
   ): void => {
     const answers: Record<string, string> = {};
     const annotations: Record<string, { notes?: string }> = {};
 
     for (const question of questions) {
       const labels = chosen[question.question] ?? [];
-      if (labels.length === 0) continue;
-      answers[question.question] = labels.join(", ");
+      const answer = answerFor(labels, typed[question.question] ?? "");
+      if (answer.length === 0) continue;
+      answers[question.question] = answer;
       const note = labels
         .map((label) => recorded[notesKey(question.question, label)] ?? "")
         .filter((entry) => entry.length > 0)
@@ -145,6 +241,25 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
     }
 
     onResolve({ kind: "question", answers, annotations });
+  };
+
+  /**
+   * Sends whatever is answered, once every question has an answer.
+   *
+   * Picking a suggested option and typing an answer both come through here, so
+   * neither can send a card with another question still blank.
+   *
+   * @param chosen - The selected labels, by question.
+   * @param typed - The responses written by hand, by question.
+   */
+  const resolveIfComplete = (
+    chosen: Record<string, string[]>,
+    typed: Record<string, string>,
+  ): void => {
+    const complete = questions.every(
+      (entry) => answerFor(chosen[entry.question] ?? [], typed[entry.question] ?? "").length > 0,
+    );
+    if (complete) resolveQuestions(chosen, notes, typed);
   };
 
   /**
@@ -159,26 +274,28 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
    */
   const chooseOption = (questionNumber: number, optionNumber: number): void => {
     const question = questions[questionNumber];
-    const label = question?.options[optionNumber]?.label ?? "";
-    if (!question || !label) return;
+    if (!question) return;
+    const row = rowsForQuestion(question)[optionNumber];
+    if (!row) return;
 
     const current = selections[question.question] ?? [];
     const next =
-      question.multiSelect && current.includes(label)
-        ? current.filter((entry) => entry !== label)
+      question.multiSelect && current.includes(row.label)
+        ? current.filter((entry) => entry !== row.label)
         : question.multiSelect
-          ? [...current, label]
-          : [label];
+          ? [...current, row.label]
+          : [row.label];
 
     const updated = { ...selections, [question.question]: next };
     setSelections(updated);
+    if (question.multiSelect) return;
 
-    if (
-      !question.multiSelect &&
-      questions.every((entry) => (updated[entry.question] ?? []).length > 0)
-    ) {
-      resolveQuestions(updated, notes);
-    }
+    // Picking a suggested option abandons whatever had been typed, so only one
+    // of the two is ever the answer.
+    const updatedTyped = row.typed ? custom : { ...custom, [question.question]: "" };
+    if (!row.typed) setCustom(updatedTyped);
+
+    resolveIfComplete(updated, updatedTyped);
   };
 
   const chooseChoice = (index: number): void => {
@@ -199,33 +316,39 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         if (target) setFocus(target);
       };
 
-      if (event.target === notesRef.current) {
+      const writingCustom = event.target === customRef.current;
+      if (writingCustom || event.target === notesRef.current) {
+        const box = writingCustom ? customRef.current : notesRef.current;
+
         if (event.key === "Escape") {
-          notesRef.current?.blur();
+          box?.blur();
           event.preventDefault();
           return;
         }
-        // The notes pane is part of the answer, so Enter answers rather than
-        // starting a new line. That holds whatever the composer is set to do;
-        // the setting is about the composer, not about this.
         if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
           event.preventDefault();
-          if (focus.kind === "option") chooseOption(focus.question, focus.option);
+          if (focus.kind === "option") {
+            if (writingCustom) resolveIfComplete(selections, custom);
+            else chooseOption(focus.question, focus.option);
+          }
           return;
         }
-        // Arrows and Tab walk the options rather than the text, so the notes
-        // pane is not a trap: leave it and carry on choosing.
         const forward = event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey);
         const backward = event.key === "ArrowUp" || (event.key === "Tab" && event.shiftKey);
         if (forward || backward) {
           event.preventDefault();
           event.stopPropagation();
-          notesRef.current?.blur();
+          box?.blur();
           step(forward ? 1 : -1);
         }
         return;
       }
 
+      if (event.key === "Escape") {
+        onResolve({ kind: "dismiss" });
+        event.preventDefault();
+        return;
+      }
       if (event.key === "ArrowDown" || (event.key === "Tab" && !event.shiftKey)) {
         step(1);
         event.preventDefault();
@@ -241,6 +364,19 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         event.preventDefault();
         return;
       }
+
+      // Space ticks a box as Enter does. It is confined to multi-select, where
+      // there is a box to tick: on a single-select row a stray space would
+      // otherwise answer the question.
+      if (event.key === " " && focus.kind === "option") {
+        const question = questions[focus.question];
+        if (question?.multiSelect === true) {
+          event.preventDefault();
+          chooseOption(focus.question, focus.option);
+        }
+        return;
+      }
+
       if (event.key !== "Enter") return;
 
       event.preventDefault();
@@ -249,7 +385,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         return;
       }
       if (focus.kind === "submit") {
-        if (answered) resolveQuestions(selections, notes);
+        if (answered) resolveQuestions(selections, notes, custom);
         return;
       }
       chooseOption(focus.question, focus.option);
@@ -264,8 +400,8 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   let rowIndex = -1;
 
   return (
-    <div className={notesOpen ? "dialog-card with-notes" : "dialog-card"}>
-      <div className="dialog-options" style={{ flexBasis: notesOpen ? "50%" : "100%" }}>
+    <div className={paneOpen ? "dialog-card with-notes" : "dialog-card"}>
+      <div className="dialog-options" style={{ flexBasis: paneOpen ? "50%" : "100%" }}>
         {prompt.kind === "permission" && (
           <>
             <div className="dialog-question-header">
@@ -291,7 +427,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
             />
 
             <div className="dialog-footer">
-              <span className="dialog-hint">↑↓ to move, Enter to choose</span>
+              <span className="dialog-hint">↑↓ to move, Enter to choose · esc to dismiss</span>
             </div>
           </>
         )}
@@ -325,7 +461,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
 
             <div className="dialog-footer">
               <span className="dialog-hint">
-                ↑↓ to move, Enter to choose · keeping planning leaves Claude in plan mode
+                ↑↓ to move, Enter to choose · esc to dismiss · keeping planning stays in plan mode
               </span>
             </div>
           </>
@@ -344,15 +480,16 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                 </span>
               </div>
               <ul className="dialog-list">
-                {question.options.map((option, optionNumber) => {
+                {rowsForQuestion(question).map((row, optionNumber) => {
                   rowIndex += 1;
                   const index = rowIndex;
-                  const selected = (selections[question.question] ?? []).includes(option.label);
-                  const hasNotes =
-                    (notes[notesKey(question.question, option.label)] ?? "").length > 0;
+                  const selected = (selections[question.question] ?? []).includes(row.label);
+                  const hasNotes = (notes[notesKey(question.question, row.label)] ?? "").length > 0;
+                  const needsAnswer =
+                    row.typed && selected && (custom[question.question] ?? "").trim().length === 0;
 
                   return (
-                    <li key={option.label}>
+                    <li key={row.label}>
                       <button
                         type="button"
                         ref={(node) => {
@@ -377,11 +514,16 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                         )}
                         <span className="dialog-option-body">
                           <span className="dialog-option-label">
-                            {option.label}
+                            {row.label}
                             {hasNotes && <span className="note-dot" title="Has notes" />}
                           </span>
-                          {option.description.length > 0 && (
-                            <span className="dialog-option-description">{option.description}</span>
+                          {row.description.length > 0 && (
+                            <span className="dialog-option-description">{row.description}</span>
+                          )}
+                          {needsAnswer && (
+                            <span className="dialog-option-description">
+                              Write an answer below to use this
+                            </span>
                           )}
                         </span>
                       </button>
@@ -407,9 +549,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
             ]
               .filter(Boolean)
               .join(" ")}
+            aria-disabled={!answered}
             onMouseMove={hover({ kind: "submit" })}
             onClick={() => {
-              if (answered) resolveQuestions(selections, notes);
+              if (answered) resolveQuestions(selections, notes, custom);
             }}
           >
             <span className="dialog-option-body">
@@ -423,27 +566,60 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         {prompt.kind === "question" && (
           <div className="dialog-footer">
             <span className="dialog-hint">
-              {notesId !== null ? NOTES_HINT : "↑↓ to move, Enter to choose"}
+              {notesId !== null
+                ? `${NOTES_HINT} · esc to dismiss`
+                : needsSubmit
+                  ? TICKING_HINT
+                  : MOVING_HINT}
             </span>
           </div>
         )}
       </div>
 
-      {notesOpen && (
+      {paneOpen && (
         <div className="dialog-notes">
-          <div className="dialog-notes-header">
-            <span className="dialog-notes-title">{focusedOption?.option.label}</span>
-            <span className="dialog-notes-hint">Enter sends · Ctrl+Enter for a new line</span>
-          </div>
-          <textarea
-            ref={notesRef}
-            className="dialog-notes-input"
-            value={notesValue}
-            placeholder="Add notes for this choice…"
-            onChange={(event) =>
-              setNotes((current) => ({ ...current, [notesId]: event.target.value }))
-            }
-          />
+          {customQuestion && (
+            <>
+              <div className="dialog-notes-header">
+                <span className="dialog-notes-title">{customQuestion.question}</span>
+                <span className="dialog-notes-hint">Enter sends · at least one character</span>
+              </div>
+              <textarea
+                ref={customRef}
+                className="dialog-notes-input"
+                value={customValue}
+                placeholder="Answer in your own words…"
+                aria-label={`Your own answer to ${customQuestion.question}`}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setCustom((current) => ({ ...current, [customQuestion.question]: text }));
+                  setSelections((current) => ({
+                    ...current,
+                    [customQuestion.question]: [CUSTOM_LABEL],
+                  }));
+                }}
+              />
+            </>
+          )}
+
+          {notesOpen && (
+            <>
+              <div className="dialog-notes-header">
+                <span className="dialog-notes-title">{focusedOption?.option.label}</span>
+                <span className="dialog-notes-hint">Enter sends · Ctrl+Enter for a new line</span>
+              </div>
+              <textarea
+                ref={notesRef}
+                className="dialog-notes-input"
+                value={notesValue}
+                placeholder="Add notes for this choice…"
+                aria-label={`Notes for ${focusedOption?.option.label ?? "this choice"}`}
+                onChange={(event) =>
+                  setNotes((current) => ({ ...current, [notesId]: event.target.value }))
+                }
+              />
+            </>
+          )}
         </div>
       )}
     </div>

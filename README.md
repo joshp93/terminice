@@ -140,6 +140,11 @@ pnpm app          # dev: Vite + the Tauri shell with hot reload
 | `pnpm app` | Run the app in development with hot reload |
 | `pnpm app:build` | Produce a distributable bundle |
 | `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm lint` | Biome lint and format check over the whole project |
+| `pnpm lint:fix` | The same, applying every fix it can |
+| `pnpm format` | `biome format --write` |
+| `pnpm test` | Vitest over `src/` — linting runs first, via `pretest` |
+| `pnpm test:watch` | Vitest in watch mode |
 | `cd src-tauri && cargo test` | Rust unit tests |
 
 `pnpm app:build` leaves a portable `terminice.exe` in `src-tauri/target/release/` — about

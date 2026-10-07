@@ -61,7 +61,11 @@ function usesCommandKey(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 }
 
-/** Creates the inline state for an empty composer. */
+/**
+ * Creates the inline state for an empty composer.
+ *
+ * @returns The inline state, with nothing armed and nothing open.
+ */
 export function createInlineState(): InlineState {
   return { armed: new Set(), open: new Set() };
 }

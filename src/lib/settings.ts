@@ -21,6 +21,7 @@ export async function loadSettings(): Promise<Settings> {
  * Writes the settings to `~/.config/terminice-settings.json`.
  *
  * @param settings - The settings to persist.
+ * @returns Nothing, once the write has completed.
  */
 export async function saveSettings(settings: Settings): Promise<void> {
   await invoke("save_settings", { settings });

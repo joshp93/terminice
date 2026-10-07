@@ -1,4 +1,4 @@
-/** Props for {@link FormatToolbar}. */
+/** Props for {@link CogIcon}. */
 export type CogIconProps = {
   /** Edge length in pixels. */
   size?: number;

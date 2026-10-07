@@ -65,13 +65,16 @@ const MENTION_DEBOUNCE_MS = 120;
 /**
  * Reads a local command out of what was typed.
  *
+ * The prefix has to be the very first character, as it is in Claude Code's own
+ * terminal: leading whitespace makes this an ordinary message rather than a
+ * command.
+ *
  * @param text - The composer's contents.
  * @returns The command without its prefix, or null when this is not one.
  */
 function shellCommandIn(text: string): string | null {
-  const trimmed = text.trimStart();
-  if (!trimmed.startsWith(SHELL_PREFIX)) return null;
-  return trimmed.slice(SHELL_PREFIX.length).trim();
+  if (!text.startsWith(SHELL_PREFIX)) return null;
+  return text.slice(SHELL_PREFIX.length).trim();
 }
 
 /**
@@ -151,7 +154,9 @@ export function Composer({
     draftRef.current = "";
   }, []);
 
-  const isShell = status.text.startsWith(SHELL_PREFIX);
+  const shellCommand = shellCommandIn(status.text);
+  const isShell = shellCommand !== null;
+  const canSend = status.text.trim().length > 0;
 
   const mention = mentionIn(status.text, status.caret);
   const mentionQuery = mention?.query ?? null;
@@ -626,7 +631,13 @@ export function Composer({
             </button>
           )}
         </div>
-        <button type="button" className="send green-button" ref={sendButtonRef} onClick={submit}>
+        <button
+          type="button"
+          className={canSend ? "send green-button" : "send green-button disabled"}
+          ref={sendButtonRef}
+          aria-disabled={!canSend}
+          onClick={submit}
+        >
           Send
         </button>
       </div>

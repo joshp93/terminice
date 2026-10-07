@@ -1,4 +1,4 @@
-const MAX_DETAIL_LENGTH = 80;
+import { oneLine } from "./oneLine";
 
 /**
  * Summarises a tool call's input for display.
@@ -14,7 +14,7 @@ export function describeToolUse(name: string, input: unknown): string {
   const read = (...keys: string[]): string => {
     for (const key of keys) {
       const value = record[key];
-      if (typeof value === "string" && value.length > 0) return truncate(value);
+      if (typeof value === "string" && value.length > 0) return oneLine(value);
     }
     return "";
   };
@@ -40,11 +40,4 @@ export function describeToolUse(name: string, input: unknown): string {
     default:
       return "";
   }
-}
-
-function truncate(value: string): string {
-  const collapsed = value.split("\n")[0].trim();
-  return collapsed.length > MAX_DETAIL_LENGTH
-    ? `${collapsed.slice(0, MAX_DETAIL_LENGTH - 1)}…`
-    : collapsed;
 }

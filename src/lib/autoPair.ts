@@ -14,7 +14,12 @@ const OPENERS: Record<string, string> = {
   _: "_",
 };
 
-const CLOSERS = new Set([")", "]", "}", "`", '"', "*", "_"]);
+/**
+ * Characters that only step the caret over an identical character already
+ * there. The emphasis characters are deliberately absent: both are openers
+ * above, and the opener branch always answers first.
+ */
+const CLOSERS = new Set([")", "]", "}", "`", '"']);
 
 const WORD = /[\p{L}\p{N}_]/u;
 
@@ -36,8 +41,12 @@ export function pairNeedsTrim(open: string): boolean {
  *
  * A selection is wrapped in the pair. Otherwise the partner is inserted and the
  * caret placed between, or, when the character is already there, the caret
- * steps over it. Asterisks and underscores only pair mid-word, so starting a
- * bullet with `*` still works.
+ * steps over it.
+ *
+ * No pair is opened while the caret sits against a word character, so typing
+ * `(` in front of an existing word inserts the bracket alone. Asterisks and
+ * underscores go further and only pair mid-word, so starting a bullet with `*`
+ * still works.
  *
  * @param input - The typed character, its neighbours, and whether text is selected.
  * @returns What to do, or null to insert the character plainly.

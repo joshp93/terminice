@@ -275,15 +275,19 @@ function configEntry(send: (command: string) => void, host: SlashMenuHost): Menu
           submenu:
             config.values.length === 0
               ? undefined
-              : () =>
-                  config.values.map((value) =>
+              : () => {
+                  const setDirectly = direct[config.key];
+                  return config.values.map((value) =>
                     entry({
                       id: `config:${config.key}:${value}`,
                       label: value,
-                      run: () =>
-                        direct[config.key]?.(value) ?? send(`/config ${config.key}=${value}`),
+                      run: () => {
+                        if (setDirectly) setDirectly(value);
+                        else send(`/config ${config.key}=${value}`);
+                      },
                     }),
-                  ),
+                  );
+                },
           run: config.values.length === 0 ? () => send(`/config ${config.key}=`) : undefined,
         }),
       ),
@@ -512,7 +516,6 @@ function pluginsEntry(
   skills: string[] = [],
   send: (command: string) => void,
 ): MenuEntry {
-  const isBuiltin = (plugin: PluginInfo) => plugin.path === "builtin";
   return entry({
     id: "terminice:plugins",
     label: "/plugins",
@@ -524,7 +527,7 @@ function pluginsEntry(
           id: `plugins:${plugin.name}`,
           label: plugin.name,
           detail: plugin.source || plugin.path,
-          hint: isBuiltin(plugin) ? "builtin" : plugin.version,
+          hint: plugin.version,
         }),
       ),
       entry({

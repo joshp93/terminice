@@ -43,14 +43,25 @@ function subsequencePenalty(query: string, text: string): number | null {
 /**
  * Whether every character of `query` appears in `text`, in any order.
  *
+ * Each occurrence is spent as it is matched, so a query that repeats a
+ * character needs the text to repeat it too.
+ *
  * @param query - The lower-cased query.
  * @param text - The lower-cased candidate.
  * @returns True when the query's characters are a multiset subset of the text.
  */
 function hasCharactersOf(query: string, text: string): boolean {
-  for (const character of query) {
-    if (!text.includes(character)) return false;
+  const remaining = new Map<string, number>();
+  for (const character of text) {
+    remaining.set(character, (remaining.get(character) ?? 0) + 1);
   }
+
+  for (const character of query) {
+    const available = remaining.get(character) ?? 0;
+    if (available === 0) return false;
+    remaining.set(character, available - 1);
+  }
+
   return true;
 }
 
@@ -147,7 +158,7 @@ export function rankByMatch<T>(
   query: string,
   nameOf: (item: T) => string,
 ): T[] {
-  const needle = query.replace(/^\//, "").toLowerCase().trim();
+  const needle = query.trim().replace(/^\//, "").toLowerCase().trim();
   if (needle.length === 0) return [...items];
 
   const scored: { item: T; score: number; name: string }[] = [];
