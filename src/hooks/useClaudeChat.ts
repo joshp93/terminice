@@ -415,6 +415,10 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const dir = cwdRef.current;
       if (dir === null) return;
 
+      // A new process means a new conversation, so output from a local command
+      // run in the previous one must not be attached to its first message.
+      shellContextRef.current = [];
+
       const events = new Channel<ClaudeEvent>();
       const buffered: ClaudeEvent[] = [];
       let backendId: string | null = null;
