@@ -325,6 +325,7 @@ ourselves.
 ## Layout
 
 ```
+assets/logo/             the master logo, plus the one it replaced
 src/                     frontend (React + TypeScript)
   components/            presentational components
   hooks/                 session lifecycle and the control protocol
