@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { MessageBubble } from "./MessageBubble";
+import { ShellCard } from "./ShellCard";
 import { ToolCard } from "./ToolCard";
 import type { ChatEntry, ChatState } from "../types";
 
@@ -56,6 +57,16 @@ function TranscriptItem({ entry }: { entry: ChatEntry }) {
       );
     case "notice":
       return <div className="notice">{entry.text}</div>;
+    case "shell":
+      return (
+        <ShellCard
+          command={entry.command}
+          stdout={entry.stdout}
+          stderr={entry.stderr}
+          code={entry.code}
+          running={entry.running}
+        />
+      );
     case "error":
       return <div className="error-banner">{entry.text}</div>;
     default:

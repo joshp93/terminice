@@ -33,7 +33,18 @@ export type ChatEntry =
       hooks: HookNote[];
     }
   | { id: string; role: "notice"; text: string }
-  | { id: string; role: "error"; text: string };
+  | { id: string; role: "error"; text: string }
+  | {
+      id: string;
+      role: "shell";
+      /** The command as typed, without its leading `!`. */
+      command: string;
+      stdout: string;
+      stderr: string;
+      code: number | null;
+      /** True until the command has finished. */
+      running: boolean;
+    };
 
 /** Everything the chat pane renders for one Claude session. */
 export type ChatState = {

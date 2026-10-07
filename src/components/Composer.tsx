@@ -24,6 +24,8 @@ export type ComposerProps = {
   onStop: () => void;
   /** Cycles the permission mode; bound to Shift+Tab. */
   onCycleMode: () => void;
+  /** Runs a `!` command locally rather than sending it to Claude. */
+  onRunShell: (command: string) => void;
 };
 
 const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
@@ -38,6 +40,21 @@ const INITIAL_STATUS: ComposerStatus = {
 
 /** The height a menu needs before it is worth showing below the composer. */
 const MENU_ROOM = 280;
+
+/** The character that turns the composer into a shell. */
+const SHELL_PREFIX = "!";
+
+/**
+ * Reads a local command out of what was typed.
+ *
+ * @param text - The composer's contents.
+ * @returns The command without its prefix, or null when this is not one.
+ */
+function shellCommandIn(text: string): string | null {
+  const trimmed = text.trimStart();
+  if (!trimmed.startsWith(SHELL_PREFIX)) return null;
+  return trimmed.slice(SHELL_PREFIX.length).trim();
+}
 
 /**
  * Renders the composer, its formatting toolbar and the slash menu.
@@ -58,6 +75,7 @@ export function Composer({
   contextTokens,
   onStop,
   onCycleMode,
+  onRunShell,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -69,6 +87,7 @@ export function Composer({
   const runningRef = useRef(running);
   const stopRef = useRef(onStop);
   const cycleRef = useRef(onCycleMode);
+  const runShellRef = useRef(onRunShell);
   /** Prompts that have been sent, oldest first, for recall with the arrows. */
   const historyRef = useRef<string[]>([]);
   /** Where recall currently sits, or null when editing the unsent draft. */
@@ -87,6 +106,7 @@ export function Composer({
   runningRef.current = running;
   stopRef.current = onStop;
   cycleRef.current = onCycleMode;
+  runShellRef.current = onRunShell;
 
   const sessionSignature = menu.sessions.map((item) => `${item.id}:${item.live ? 1 : 0}`).join("|");
 
@@ -103,6 +123,8 @@ export function Composer({
     historyIndexRef.current = null;
     draftRef.current = "";
   }, []);
+
+  const isShell = status.text.startsWith(SHELL_PREFIX);
 
   const rootEntries = useMemo(
     () =>
@@ -165,7 +187,9 @@ export function Composer({
     handle.clear();
     if (text.trim().length === 0) return;
     remember(text);
-    sendRef.current(text);
+    const command = shellCommandIn(text);
+    if (command !== null) runShellRef.current(command);
+    else sendRef.current(text);
   }, [remember]);
 
   /**
@@ -402,7 +426,9 @@ export function Composer({
             />
           )}
           <div
-            className={running ? "composer-host busy" : "composer-host"}
+            className={["composer-host", running ? "busy" : "", isShell ? "shell" : ""]
+              .filter(Boolean)
+              .join(" ")}
             ref={hostRef}
             onKeyDownCapture={handleKeyDownCapture}
           />

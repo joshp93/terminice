@@ -109,6 +109,47 @@ export function withEmptyTranscript(state: ChatState): ChatState {
 }
 
 /**
+ * Records a local command in the transcript, before it has finished.
+ *
+ * @param state - The current chat state.
+ * @param id - The entry's id, used again to record the result.
+ * @param command - The command, without its leading `!`.
+ * @returns The updated chat state.
+ */
+export function withShellCommand(state: ChatState, id: string, command: string): ChatState {
+  return {
+    ...state,
+    entries: [
+      ...state.entries,
+      { id, role: "shell", command, stdout: "", stderr: "", code: null, running: true },
+    ],
+  };
+}
+
+/**
+ * Fills in what a local command produced.
+ *
+ * @param state - The current chat state.
+ * @param id - The entry's id.
+ * @param output - What the command printed and the code it exited with.
+ * @returns The updated chat state.
+ */
+export function withShellResult(
+  state: ChatState,
+  id: string,
+  output: { stdout: string; stderr: string; code: number | null },
+): ChatState {
+  return {
+    ...state,
+    entries: state.entries.map((entry) =>
+      entry.id === id && entry.role === "shell"
+        ? { ...entry, ...output, running: false }
+        : entry,
+    ),
+  };
+}
+
+/**
  * Replaces the transcript with messages replayed from a stored session.
  *
  * @param state - The current chat state.

@@ -127,6 +127,7 @@ export function App() {
           contextTokens={chat.state.contextUsage?.totalTokens ?? null}
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}
+          onRunShell={chat.runShell}
         />
       </div>
       {chat.prompt && (

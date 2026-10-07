@@ -65,6 +65,14 @@ it with the user rather than quietly changing it.
    hostile repository can reach the renderer. `MessageBubble` sanitises with
    `rehype-sanitize`, and that ordering (sanitise, then highlight) is deliberate.
 
+9. **The `!` shell prefix is terminice's own, and it has to be.** Verified: sending `!ls`
+   over stream-json delivers the literal text to the model, which then decides for itself
+   whether to call Bash — the CLI does not interpret the prefix on that channel, and no
+   control request runs a command (`bash`, `run_bash`, `execute_bash`, `shell`,
+   `run_command`, `execute_command` are all rejected). The terminal UI handles `!` itself,
+   so parity means running the command here and handing Claude the result in the wrappers
+   the CLI uses, `<bash-input>` and `<bash-stdout>`/`<bash-stderr>`.
+
 ## Code style
 
 - **Functional style.** Small functions with a single responsibility.
@@ -131,6 +139,15 @@ it with the user rather than quietly changing it.
 - **The silence guard must stand down while a prompt is outstanding.** A CLI waiting for
   the user is silent by design. `armSilence` bails out when the session has pending
   prompts, or the guard would interrupt every approval request after 20 seconds.
+- **bash is usually not on `PATH`, even where Git is installed.** Measured on this
+  machine: `Get-Command bash` finds nothing, but `C:\Program Files\Git\bin\bash.exe` runs
+  fine. `shell::shell_program` therefore checks `PATH` and then the usual Git for Windows
+  locations, and that fallback is the path that actually gets used — do not remove it on
+  the assumption that `PATH` covers it.
+- **Local command output is delivered with the next message, not sent immediately.** A
+  user message is what starts a turn, so sending `!ls` output on its own would make Claude
+  reply to a command the user ran for their own benefit. `shellContextRef` holds it until
+  the next `send`.
 - **If a CSS change appears not to apply, press F5 in the app before debugging.**
   Observed directly: after a couple of hours of edits, Vite had applied every JavaScript
   hot update but never swapped the stylesheet, so a new `.format-button.on` rule was

@@ -1,5 +1,13 @@
 import { EditorState, Prec } from "@codemirror/state";
-import { EditorView, keymap, placeholder, type ViewUpdate } from "@codemirror/view";
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  placeholder,
+  ViewPlugin,
+  type DecorationSet,
+  type ViewUpdate,
+} from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
@@ -93,6 +101,35 @@ export type ComposerOptions = {
 };
 
 const FENCE = "```";
+
+/** The character that turns the composer into a shell. */
+const SHELL_PREFIX = "!";
+
+/**
+ * Marks the leading `!` so it can be spaced away from the command.
+ *
+ * @param view - The editor to inspect.
+ * @returns A decoration over the prefix, or none when there is not one.
+ */
+function shellPrefixDecorations(view: EditorView): DecorationSet {
+  if (!view.state.doc.toString().startsWith(SHELL_PREFIX)) return Decoration.none;
+  return Decoration.set([Decoration.mark({ class: "cm-shell-prefix" }).range(0, 1)]);
+}
+
+const shellPrefix = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = shellPrefixDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = shellPrefixDecorations(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
 
 const editorTheme = EditorView.theme({
   "&": {
@@ -522,6 +559,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         shortcuts,
         handleTypedCharacter,
         trackStatus,
+        shellPrefix,
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,
       ],

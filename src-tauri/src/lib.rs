@@ -5,6 +5,7 @@ mod home;
 mod path;
 mod sessions;
 mod settings;
+mod shell;
 mod startup;
 
 /// Starts the terminice application.
@@ -21,6 +22,7 @@ pub fn run() {
             sessions::remember_interrupted,
             sessions::forget_interrupted,
             sessions::take_interrupted,
+            shell::run_shell_command,
             settings::load_settings,
             settings::save_settings,
         ])

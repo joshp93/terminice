@@ -21,6 +21,7 @@
      an unmistakable edge against its own background, which the accent border
      does not — it sits too close to the plain border in both themes. */
   --focus-ring: #e6ebf2;
+  --shell-accent: #3ddc84;
 }
 
 :root[data-theme="light"] {
@@ -42,6 +43,8 @@
   --accent-fill: #1f7a4d;
   --accent-on-fill: #ffffff;
   --focus-ring: #2a2f36;
+  /* The composer's outline while it is holding a local command. */
+  --shell-accent: #0b8f4d;
 }
 
 :root {
@@ -364,6 +367,88 @@ body {
 
 .tool-preview.failed pre {
   color: var(--danger-text);
+}
+
+.shell-card {
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--shell-accent);
+  border-radius: 6px;
+  background: var(--panel);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.shell-card:focus-within {
+  border-color: var(--focus-ring);
+}
+
+.shell-card.failed {
+  border-left-color: var(--danger-border);
+}
+
+.shell-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 11px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell-summary:disabled {
+  cursor: default;
+}
+
+.shell-summary:not(:disabled):hover {
+  background: var(--panel-raised);
+}
+
+.shell-summary:focus-visible {
+  outline: none;
+}
+
+.shell-prefix {
+  color: var(--shell-accent);
+  font-weight: 700;
+}
+
+.shell-command {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-exit {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.shell-card.failed .shell-exit {
+  color: var(--danger-text);
+}
+
+.shell-output {
+  border-top: 1px solid var(--border);
+  padding: 7px 11px;
+  cursor: pointer;
+}
+
+.shell-output pre {
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
 }
 
 .tool-summary {
@@ -1003,6 +1088,23 @@ body {
 
 .composer-host:focus-within {
   border-color: var(--accent-border);
+}
+
+/*
+ * While the composer is holding a local command. The ring is drawn with a
+ * shadow rather than a thicker border so the box does not grow by a pixel and
+ * shuffle everything around it.
+ */
+.composer-host.shell,
+.composer-host.shell:focus-within {
+  border-color: var(--shell-accent);
+  box-shadow: 0 0 0 1px var(--shell-accent);
+}
+
+.cm-shell-prefix {
+  color: var(--shell-accent);
+  font-weight: 700;
+  padding-right: 7px;
 }
 
 .send {

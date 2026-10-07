@@ -5,6 +5,8 @@ import {
   withError,
   withHistory,
   withNotice,
+  withShellCommand,
+  withShellResult,
   withUserMessage,
 } from "../lib/claudeProtocol";
 import {
@@ -33,6 +35,7 @@ import {
   takeInterrupted,
   type SessionSummary,
 } from "../lib/sessions";
+import { runShellCommand } from "../lib/shell";
 import { createChatState, type ChatState, type ClaudeEvent } from "../types";
 
 /** A loaded Claude session, whether or not it is the one on screen. */
@@ -57,6 +60,7 @@ export type ClaudeSession = {
   /** Sessions the resume menu can offer: loaded ones first, then transcripts. */
   resumable: SessionSummary[];
   send: (text: string) => void;
+  runShell: (command: string) => void;
   interrupt: () => void;
   resolve: (resolution: PromptResolution) => void;
   setPermissionMode: (mode: string) => void;
@@ -114,6 +118,14 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   const cwdRef = useRef<string | null>(null);
   const transcriptsRef = useRef<SessionSummary[]>([]);
   const handlerRef = useRef<(backendId: string, event: ClaudeEvent) => void>(() => undefined);
+  /**
+   * Local command output waiting to be handed to Claude.
+   *
+   * It travels with the next thing the user sends rather than being sent on its
+   * own, because a user message starts a turn and running `!ls` should not make
+   * Claude reply.
+   */
+  const shellContextRef = useRef<string[]>([]);
   const [, bump] = useReducer((count: number) => count + 1, 0);
 
   /** Loads the transcript list for this directory into the resume menu. */
@@ -525,6 +537,13 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       if (!record || record.status !== "running") return;
       if (text.trim().length === 0) return;
 
+      // Local command output goes ahead of what the user wrote, in the wrappers
+      // Claude Code itself uses, so the model reads it the way it always has.
+      const pending = shellContextRef.current;
+      shellContextRef.current = [];
+      const payload =
+        pending.length === 0 ? text : `${pending.join("\n")}\n\n${text}`;
+
       storeRef.current.set(active, {
         ...record,
         silenceMs: text.trimStart().startsWith("/")
@@ -534,11 +553,48 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       patchState(active, (state) => withUserMessage(state, text));
       writeLine(active, {
         type: "user",
-        message: { role: "user", content: [{ type: "text", text }] },
+        message: { role: "user", content: [{ type: "text", text: payload }] },
       });
       armSilence(active);
     },
     [patchState, writeLine, armSilence],
+  );
+
+  /**
+   * Runs a command in the shell, behind the composer's `!` prefix.
+   *
+   * The command runs here rather than through Claude, and its output is held
+   * back until the user next says something — which is what makes it context
+   * rather than a prompt.
+   *
+   * @param command - The command, without its leading `!`.
+   */
+  const runShell = useCallback(
+    (command: string) => {
+      const active = activeRef.current;
+      if (active === null) return;
+      const record = storeRef.current.get(active);
+      if (!record || command.trim().length === 0) return;
+
+      const id = nextId("shell");
+      patchState(active, (state) => withShellCommand(state, id, command));
+
+      void runShellCommand(command, cwdRef.current)
+        .then((output) => {
+          patchState(active, (state) => withShellResult(state, id, output));
+          shellContextRef.current = [
+            ...shellContextRef.current,
+            `<bash-input> ${command}</bash-input>`,
+            `<bash-stdout>${output.stdout}</bash-stdout><bash-stderr>${output.stderr}</bash-stderr>`,
+          ];
+        })
+        .catch((error: unknown) => {
+          patchState(active, (state) =>
+            withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
+          );
+        });
+    },
+    [patchState],
   );
 
   const interrupt = useCallback(() => {
@@ -692,6 +748,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     prompt: record?.prompts[0] ?? null,
     resumable: [...live, ...transcriptsRef.current],
     send,
+    runShell,
     interrupt,
     resolve,
     setPermissionMode,

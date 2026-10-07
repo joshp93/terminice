@@ -243,8 +243,38 @@ reappears and can still be answered. Resuming from a transcript after the app ha
 restarted genuinely cannot restore a pending prompt: the CLI does not persist those
 across processes, and the app says so rather than pretending.
 
+## Local commands
+
+Typing `!` at the start of a message runs the rest in your shell instead of sending it to
+Claude — the same idea as `!` in Claude Code's terminal UI. The composer's outline turns
+bright green and thickens while it holds a command, and the `!` is spaced away from what
+follows.
+
+The command runs in bash, appears in the transcript with its output, and is handed to
+Claude wrapped as `<bash-input>` and `<bash-stdout>`/`<bash-stderr>` — the same tags Claude
+Code uses — so the model reads it the way it always has.
+
+**It travels with your next message rather than being sent on its own.** Running `!ls`
+should not make Claude reply, and a user message is what starts a turn; the output waits
+until you next say something, which is when Claude would have seen it anyway.
+
+This is terminice's own implementation, because the CLI does not offer one. Verified by
+sending `!ls tools` over stream-json: it reached the model as literal text, and Claude
+decided for itself to call the Bash tool — the prefix means nothing on that channel. There
+is no control request for running a command either; `bash`, `run_bash`, `execute_bash`,
+`shell`, `run_command` and `execute_command` are each rejected as unsupported subtypes.
+The `!` prefix is handled by the terminal UI itself, so doing it here means doing it
+ourselves.
+
 ## Known limitations
 
+- **`!` commands need bash.** Claude Code runs them in bash, so terminice does too, looking
+  on `PATH` first and then in the usual Git for Windows locations. Without either, it falls
+  back to `cmd`, where shell syntax will not work the way you expect. Note that bash is
+  typically *not* on `PATH` even when Git is installed — the fallback is what usually finds
+  it.
+- **A `!` command runs until it finishes.** There is no timeout and no way to cancel one
+  from the app; a command that never returns leaves its card showing `running…`.
 - **The compaction bar cannot show real progress.** Verified by logging every event during
   a compaction: the CLI emits `system/status` with `status: "compacting"` when it starts and
   `system/compact_boundary` when it ends, with nothing in between. There is no percentage
