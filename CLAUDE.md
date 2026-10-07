@@ -254,3 +254,13 @@ it with the user rather than quietly changing it.
   every result message — it changes mid-session — and note the legal values are only `on`,
   `cooldown` and `off`. The CLI ignores anything else, so an unrecognised value means
   "nothing was said" rather than a new state to render.
+- **A spawned child gets a console window unless it is told not to.** Only the release build
+  is a GUI process (`windows_subsystem = "windows"`), and a GUI process has no console, so
+  Windows gives every console-subsystem child a brand new one. That is a terminal window
+  appearing beside the app for something the user never asked for — and worse, the window
+  *is* the session, so closing it kills the child. `spawn::hide_console` passes
+  `CREATE_NO_WINDOW`, which claims a console that is never shown. It is applied to both
+  spawn sites, `claude.rs` and `shell.rs`, because `!` commands open a console for exactly
+  the same reason. The child still gets a console and its streams are pipes either way, so
+  output capture is unaffected — the shell tests cover that and fail if the flag ever
+  breaks it.

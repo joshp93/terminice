@@ -1,6 +1,7 @@
 //! Claude Code sessions driven over the stream-json protocol.
 
 use crate::path::find_on_path;
+use crate::spawn::hide_console;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -64,6 +65,7 @@ pub fn start_claude(
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
+    hide_console(&mut command);
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

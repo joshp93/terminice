@@ -6,6 +6,7 @@ mod path;
 mod sessions;
 mod settings;
 mod shell;
+mod spawn;
 mod startup;
 
 /// Starts the terminice application.

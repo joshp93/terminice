@@ -1,6 +1,7 @@
 //! Running a command in the user's shell, behind the composer's `!` prefix.
 
 use crate::path::find_on_path;
+use crate::spawn::hide_console;
 use serde::Serialize;
 use std::process::Command;
 
@@ -71,6 +72,7 @@ fn execute(command: String, cwd: Option<String>) -> Result<ShellOutput, String> 
     if let Some(directory) = cwd {
         process.current_dir(directory);
     }
+    hide_console(&mut process);
 
     let output = process
         .output()
