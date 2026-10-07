@@ -56,6 +56,14 @@ export type McpServerInfo = {
   status: string;
 };
 
+/** One installed plugin. */
+export type PluginInfo = {
+  name: string;
+  version: string;
+  source: string;
+  path: string;
+};
+
 /** Cost and duration for the session so far. */
 export type UsageSummary = {
   totalCostUsd: number;
@@ -306,6 +314,38 @@ export function readMcpServers(payload: unknown): McpServerInfo[] {
     const name = item ? asText(item.name) : "";
     return name ? [{ name, status: asText(item?.status) || "unknown" }] : [];
   });
+}
+
+/**
+ * Reads the plugin list from a `system/init` event.
+ *
+ * @param value - The event's `plugins` field.
+ * @returns Each plugin's name, version and source.
+ */
+export function readPlugins(value: unknown): PluginInfo[] {
+  return asArray(value).flatMap((entry): PluginInfo[] => {
+    const item = asRecord(entry);
+    const name = item ? asText(item.name) : "";
+    if (!name) return [];
+    return [
+      {
+        name,
+        version: asText(item?.version) || "builtin",
+        source: asText(item?.source),
+        path: asText(item?.path),
+      },
+    ];
+  });
+}
+
+/**
+ * Reads a list of names, discarding anything that is not a string.
+ *
+ * @param value - The field to read.
+ * @returns The names.
+ */
+export function readNames(value: unknown): string[] {
+  return asArray(value).map(asText).filter(Boolean);
 }
 
 /**

@@ -7,6 +7,7 @@ import type {
   InitializePayload,
   McpServerInfo,
   ModelInfo,
+  PluginInfo,
   SlashCommandInfo,
 } from "./controlProtocol";
 
@@ -32,6 +33,8 @@ export type SlashMenuHost = {
   catalogue: InitializePayload | null;
   contextUsage: ContextUsage | null;
   mcpServers: McpServerInfo[];
+  plugins: PluginInfo[];
+  skills: string[];
   permissionMode: string;
   sessions: SessionSummary[];
   /** Sends a line to Claude as though it had been typed. */
@@ -463,6 +466,80 @@ function commandEntry(
 }
 
 /**
+ * Builds the `/plugins` submenu.
+ *
+ * The CLI has no plugin-listing command, so this is terminice's own view of what
+ * the CLI announced at startup. Reloading is passed straight through.
+ *
+ * @param plugins - The installed plugins.
+ * @param skills - The loaded skill names.
+ * @param send - Sends a command line to Claude.
+ * @returns The menu entry.
+ */
+function pluginsEntry(
+  plugins: PluginInfo[] = [],
+  skills: string[] = [],
+  send: (command: string) => void,
+): MenuEntry {
+  const isBuiltin = (plugin: PluginInfo) => plugin.path === "builtin";
+  return entry({
+    id: "terminice:plugins",
+    label: "/plugins",
+    detail: `${plugins.length} plugin(s), ${skills.length} skill(s) loaded`,
+    hint: "not a Claude command",
+    submenu: () => [
+      ...plugins.map((plugin) =>
+        entry({
+          id: `plugins:${plugin.name}`,
+          label: plugin.name,
+          detail: plugin.source || plugin.path,
+          hint: isBuiltin(plugin) ? "builtin" : plugin.version,
+        }),
+      ),
+      entry({
+        id: "plugins:reload",
+        label: "Reload plugins",
+        detail: "Activate pending plugin changes in this session",
+        run: () => send("/reload-plugins"),
+      }),
+      entry({
+        id: "plugins:reload-skills",
+        label: "Reload skills",
+        detail: "Pick up skills added or changed on disk",
+        run: () => send("/reload-skills"),
+      }),
+    ],
+  });
+}
+
+/**
+ * Builds the `/skills` submenu.
+ *
+ * @param skills - The loaded skill names.
+ * @param send - Sends a command line to Claude.
+ * @returns The menu entry.
+ */
+function skillsEntry(skills: string[] = [], send: (command: string) => void): MenuEntry {
+  return entry({
+    id: "terminice:skills",
+    label: "/skills",
+    detail: `${skills.length} loaded`,
+    hint: "not a Claude command",
+    submenu: () => [
+      ...skills.map((skill) =>
+        entry({ id: `skills:${skill}`, label: skill, run: () => send(`/${skill}`) }),
+      ),
+      entry({
+        id: "skills:doctor",
+        label: "Unused skills",
+        detail: "Show which loaded skills cost context without being used",
+        run: () => send("/skill-doctor"),
+      }),
+    ],
+  });
+}
+
+/**
  * Builds the top level of the slash menu.
  *
  * terminice's own entries come first, then the commands the CLI offers, with
@@ -508,6 +585,8 @@ export function buildRootEntries(host: SlashMenuHost): MenuEntry[] {
       run: host.openTerminiceSettings,
     }),
     resumeEntry(host.sessions, host.resumeSession, host.refreshSessions),
+    pluginsEntry(host.plugins, host.skills, host.runCommand),
+    skillsEntry(host.skills, host.runCommand),
     entry({
       id: "terminice:mode",
       label: "Permission mode",

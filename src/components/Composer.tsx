@@ -88,6 +88,8 @@ export function Composer({
       menu.catalogue,
       menu.contextUsage,
       menu.mcpServers,
+      menu.plugins,
+      menu.skills,
       menu.permissionMode,
       sessionSignature,
     ],

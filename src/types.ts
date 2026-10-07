@@ -1,4 +1,9 @@
-import type { ContextUsage, InitializePayload, McpServerInfo } from "./lib/controlProtocol";
+import type {
+  ContextUsage,
+  InitializePayload,
+  McpServerInfo,
+  PluginInfo,
+} from "./lib/controlProtocol";
 import type { HookNote } from "./lib/toolResults";
 
 /** Events emitted by a Claude session in the Rust backend. */
@@ -43,6 +48,10 @@ export type ChatState = {
   /** The command, model and agent catalogue from `initialize`. */
   catalogue: InitializePayload | null;
   mcpServers: McpServerInfo[];
+  /** Installed plugins, as the CLI announces them at startup. */
+  plugins: PluginInfo[];
+  /** Loaded skill names. */
+  skills: string[];
   permissionMode: string;
 };
 
@@ -58,6 +67,8 @@ export function createChatState(): ChatState {
     contextUsage: null,
     catalogue: null,
     mcpServers: [],
+    plugins: [],
+    skills: [],
     permissionMode: "default",
   };
 }

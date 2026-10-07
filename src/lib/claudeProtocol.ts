@@ -1,4 +1,8 @@
 import { describeToolUse } from "./describeToolUse";
+import {
+  readNames,
+  readPlugins,
+} from "./controlProtocol";
 import { asArray, asNumber, asRecord, asText, parseJsonLine, prettyJson, type Json } from "./json";
 import { nextId } from "./nextId";
 import { describeToolResult, hookMatcher, readHookNote, readResultText } from "./toolResults";
@@ -162,12 +166,16 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
       const name = record ? asText(record.name) : "";
       return name ? [{ name, status: asText(record?.status) || "unknown" }] : [];
     });
+    const plugins = readPlugins(message.plugins);
+    const skills = readNames(message.skills);
     return {
       ...state,
       sessionId: asText(message.session_id) || state.sessionId,
       model: asText(message.model) || state.model,
       permissionMode: asText(message.permissionMode) || state.permissionMode,
       mcpServers: servers.length > 0 ? servers : state.mcpServers,
+      plugins: plugins.length > 0 ? plugins : state.plugins,
+      skills: skills.length > 0 ? skills : state.skills,
     };
   }
 
