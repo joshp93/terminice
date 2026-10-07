@@ -1,5 +1,23 @@
 # Plan — deepening the Claude integration
 
+> **Status: implemented.** This was written as a plan and is now a record of the
+> investigation rather than a to-do list. Everything in M1–M4 is built; the
+> answers it was waiting on are below. See the README for what the app does now,
+> and CLAUDE.md for the constraints that came out of it — the two most important
+> being that `--permission-prompt-tool stdio` is what unlocks approvals, and that
+> `pending_*` is returned by a *live* waiting CLI but not by a resumed one.
+>
+> Answers to the open questions in §7:
+> 1. **`supportedDialogKinds` does not unlock permission prompts.** False. The
+>    flag that does is `--permission-prompt-tool stdio`, passed on the command
+>    line.
+> 2. **`toggle_mcp_server` does not work.** Rejected as an unsupported subtype,
+>    so MCP stays read-only.
+> 3. Rarely needed — inbound requests carry `subtype`, `tool_name` and `input`,
+>    which is enough to render them.
+> 4. Not pursued; subagents stay out of scope for now.
+> 5. The raw CLI was sufficient, so the Agent SDK was not needed.
+
 Written 2026-10-07, after a round of protocol probes against the installed CLI
 (`claude` 2.1.291 on Windows). Everything in **Verified** sections was observed directly;
 anything inferred is marked as such.
