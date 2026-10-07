@@ -142,6 +142,12 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
   /**
    * Applies a change to one session's state.
    *
+   * Reducers return the state they were handed when an event says nothing about
+   * the transcript, and most of a turn's events say nothing — `stream_event`
+   * alone fires thousands of times per turn, and nearly all of those are
+   * message boundaries rather than text. Writing and re-rendering for those
+   * costs the whole pane and changes nothing on screen.
+   *
    * @param backendId - The session to change.
    * @param change - Produces the session's new state.
    */
@@ -150,7 +156,9 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const store = storeRef.current;
       const record = store.get(backendId);
       if (!record) return;
-      store.set(backendId, { ...record, state: change(record.state) });
+      const next = change(record.state);
+      if (next === record.state) return;
+      store.set(backendId, { ...record, state: next });
       bump();
     },
     [],

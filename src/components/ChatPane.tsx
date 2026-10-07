@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { EmptyChat } from "./EmptyChat";
 import { MessageBubble } from "./MessageBubble";
 import { ShellCard } from "./ShellCard";
@@ -53,7 +53,19 @@ export function ChatPane({ state }: ChatPaneProps) {
   );
 }
 
-function TranscriptItem({ entry }: { entry: ChatEntry }) {
+/**
+ * Renders one row of the transcript.
+ *
+ * Memoised because the pane re-renders for state that has nothing to do with
+ * the rows: the reasoning-token counter ticks several hundred times a turn, and
+ * a row that re-renders re-parses the Markdown inside it. An entry object is
+ * only replaced when that entry actually changed, so the comparison almost
+ * always bails.
+ *
+ * @param props - The entry to render.
+ * @returns The rendered row.
+ */
+const TranscriptItem = memo(function TranscriptItem({ entry }: { entry: ChatEntry }) {
   switch (entry.role) {
     case "tool":
       return (
@@ -89,4 +101,4 @@ function TranscriptItem({ entry }: { entry: ChatEntry }) {
         </div>
       );
   }
-}
+});

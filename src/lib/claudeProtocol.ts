@@ -287,7 +287,9 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
   }
 
   if (subtype === "thinking_tokens") {
-    return { ...state, thinkingTokens: asNumber(message.estimated_tokens) ?? state.thinkingTokens };
+    const tokens = asNumber(message.estimated_tokens);
+    if (tokens === null || tokens === state.thinkingTokens) return state;
+    return { ...state, thinkingTokens: tokens };
   }
 
   if (subtype === "compact_boundary") return applyCompactBoundary(state, message);
@@ -400,6 +402,7 @@ function applyAssistantEvent(state: ChatState, message: Json): ChatState {
     });
   }
 
+  if (additions.length === 0 && state.streaming.length === 0) return state;
   return { ...state, entries: [...state.entries, ...additions], streaming: "" };
 }
 
