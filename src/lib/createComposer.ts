@@ -56,12 +56,15 @@ export type ComposerStatus = {
   listKind: ListKind | null;
   /** Whether the caret sits inside a code block. */
   inCodeBlock: boolean;
+  /** The composer's current contents, which drives the slash menu. */
+  text: string;
 };
 
 /** A composer view and the operations the UI needs from it. */
 export type ComposerHandle = {
   focus: () => void;
   getText: () => string;
+  setText: (text: string) => void;
   clear: () => void;
   insertText: (text: string) => void;
   toggleFormat: (id: FormatId) => void;
@@ -158,6 +161,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       formats,
       listKind: readListMarker(line.text)?.kind ?? null,
       inCodeBlock: findCodeBlock(tree.resolveInner(range.head, -1)) !== null,
+      text: view.state.doc.toString(),
     });
   };
 
@@ -410,6 +414,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       },
       { key: "Tab", run: (view) => handleTab(view, false) },
       { key: "Shift-Tab", run: (view) => handleTab(view, true) },
+      { key: "Mod-[", run: (view) => handleTab(view, true) },
+      { key: "Mod-]", run: (view) => handleTab(view, false) },
       { key: "Backspace", run: (view) => handleBackspace(view) },
       ...(
         [
@@ -519,6 +525,14 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
   return {
     focus: () => view.focus(),
     getText: () => view.state.doc.toString(),
+    setText: (text) => {
+      inline = createInlineState();
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+        selection: { anchor: text.length },
+      });
+      view.focus();
+    },
     clear: () => {
       inline = createInlineState();
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "" } });

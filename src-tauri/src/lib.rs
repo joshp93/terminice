@@ -3,9 +3,9 @@
 mod claude;
 mod home;
 mod path;
+mod sessions;
 mod settings;
 mod startup;
-mod utf8;
 
 /// Starts the terminice application.
 pub fn run() {
@@ -16,6 +16,8 @@ pub fn run() {
             claude::start_claude,
             claude::send_claude_line,
             claude::close_claude,
+            sessions::list_sessions,
+            sessions::read_session_history,
             settings::load_settings,
             settings::save_settings,
         ])

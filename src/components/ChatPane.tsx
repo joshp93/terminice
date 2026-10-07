@@ -39,9 +39,7 @@ export function ChatPane({ state, status }: ChatPaneProps) {
             <MessageBubble text={state.streaming} />
           </div>
         )}
-        {state.busy && state.streaming.length === 0 && (
-          <div className="working">Working…</div>
-        )}
+        {state.busy && state.streaming.length === 0 && <div className="working">Working…</div>}
         <div ref={endRef} />
       </div>
     </section>
@@ -51,7 +49,16 @@ export function ChatPane({ state, status }: ChatPaneProps) {
 function TranscriptItem({ entry }: { entry: ChatEntry }) {
   switch (entry.role) {
     case "tool":
-      return <ToolCard name={entry.name} detail={entry.detail} />;
+      return (
+        <ToolCard
+          name={entry.name}
+          detail={entry.detail}
+          input={entry.input}
+          result={entry.result}
+          status={entry.status}
+          hooks={entry.hooks}
+        />
+      );
     case "notice":
       return <div className="notice">{entry.text}</div>;
     case "error":

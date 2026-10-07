@@ -1,3 +1,6 @@
+import type { ContextUsage, InitializePayload, McpServerInfo } from "./lib/controlProtocol";
+import type { HookNote } from "./lib/toolResults";
+
 /** Events emitted by a Claude session in the Rust backend. */
 export type ClaudeEvent =
   | { kind: "line"; line: string }
@@ -8,7 +11,22 @@ export type ClaudeEvent =
 export type ChatEntry =
   | { id: string; role: "user"; text: string }
   | { id: string; role: "assistant"; text: string }
-  | { id: string; role: "tool"; name: string; detail: string }
+  | {
+      id: string;
+      role: "tool";
+      /** The id pairing this call with its result. */
+      toolUseId: string;
+      name: string;
+      /** A one-line summary of the input. */
+      detail: string;
+      /** The full input, shown when the card is expanded. */
+      input: string;
+      /** The result, shown when the card is expanded. */
+      result: string;
+      status: "running" | "ok" | "error";
+      /** Hooks that ran around this call, which may have changed what ran. */
+      hooks: HookNote[];
+    }
   | { id: string; role: "notice"; text: string }
   | { id: string; role: "error"; text: string };
 
@@ -20,10 +38,12 @@ export type ChatState = {
   model: string | null;
   busy: boolean;
   costUsd: number | null;
-  /** Tokens currently occupying the context window. */
-  contextUsed: number | null;
-  /** Size of that window, as reported by the CLI. */
-  contextWindow: number | null;
+  /** The CLI's own context reading, refreshed after each turn. */
+  contextUsage: ContextUsage | null;
+  /** The command, model and agent catalogue from `initialize`. */
+  catalogue: InitializePayload | null;
+  mcpServers: McpServerInfo[];
+  permissionMode: string;
 };
 
 /** Creates an empty chat state. */
@@ -35,8 +55,10 @@ export function createChatState(): ChatState {
     model: null,
     busy: false,
     costUsd: null,
-    contextUsed: null,
-    contextWindow: null,
+    contextUsage: null,
+    catalogue: null,
+    mcpServers: [],
+    permissionMode: "default",
   };
 }
 

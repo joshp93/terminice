@@ -1,24 +1,8 @@
 import { describeToolUse } from "./describeToolUse";
+import { asArray, asNumber, asRecord, asText, parseJsonLine, prettyJson, type Json } from "./json";
 import { nextId } from "./nextId";
+import { describeToolResult, hookMatcher, readHookNote, readResultText } from "./toolResults";
 import type { ChatEntry, ChatState } from "../types";
-
-type Json = Record<string, unknown>;
-
-function asRecord(value: unknown): Json | null {
-  return typeof value === "object" && value !== null ? (value as Json) : null;
-}
-
-function asText(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function parseLine(line: string): Json | null {
-  try {
-    return asRecord(JSON.parse(line));
-  } catch {
-    return null;
-  }
-}
 
 function appendEntry(state: ChatState, entry: ChatEntry): ChatState {
   return { ...state, entries: [...state.entries, entry] };
@@ -45,15 +29,21 @@ export function readTextBlocks(content: unknown): string {
  * Lists the `tool_use` blocks in an Anthropic content-block array.
  *
  * @param content - A content-block array.
- * @returns Each tool name paired with its raw input.
+ * @returns Each tool's id, name and raw input.
  */
-export function readToolUses(content: unknown): Array<{ name: string; input: unknown }> {
+export function readToolUses(
+  content: unknown,
+): Array<{ id: string; name: string; input: unknown }> {
   if (!Array.isArray(content)) return [];
-  const uses: Array<{ name: string; input: unknown }> = [];
+  const uses: Array<{ id: string; name: string; input: unknown }> = [];
   for (const block of content) {
     const record = asRecord(block);
     if (record && record.type === "tool_use") {
-      uses.push({ name: asText(record.name), input: record.input });
+      uses.push({
+        id: asText(record.id),
+        name: asText(record.name),
+        input: record.input,
+      });
     }
   }
   return uses;
@@ -105,14 +95,46 @@ export function withNotice(state: ChatState, text: string): ChatState {
 }
 
 /**
+ * Empties the transcript while keeping the session's metadata.
+ *
+ * @param state - The current chat state.
+ * @returns The chat state with no entries.
+ */
+export function withEmptyTranscript(state: ChatState): ChatState {
+  return { ...state, entries: [], streaming: "", busy: false };
+}
+
+/**
+ * Replaces the transcript with messages replayed from a stored session.
+ *
+ * @param state - The current chat state.
+ * @param messages - The exchanges to show, oldest first.
+ * @returns The updated chat state.
+ */
+export function withHistory(
+  state: ChatState,
+  messages: Array<{ role: string; text: string }>,
+): ChatState {
+  const entries: ChatEntry[] = messages.map((message) => ({
+    id: nextId(message.role),
+    role: message.role === "assistant" ? "assistant" : "user",
+    text: message.text,
+  }));
+  return { ...state, entries, streaming: "", busy: false };
+}
+
+/**
  * Applies one newline-delimited JSON event from a Claude session.
+ *
+ * Control messages are handled by the session hook rather than here, because
+ * answering them is a side effect rather than a change to the transcript.
  *
  * @param state - The current chat state.
  * @param line - One line of stream-json output.
  * @returns The updated chat state.
  */
 export function applyClaudeLine(state: ChatState, line: string): ChatState {
-  const message = parseLine(line);
+  const message = parseJsonLine(line);
   if (!message) return state;
 
   switch (asText(message.type)) {
@@ -122,26 +144,81 @@ export function applyClaudeLine(state: ChatState, line: string): ChatState {
       return applyStreamEvent(state, message);
     case "assistant":
       return applyAssistantEvent(state, message);
+    case "user":
+      return applyUserEvent(state, message);
     case "result":
       return applyResultEvent(state, message);
-    case "control_request":
-      return appendEntry(state, {
-        id: nextId("notice"),
-        role: "notice",
-        text: "Claude is waiting for a permission decision, which this window cannot answer yet.",
-      });
     default:
       return state;
   }
 }
 
 function applySystemEvent(state: ChatState, message: Json): ChatState {
-  if (asText(message.subtype) !== "init") return state;
-  return {
-    ...state,
-    sessionId: asText(message.session_id) || state.sessionId,
-    model: asText(message.model) || state.model,
-  };
+  const subtype = asText(message.subtype);
+
+  if (subtype === "init") {
+    const servers = asArray(message.mcp_servers).flatMap((entry) => {
+      const record = asRecord(entry);
+      const name = record ? asText(record.name) : "";
+      return name ? [{ name, status: asText(record?.status) || "unknown" }] : [];
+    });
+    return {
+      ...state,
+      sessionId: asText(message.session_id) || state.sessionId,
+      model: asText(message.model) || state.model,
+      permissionMode: asText(message.permissionMode) || state.permissionMode,
+      mcpServers: servers.length > 0 ? servers : state.mcpServers,
+    };
+  }
+
+  if (subtype === "hook_response") return attachHook(state, readHookNote(message));
+
+  if (subtype === "permission_denied") {
+    return appendEntry(state, {
+      id: nextId("notice"),
+      role: "notice",
+      text: `Permission denied for ${asText(message.tool_name) || "a tool"}.`,
+    });
+  }
+
+  if (subtype === "status") {
+    const status = asText(message.status);
+    if (status === "requesting") return { ...state, busy: true };
+    if (status === "idle") return { ...state, busy: false };
+  }
+
+  return state;
+}
+
+/**
+ * Attaches a hook's outcome to the tool call it most likely surrounds.
+ *
+ * Hook events do not carry a tool-use id, so the call is matched by the hook's
+ * own matcher (`PreToolUse:Bash` → `Bash`) against the newest matching call
+ * that has not finished. Where nothing matches, a failing hook is surfaced on
+ * its own rather than being dropped.
+ */
+function attachHook(state: ChatState, note: ReturnType<typeof readHookNote>): ChatState {
+  if (!note) return state;
+  const failed = note.exitCode !== null && note.exitCode !== 0;
+  const matcher = hookMatcher(note.name);
+
+  if (matcher) {
+    for (let index = state.entries.length - 1; index >= 0; index -= 1) {
+      const entry = state.entries[index];
+      if (entry.role !== "tool" || entry.name !== matcher) continue;
+      const entries = [...state.entries];
+      entries[index] = { ...entry, hooks: [...entry.hooks, note] };
+      return { ...state, entries };
+    }
+  }
+
+  if (!failed) return state;
+  return appendEntry(state, {
+    id: nextId("notice"),
+    role: "notice",
+    text: `Hook ${note.name} exited ${note.exitCode}${note.output ? `: ${note.output.trim()}` : ""}`,
+  });
 }
 
 function applyStreamEvent(state: ChatState, message: Json): ChatState {
@@ -163,19 +240,66 @@ function applyAssistantEvent(state: ChatState, message: Json): ChatState {
   }
   for (const tool of readToolUses(content)) {
     additions.push({
-      id: nextId("tool"),
+      id: tool.id ? `tool:${tool.id}` : nextId("tool"),
       role: "tool",
+      toolUseId: tool.id,
       name: tool.name,
       detail: describeToolUse(tool.name, tool.input),
+      input: prettyJson(tool.input ?? {}),
+      result: "",
+      status: "running",
+      hooks: [],
     });
   }
 
   return { ...state, entries: [...state.entries, ...additions], streaming: "" };
 }
 
+function applyUserEvent(state: ChatState, message: Json): ChatState {
+  const content = asRecord(message.message)?.content;
+  const results = asArray(content)
+    .map(asRecord)
+    .filter((block): block is Json => block !== null && asText(block.type) === "tool_result");
+  if (results.length === 0) return state;
+
+  const entries = [...state.entries];
+
+  for (const block of results) {
+    const toolUseId = asText(block.tool_use_id);
+    const isError = block.is_error === true;
+    const text = readResultText(block.content);
+    const index = entries.findIndex(
+      (entry) => entry.role === "tool" && entry.toolUseId === toolUseId,
+    );
+    const existing = index >= 0 ? entries[index] : null;
+
+    if (existing && existing.role === "tool") {
+      entries[index] = {
+        ...existing,
+        result: describeToolResult(existing.name, message.tool_use_result, text),
+        status: isError ? "error" : "ok",
+      };
+      continue;
+    }
+
+    entries.push({
+      id: nextId("tool"),
+      role: "tool",
+      toolUseId,
+      name: "Tool result",
+      detail: "",
+      input: "",
+      result: text,
+      status: isError ? "error" : "ok",
+      hooks: [],
+    });
+  }
+
+  return { ...state, entries };
+}
+
 function applyResultEvent(state: ChatState, message: Json): ChatState {
-  const costUsd =
-    typeof message.total_cost_usd === "number" ? message.total_cost_usd : state.costUsd;
+  let next = state;
   const additions: ChatEntry[] = [];
 
   if (message.is_error === true) {
@@ -186,54 +310,27 @@ function applyResultEvent(state: ChatState, message: Json): ChatState {
     });
   }
 
-  const context = readContext(message, state);
+  const denials = asArray(message.permission_denials).flatMap((entry): ChatEntry[] => {
+    const record = asRecord(entry);
+    const tool = record ? asText(record.tool_name) : "";
+    return tool
+      ? [
+          {
+            id: nextId("notice"),
+            role: "notice" as const,
+            text: `${tool} was denied and did not run.`,
+          },
+        ]
+      : [];
+  });
 
-  return {
+  next = {
     ...state,
-    entries: [...state.entries, ...additions],
+    entries: [...state.entries, ...additions, ...denials],
     streaming: "",
     busy: false,
-    costUsd,
-    contextUsed: context.used,
-    contextWindow: context.window,
+    costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
   };
-}
 
-function numberOr(value: unknown): number {
-  return typeof value === "number" ? value : 0;
-}
-
-/**
- * Reads how full the context window is after a turn.
- *
- * Usage is reported per turn, so a turn that made no API call — a slash command
- * such as `/usage` — reports nothing and the previous reading is kept. The
- * window size comes from the per-model usage block.
- */
-function readContext(
-  message: Json,
-  state: ChatState,
-): { used: number | null; window: number | null } {
-  let window = state.contextWindow;
-  const models = asRecord(message.modelUsage);
-  if (models) {
-    for (const value of Object.values(models)) {
-      const record = asRecord(value);
-      if (record && typeof record.contextWindow === "number") {
-        window = record.contextWindow;
-        break;
-      }
-    }
-  }
-
-  const usage = asRecord(message.usage);
-  if (!usage) return { used: state.contextUsed, window };
-
-  const total =
-    numberOr(usage.input_tokens) +
-    numberOr(usage.cache_read_input_tokens) +
-    numberOr(usage.cache_creation_input_tokens) +
-    numberOr(usage.output_tokens);
-
-  return { used: total > 0 ? total : state.contextUsed, window };
+  return next;
 }

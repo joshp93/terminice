@@ -49,10 +49,18 @@ pub fn start_claude(
     state: tauri::State<'_, ClaudeSessions>,
     on_event: Channel<ClaudeEvent>,
     cwd: Option<String>,
+    resume: Option<String>,
+    permission_mode: Option<String>,
 ) -> Result<String, String> {
     let program = claude_binary()?;
     let mut command = interpreter_command(&program);
     command.args(default_args());
+    if let Some(id) = resume.filter(|id| !id.is_empty()) {
+        command.arg(format!("--resume={id}"));
+    }
+    if let Some(mode) = permission_mode.filter(|mode| !mode.is_empty()) {
+        command.arg("--permission-mode").arg(mode);
+    }
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
@@ -135,7 +143,7 @@ where
     });
 }
 
-fn default_args() -> [&'static str; 8] {
+fn default_args() -> [&'static str; 10] {
     [
         "-p",
         "--input-format",
@@ -145,6 +153,11 @@ fn default_args() -> [&'static str; 8] {
         "--verbose",
         "--include-partial-messages",
         "--include-hook-events",
+        // Routes permission prompts and interactive questions to this process
+        // over the control protocol instead of denying them. Without it the
+        // CLI has nobody to ask and refuses anything that would prompt.
+        "--permission-prompt-tool",
+        "stdio",
     ]
 }
 

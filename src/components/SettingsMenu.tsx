@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { CogIcon } from "./CogIcon";
 import { SegmentedChoice } from "./SegmentedChoice";
 import type { Settings } from "../types";
@@ -7,27 +7,29 @@ import type { Settings } from "../types";
 export type SettingsMenuProps = {
   settings: Settings;
   onChange: (settings: Settings) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 /**
  * Renders the settings dropdown.
  *
- * Closes on Escape or on a click outside the panel.
+ * Closes on Escape or on a click outside the panel. The open state is owned by
+ * the caller so the slash menu can open it too.
  *
- * @param props - The current settings and a change handler.
+ * @param props - The current settings, a change handler, and the open state.
  * @returns The rendered menu.
  */
-export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
-  const [open, setOpen] = useState(false);
+export function SettingsMenu({ settings, onChange, open, onOpenChange }: SettingsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
     const closeOnOutsideClick = (event: PointerEvent): void => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) onOpenChange(false);
     };
     const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") onOpenChange(false);
     };
     document.addEventListener("pointerdown", closeOnOutsideClick);
     document.addEventListener("keydown", closeOnEscape);
@@ -35,7 +37,7 @@ export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
       document.removeEventListener("pointerdown", closeOnOutsideClick);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [open]);
+  }, [open, onOpenChange]);
 
   return (
     <div className="settings" ref={rootRef}>
@@ -46,7 +48,7 @@ export function SettingsMenu({ settings, onChange }: SettingsMenuProps) {
         aria-expanded={open}
         aria-label="Settings"
         title="Settings"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => onOpenChange(!open)}
       >
         <CogIcon />
       </button>

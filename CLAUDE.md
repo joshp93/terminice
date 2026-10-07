@@ -39,14 +39,29 @@ it with the user rather than quietly changing it.
    supports a long-lived bidirectional session (`--input-format stream-json`); that is
    what `claude.rs` uses.
 
-4. **The PTY is gone; `claude` is spawned as a plain child process.** Nothing scrapes a
-   terminal any more. If a future feature needs a real TTY, that is a new decision.
+4. **The session runs with `--permission-prompt-tool stdio`, and that flag is not
+   optional.** Without it the CLI has nobody to ask, so every tool that would prompt is
+   silently *denied* — writes fail and the agent says so in prose. The flag routes those
+   decisions to us as `control_request` messages. Removing it disables approvals,
+   `AskUserQuestion` and everything built on them.
 
-5. **The composer sends literal Markdown.** The rich rendering is a view of the same
+5. **Everything interactive travels over the control channel.** `initialize` returns the
+   command/model/agent catalogue; `get_context_usage` returns the context reading and its
+   breakdown; `can_use_tool` asks for approval; `set_permission_mode`, `set_model`,
+   `interrupt`, `mcp_status` and `get_usage` drive the session. Do not compute locally what
+   the CLI already reports — the header percentage is the CLI's own `percentage`, not a
+   ratio we derived, because the two disagree (the real window is smaller than
+   `modelUsage.contextWindow`).
+
+6. **A control request must always be answered.** The CLI blocks indefinitely on one, with
+   no deadline, so a request we cannot render has to be refused explicitly
+   (`enqueuePrompt` does this) rather than dropped.
+
+7. **The composer sends literal Markdown.** The rich rendering is a view of the same
    bytes. Do not strip it to plain text — the agent understands Markdown, so `- item`
    becomes a real list.
 
-6. **Never enable `rehype-raw`.** Model output is untrusted: prompt injection means a
+8. **Never enable `rehype-raw`.** Model output is untrusted: prompt injection means a
    hostile repository can reach the renderer. `MessageBubble` sanitises with
    `rehype-sanitize`, and that ordering (sanitise, then highlight) is deliberate.
 
@@ -100,22 +115,30 @@ it with the user rather than quietly changing it.
   intact; the search path is wrong. The config points `LIB` at the real directories. It
   hardcodes an SDK version — if `cargo` starts failing after an SDK upgrade, update or
   remove that file rather than assuming the code broke.
-- **UTF-8 must be decoded incrementally.** PTY reads split multi-byte characters at
-  arbitrary boundaries; `utf8::Utf8Stream` holds incomplete trailing sequences back.
-  Writing PTY bytes straight to xterm.js will corrupt CJK and emoji.
-- **The terminal uses xterm's DOM renderer, not WebGL, and that is deliberate.**
-  `@xterm/addon-webgl` loads without error in this webview but paints nothing, leaving a
-  blank terminal pane while the process tree — shell, conpty host, webview — looks
-  perfectly healthy. The DOM renderer measures within run-to-run variance of WebGL for
-  our workload, so the addon is not a dependency. Do not re-add it without a screenshot
-  proving it renders.
-- **Fonts are shared through `src/lib/fonts.ts`.** Nerd Font variants must stay first in
-  the stack or prompt themes that use private-use glyphs render blanks.
+- **A restarted session does not remember an unanswered prompt.** Verified: kill the CLI
+  while it is waiting on `can_use_tool`, resume it with `--resume`, and both
+  `pending_permission_requests` and `pending_user_dialog_requests` come back empty — the
+  field exists for a host reattaching to a *live* process, not for a fresh one. That is why
+  `standDown` parks a waiting session instead of closing it, and why `/resume` reattaches
+  when it finds one; re-sending `initialize` to a live process does hand the prompt back,
+  `request_id` and all. Resuming from a transcript genuinely has nothing to restore, and
+  the UI should not pretend otherwise.
+- **Hook events carry no tool-use id.** `hook_name` is `PreToolUse:Bash` — event plus
+  matcher, nothing more. `attachHook` therefore correlates a hook to the newest unfinished
+  call with a matching name. That is a heuristic; with parallel tool calls it can attribute
+  a hook to the wrong card, which is why the chip shows the hook's own name rather than
+  claiming certainty.
+- **The silence guard must stand down while a prompt is outstanding.** A CLI waiting for
+  the user is silent by design. `armSilence` bails out when the session has pending
+  prompts, or the guard would interrupt every approval request after 20 seconds.
 - **If a CSS change appears not to apply, press F5 in the app before debugging.**
   Observed directly: after a couple of hours of edits, Vite had applied every JavaScript
   hot update but never swapped the stylesheet, so a new `.format-button.on` rule was
   present in the file the dev server served and absent from the running page. The button
   did nothing while the component's own rendered class name was correct. Hours can go
   into chasing that in the wrong place.
-- **The formatting toolbar's active state is `on`, not `active`.** `.format-button.active`
-  is a leftover; the three states are `on`, `mixed` and unset.
+- **The formatting toolbar's active states are `on` and `mixed`.** There is no `active`
+  class on a format button; `stateClass` emits `on`, `mixed` or nothing.
+- **Shift+Tab cycles the permission mode, so outdent moved to `Mod-[`.** The composer
+  intercepts Shift+Tab in the capture phase before CodeMirror sees it. `Mod-]` still
+  indents.

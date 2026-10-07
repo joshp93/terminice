@@ -10,13 +10,22 @@ Markdown, with a rich composer that writes the Markdown for you.
 ## What it does
 
 - **Chat transcript** — Claude's replies rendered as Markdown with highlighted code,
-  compact tool-call cards, per-turn streaming, and a running session cost.
+  per-turn streaming, and a running session cost.
+- **Approvals in the GUI** — anything Claude wants to do that needs permission arrives as
+  a card with Allow / Always / Deny. Interactive questions arrive as cards with buttons
+  and tick boxes, and `n` opens a notes pane beside a choice, which is sent with the
+  answer.
+- **Tool calls you can open** — every call is a one-line card showing the command; expand
+  it for the exact input, the full output and any hook that ran around it.
+- **Slash menu** — `/` opens a filterable list of all 74 commands, with real pickers for
+  models, effort, permissions, MCP servers and Claude's own settings.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
   bulleted and numbered lists, all with keyboard shortcuts, plus auto-pairing brackets
   and file-drop.
 - **Formatting that reads the document** — the toolbar reflects the Markdown around the
   caret, so it shows what is actually there rather than only a pending toggle.
-- **Slash commands** — `/compact`, `/context`, `/usage` and the rest work as typed.
+- **Context from the CLI itself** — the header percentage is what `/context` reports, not
+  a ratio computed here.
 
 ## Architecture
 
@@ -47,7 +56,14 @@ composer (Markdown) → send_claude_line → claude stdin   (NDJSON)
 claude stdout       → applyClaudeLine   → chat transcript
 ```
 
-One long-lived `claude` process serves every turn.
+One long-lived `claude` process serves every turn. Alongside the transcript runs a
+**control channel** on the same stdin and stdout: the host sends
+`{"type":"control_request", …}` and the CLI answers `control_response`, while the CLI
+sends `can_use_tool` and `request_user_dialog` the other way. That channel is what makes
+approvals, the command catalogue and the context reading possible.
+
+The session is started with `--permission-prompt-tool stdio`. Without it the CLI has
+nobody to ask, so anything that would prompt is silently **denied** rather than offered.
 
 ---
 
@@ -126,13 +142,17 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `Enter` | Sends, unless *Enter key* is set to new line |
 | `Shift+Enter` | Inserts a newline |
 | `Ctrl+Enter` | Always sends |
-| `Tab` / `Shift+Tab` | Indent or outdent the line, and list items with it |
+| `Tab` / `Ctrl+]` | Indent the line, and list items with it |
+| `Shift+Tab` | **Cycle the permission mode** (Ask → Plan → Accept edits → Auto → Don't ask) |
+| `Ctrl+[` | Outdent the line |
+| `Esc` | Clears the composer; pressed again, stops a running turn |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
 | `Ctrl+E` | Inline code |
 | `Ctrl+Shift+X` | Strikethrough |
 
-(`⌘` in place of `Ctrl` on macOS.)
+(`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch — outdent moved to
+`Ctrl+[` to make room.
 
 **Formatting buttons.** With a selection they apply to it; with nothing selected they
 *arm* a style, so the next character typed is wrapped. Pressing the same style again
@@ -161,48 +181,77 @@ single newlines preserved.
 
 ## Slash commands
 
-**They work as typed, with no per-command implementation.** Sending `/context` or
-`/usage` as a message produces that command's output, and — verified — it costs nothing:
-the turn reports zero tokens, because the CLI answers locally rather than calling the
-model.
+Type `/` as the first character and a menu opens under the composer — above it when there
+is no room below. Typing filters **globally and fuzzily**, not by prefix, so `/cmp` offers
+`/compact` and `/mcp`, and `/cimpct` still finds `/compact`. The closest match is selected,
+so Enter usually takes what you meant; arrows move, and clicking works too.
 
-The CLI announces its command set in the `system/init` event, which the app already
-receives:
+Every one of the CLI's 74 commands is listed, including the ones that refuse to run
+outside a terminal — those fail with the CLI's own message rather than being hidden here.
 
-- `slash_commands` — 74 entries on this machine, including built-ins (`compact`,
-  `config`, `context`, `effort`, `mcp`, `model`, `usage`…) and every installed skill.
-- `terminal_slash_commands` — commands that need a real terminal. Only four here:
-  `doctor`, `color`, `focus`, `reload-plugins`.
+Entries that need more than a yes/no open a **submenu**: the parent closes, the submenu
+takes its place, and its header names the parent with *esc to go back*. Real pickers are
+built for:
 
-So the CLI itself marks which commands this app can offer, which makes a `/` autocomplete
-menu straightforward: send the text, and hide the four terminal-only ones. Skills
-installed by plugins appear under a `plugin:skill` name.
+| Command | Picker built from |
+|---|---|
+| `/model` | The CLI's `models[]`, with descriptions |
+| `/effort` | The levels the current model advertises |
+| `/config` | Every key `/config` documents, with its legal values |
+| `/mcp` | Live server list from `mcp_status` |
+| `/context` | The CLI's own category breakdown, with token counts |
+| `/output-style`, `/color`, `/agents` | The values the CLI lists for each |
+| `/resume` | Past transcripts for this directory, newest first |
+
+Two entries are terminice's own, not the CLI's: **Terminice settings** (theme, Enter key —
+a separate file from Claude's settings) and **`/resume`**.
+
+The command catalogue, the model list and the context breakdown all come from the CLI's
+`initialize` response rather than being hardcoded, so a new command or model appears here
+without a code change.
+
+### Sessions
+
+`/resume` reopens a past transcript and replays what was said. A session that was left
+**waiting on a prompt** is kept alive rather than closed, and reopening it re-sends
+`initialize`, which makes the CLI hand the outstanding request back — so the card
+reappears and can still be answered. Resuming from a transcript after the app has
+restarted genuinely cannot restore a pending prompt: the CLI does not persist those
+across processes, and the app says so rather than pretending.
 
 ## Known limitations
 
-- **Permission prompts block.** When Claude asks for approval the request arrives as a
-  `control_request` event and the transcript shows a notice, but the GUI cannot answer it
-  yet. Anything that would prompt hangs until it is answered elsewhere. This is the
-  highest-value next feature.
+- **`/doctor` is slow enough to trip the silence guard.** It blocks the session for a long
+  time without emitting anything, so after 20 seconds of total silence the turn is
+  interrupted with a note. Other commands are unaffected because they speak up as they go.
+- **MCP servers are read-only.** The CLI rejects `toggle_mcp_server` as an unsupported
+  control subtype (verified), so servers can be listed and reconnect/enable/disable issued
+  for *all* of them via `/mcp`, but not toggled individually.
+- **Four commands are terminal-only.** `focus` and `plugin` refuse cleanly; `doctor` and
+  the interactive parts of `mcp` and `config` need a real terminal. They are listed and
+  will say so when run. Note that the CLI's `terminal_slash_commands` list is a *hint, not
+  the truth* — it marks `color` and `reload-plugins` as terminal-only, and both work.
 - **The model name and cost appear after the first reply**, because the CLI only
   announces them once it has work to do.
-- **One session.** No tabs, no session switching.
-- **`claude` is spawned once** and lives for the app's lifetime. Closing stdin ends it
-  gracefully; a wedged process is not force-killed.
+- **One session at a time.** No tabs. At most three finished sessions are kept loaded.
+- **Hook events carry no tool-use id**, so a hook is attributed to the newest unfinished
+  call with a matching name. With parallel tool calls that can be the wrong card; the chip
+  names the hook itself so the guess is inspectable.
 - **No CLI launcher shim.** The app reads its directory from `argv[1]` or the working
   directory, but nothing installs a `terminice` command onto `PATH`.
 - **Images are not supported.** The CLI's stream-json takes text; image input needs the
   Agent SDK rather than the CLI.
-- **The font stack is hardcoded** to this machine's Meslo Nerd Fonts.
+- **Subagents are not rendered separately.** Their text arrives on the same stream as the
+  main agent's.
 
 ## Roadmap
 
-1. **Answer permission prompts in the GUI** — render `control_request` as
-   Allow / Allow-always / Deny and reply with `control_response`. Note that auto-approved
-   tools never reach this path; catching those needs a `PreToolUse` hook.
-2. **`/` autocomplete** from the CLI's own `slash_commands` list.
-3. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
+1. **Subagent output** — `--forward-subagent-text` tags blocks with `parent_tool_use_id`;
+   render them nested.
+2. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
    instance over a socket.
+3. **Plan mode card** — `ExitPlanMode` is a tool call and deserves approve/reject of its
+   own.
 4. **Conversation branching** — edit an earlier turn and re-run from there.
 5. **Virtualise the transcript** once transcripts get long.
 
@@ -211,15 +260,15 @@ installed by plugins appear under a `plugin:skill` name.
 ```
 src/                     frontend (React + TypeScript)
   components/            presentational components
-  hooks/                 session lifecycle (useClaudeChat)
-  lib/                   pure helpers: formatting, lists, syntax-tree spans
+  hooks/                 session lifecycle and the control protocol
+  lib/                   pure helpers: formatting, lists, protocol decoding, fuzzy match
   types.ts               shared types
 src-tauri/src/
   lib.rs                 app wiring and the command registry
   claude.rs              the Claude session over stream-json
+  sessions.rs            stored transcripts, for /resume
   settings.rs            persisted user settings
   startup.rs             the directory to open in
   path.rs                PATH lookup
   home.rs                home directory
-  utf8.rs                incremental UTF-8 decoding of CLI output
 ```
