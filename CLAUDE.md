@@ -143,6 +143,12 @@ it with the user rather than quietly changing it.
 - **The silence guard must stand down while a prompt is outstanding.** A CLI waiting for
   the user is silent by design. `armSilence` bails out when the session has pending
   prompts, or the guard would interrupt every approval request after 20 seconds.
+- **`system/init` repeats, and that is the only signal for a directory change.** The CLI
+  re-sends it with a new `cwd` whenever the session moves — verified by having Claude run
+  `cd /d/apps && pwd` and watching init arrive again reporting `D:\apps`. Nothing else
+  carries the working directory, so the header's path and the directory `!` commands run
+  in both read it from there. Do not fall back to the launch directory once a session has
+  reported one.
 - **bash is usually not on `PATH`, even where Git is installed.** Measured on this
   machine: `Get-Command bash` finds nothing, but `C:\Program Files\Git\bin\bash.exe` runs
   fine. `shell::shell_program` therefore checks `PATH` and then the usual Git for Windows

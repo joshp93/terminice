@@ -583,7 +583,11 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       const id = nextId("shell");
       patchState(active, (state) => withShellCommand(state, id, command));
 
-      void runShellCommand(command, cwdRef.current)
+      // Run where the session is now, not where it started: if Claude has
+      // changed directory, `!pwd` should agree with it.
+      const liveCwd = record.state.cwd ?? cwdRef.current;
+
+      void runShellCommand(command, liveCwd)
         .then((output) => {
           patchState(active, (state) => withShellResult(state, id, output));
           shellContextRef.current = [

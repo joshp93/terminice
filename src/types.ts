@@ -51,6 +51,8 @@ export type ChatState = {
   entries: ChatEntry[];
   streaming: string;
   sessionId: string | null;
+  /** The session's working directory, which moves when Claude changes it. */
+  cwd: string | null;
   model: string | null;
   busy: boolean;
   costUsd: number | null;
@@ -74,6 +76,7 @@ export function createChatState(): ChatState {
     entries: [],
     streaming: "",
     sessionId: null,
+    cwd: null,
     model: null,
     busy: false,
     costUsd: null,

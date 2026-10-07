@@ -30,6 +30,9 @@ Markdown, with a rich composer that writes the Markdown for you.
   a ratio computed here. Compaction shows a bar above the composer while it runs, then
   reports how much it freed. The bar does not track a percentage, because the CLI does not
   report one — see below.
+- **The path follows the session, not the launch directory.** The CLI repeats its `init`
+  event when the working directory changes, so the header updates when Claude moves — and
+  `!` commands run where the session actually is rather than where it started.
 
 ## Architecture
 
@@ -244,7 +247,6 @@ restarted genuinely cannot restore a pending prompt: the CLI does not persist th
 across processes, and the app says so rather than pretending.
 
 ## Local commands
-
 Typing `!` at the start of a message runs the rest in your shell instead of sending it to
 Claude — the same idea as `!` in Claude Code's terminal UI. The composer's outline turns
 bright green and thickens while it holds a command, and the `!` is spaced away from what

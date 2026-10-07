@@ -77,6 +77,7 @@ export function App() {
   );
 
   const usage = chat.state.contextUsage;
+  const sessionCwd = chat.state.cwd ?? cwd;
 
   return (
     <div className="app">
@@ -109,8 +110,8 @@ export function App() {
           >
             {describePermissionMode(chat.state.permissionMode)}
           </button>
-          <span className="cwd" title={cwd ?? ""}>
-            {cwd ?? "…"}
+          <span className="cwd" title={sessionCwd ?? ""}>
+            {sessionCwd ?? "…"}
           </span>
         </div>
       </header>

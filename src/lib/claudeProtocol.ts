@@ -212,6 +212,9 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
     return {
       ...state,
       sessionId: asText(message.session_id) || state.sessionId,
+      // The CLI repeats this event when the session's directory changes, so
+      // this is what keeps the header's path current.
+      cwd: asText(message.cwd) || state.cwd,
       model: asText(message.model) || state.model,
       permissionMode: asText(message.permissionMode) || state.permissionMode,
       mcpServers: servers.length > 0 ? servers : state.mcpServers,
