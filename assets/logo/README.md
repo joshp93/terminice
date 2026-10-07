@@ -1,7 +1,7 @@
 # Logo
 
 `terminice-logo.png` is the master. It is 512×512 with a transparent background and the
-artwork at 92% of the frame width. Every icon is generated from it, and the empty chat
+artwork at 89% of the frame width. Every icon is generated from it, and the empty chat
 screen renders it.
 
 | File | Purpose |
