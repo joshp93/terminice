@@ -199,3 +199,23 @@ it with the user rather than quietly changing it.
   percentage to draw. The bar therefore slides rather than filling, and the label carries
   the token count from the last context reading — do not animate it as though it were
   completing, which is a progress bar impersonating knowledge it does not have.
+- **`ExitPlanMode` carries no plan.** Its input is effectively empty — `allowedPrompts` is
+  marked deprecated and ignored — and the plan comes back as the tool's *output*, which
+  only exists once the call has run, i.e. after it was approved. So the plan shown on the
+  approval card is read from the assistant reply that preceded the call, which is where
+  Claude actually wrote it. Do not go looking for it in `request.input`.
+- **`prompt_suggestion` is a real message type that is almost never sent.** The flag is
+  `--prompt-suggestions`, which requires `--print` and `--output-format=stream-json`, and
+  the shape is `{type, suggestion, uuid, session_id}` — read out of the binary, since the
+  SDK docs name `SDKPromptSuggestionMessage` without defining it. Whether one arrives is
+  gated server-side by GrowthBook, and this account reads
+  `tengu_agile_glade.prompt_suggestion_generate = 0.01`. There is also a back-off that
+  suppresses suggestions after several go unused. A session that never shows one is
+  working correctly.
+- **Reasoning arrives on the assistant message, and its live count is a separate event.**
+  Thinking is a `thinking` content block alongside `text` in the same `message.content`
+  array, so a reader that keeps only `text` blocks silently discards all of it. While the
+  turn runs, `system/thinking_tokens` carries `estimated_tokens` and
+  `estimated_tokens_delta` — hundreds of them per turn, and they are estimates, not the
+  model's own count. How much text a block holds is the provider's business: the same
+  session can return a full chain of thought on one turn and an empty block on the next.

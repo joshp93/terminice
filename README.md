@@ -19,6 +19,12 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **Tool calls you can open** — every call shows the command and the first couple of lines
   it printed; expanding it reveals the exact input, the whole output and any hook that ran
   around it. Cards take a focus ring, by keyboard or mouse.
+- **Reasoning, kept out of the way** — the thinking behind a reply is recorded above it,
+  collapsed to its opening line. While a turn is still running, the wait shows how many
+  reasoning tokens have been spent so far.
+- **Plans get their own approval** — leaving plan mode is not a generic tool approval. The
+  card shows the plan itself, with *Start on this plan* and *Keep planning*; declining
+  says why, so Claude revises rather than retries.
 - **Slash menu** — `/` opens a filterable list of all 74 commands, with real pickers for
   models, effort, permissions, MCP servers and Claude's own settings.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
@@ -276,6 +282,14 @@ ourselves.
 
 ## Known limitations
 
+- **Prompt suggestions are nearly always absent.** The app asks for them with
+  `--prompt-suggestions`, and the CLI answers with a `prompt_suggestion` message only when
+  its own rollout has the feature switched on for the account — on this machine
+  `prompt_suggestion_generate` sits at `0.01`. The app renders one whenever it arrives, but
+  most sessions will never see one, and that is the CLI's decision rather than a fault here.
+- **Reasoning is only as present as the model makes it.** The blocks arrive and are shown,
+  but how much they contain is the provider's business: the same session can return a full
+  chain of thought on one turn and an empty block on the next.
 - **`!` commands need bash.** Claude Code runs them in bash, so terminice does too, looking
   on `PATH` first and then in the usual Git for Windows locations. Without either, it falls
   back to `cmd`, where shell syntax will not work the way you expect. Note that bash is
@@ -317,10 +331,8 @@ ourselves.
    render them nested.
 2. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
    instance over a socket.
-3. **Plan mode card** — `ExitPlanMode` is a tool call and deserves approve/reject of its
-   own.
-4. **Conversation branching** — edit an earlier turn and re-run from there.
-5. **Virtualise the transcript** once transcripts get long.
+3. **Conversation branching** — edit an earlier turn and re-run from there.
+4. **Virtualise the transcript** once transcripts get long.
 
 ## Layout
 
