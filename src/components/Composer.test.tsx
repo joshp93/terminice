@@ -585,13 +585,46 @@ describe("Tab", () => {
     expect(text(container)).toBe("hi");
   });
 
-  it("cycles the permission mode on Shift+Tab before CodeMirror can outdent the line", () => {
+  it("cycles the permission mode on Shift+Tab when the line is not a list", () => {
+    const { content, container, onCycleMode } = renderComposer();
+    paste(content, "plain line");
+
+    fireEvent.keyDown(content, { key: "Tab", shiftKey: true });
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+    expect(text(container)).toBe("plain line");
+  });
+
+  it("indents a list line on Tab rather than leaving the composer", () => {
+    const { content, container, onCycleMode } = renderComposer();
+    paste(content, "- item");
+
+    fireEvent.keyDown(content, { key: "Tab" });
+
+    expect(text(container)).toBe("  - item");
+    expect(screen.getByRole("button", { name: "Send" })).not.toHaveFocus();
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  it("outdents a list line on Shift+Tab rather than cycling the permission mode", () => {
     const { content, container, onCycleMode } = renderComposer();
     paste(content, "  - item");
 
     fireEvent.keyDown(content, { key: "Tab", shiftKey: true });
 
-    expect(onCycleMode).toHaveBeenCalledTimes(1);
+    expect(text(container)).toBe("- item");
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  it("walks a list in and back out again a level at a time", () => {
+    const { content, container } = renderComposer();
+    paste(content, "- item");
+
+    fireEvent.keyDown(content, { key: "Tab" });
+    fireEvent.keyDown(content, { key: "Tab" });
+    expect(text(container)).toBe("    - item");
+
+    fireEvent.keyDown(content, { key: "Tab", shiftKey: true });
     expect(text(container)).toBe("  - item");
   });
 
@@ -754,6 +787,95 @@ describe("the formatting toolbar", () => {
     fireEvent.keyDown(content, { key: "Enter" });
 
     expect(onSend).toHaveBeenCalledWith("- item\n**bold** and `code`");
+  });
+});
+
+describe("the quote button", () => {
+  const quote = () => screen.getByRole("button", { name: "Quote" });
+
+  it("comes last in the toolbar, after the lists", () => {
+    const { container } = renderComposer();
+
+    const buttons = [...container.querySelectorAll(".format-toolbar .format-button")];
+
+    expect(buttons.at(-1)).toHaveAccessibleName("Quote");
+  });
+
+  it("prefixes the line, and takes the prefix off again", () => {
+    const { content, container } = renderComposer();
+    paste(content, "quoted words");
+    expect(quote()).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(quote());
+    expect(text(container)).toBe("> quoted words");
+    expect(quote()).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(quote());
+    expect(text(container)).toBe("quoted words");
+    expect(quote()).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("quotes the list item rather than replacing the list with it", () => {
+    const { content, container } = renderComposer();
+    paste(content, "- item");
+
+    fireEvent.click(quote());
+
+    expect(text(container)).toBe("> - item");
+  });
+
+  it("sends rather than carrying the quote on when Enter is what sends", () => {
+    const { content, onSend } = renderComposer();
+    paste(content, "> quoted");
+
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(onSend).toHaveBeenCalledWith("> quoted");
+  });
+
+  it("carries the quote on with Shift+Enter when Enter is what sends", () => {
+    const { content, container } = renderComposer();
+    paste(content, "> quoted");
+
+    fireEvent.keyDown(content, { key: "Enter", shiftKey: true });
+
+    expect(text(container)).toBe("> quoted\n> ");
+  });
+
+  it("carries the quote on with Enter when Enter makes new lines", () => {
+    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    paste(content, "> quoted");
+
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(text(container)).toBe("> quoted\n> ");
+  });
+
+  it("carries a list inside the quote on as a list", () => {
+    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    paste(content, "> - item");
+
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(text(container)).toBe("> - item\n> - ");
+  });
+
+  it("ends the list on an empty item and keeps the quote going", () => {
+    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    paste(content, "> - item\n> - ");
+
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(text(container)).toBe("> - item\n\n> ");
+  });
+
+  it("lets the quote go when Enter is pressed on an empty quoted line", () => {
+    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    paste(content, "> quoted\n> ");
+
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(text(container)).toBe("> quoted\n\n");
   });
 });
 

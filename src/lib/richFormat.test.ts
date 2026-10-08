@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  closingMarkers,
+  armFormat,
   createInlineState,
+  disarmFormat,
   FORMATS,
   formatMarkers,
   formatShortcutLabel,
-  planToggle,
   planTypedCharacter,
+  toggleArmedFormat,
   wrapOffsets,
 } from "./richFormat";
 
@@ -45,52 +46,47 @@ describe("formatShortcutLabel", () => {
 });
 
 describe("createInlineState", () => {
-  it("starts with nothing armed and nothing open", () => {
-    const state = createInlineState();
-    expect(state.armed.size).toBe(0);
-    expect(state.open.size).toBe(0);
+  it("starts with nothing armed", () => {
+    expect(createInlineState().armed.size).toBe(0);
   });
 });
 
-describe("planToggle", () => {
-  it("arms a style that is not open", () => {
-    const plan = planToggle("bold", createInlineState());
-    expect(plan.kind).toBe("arm");
-    if (plan.kind !== "arm") return;
-    expect(plan.state.armed.has("bold")).toBe(true);
-    expect(plan.state.open.size).toBe(0);
+describe("armFormat and disarmFormat", () => {
+  it("arms a style that is not armed", () => {
+    expect(armFormat("bold", createInlineState()).armed.has("bold")).toBe(true);
+  });
+
+  it("leaves the other styles alone", () => {
+    const state = armFormat("bold", createInlineState());
+    expect(armFormat("italic", state).armed.has("bold")).toBe(true);
+  });
+
+  it("disarms only the style named", () => {
+    const state = armFormat("bold", armFormat("italic", createInlineState()));
+    const disarmed = disarmFormat("bold", state);
+    expect(disarmed.armed.has("bold")).toBe(false);
+    expect(disarmed.armed.has("italic")).toBe(true);
+  });
+
+  it("disarming one that is not armed changes nothing", () => {
+    expect(disarmFormat("bold", createInlineState()).armed.size).toBe(0);
+  });
+});
+
+describe("toggleArmedFormat", () => {
+  it("arms a style that is not armed", () => {
+    expect(toggleArmedFormat("bold", createInlineState()).armed.has("bold")).toBe(true);
   });
 
   it("disarms a style that is already armed", () => {
-    const armed = planToggle("bold", createInlineState());
-    if (armed.kind !== "arm") throw new Error("expected the first press to arm");
-    const disarmed = planToggle("bold", armed.state);
-    expect(disarmed.kind).toBe("arm");
-    if (disarmed.kind !== "arm") return;
-    expect(disarmed.state.armed.has("bold")).toBe(false);
+    const armed = toggleArmedFormat("bold", createInlineState());
+    expect(toggleArmedFormat("bold", armed).armed.has("bold")).toBe(false);
   });
 
-  it("closes a group that has been opened", () => {
-    const opened = planTypedCharacter("a", planToggle("bold", createInlineState()).state);
-    if (!opened) throw new Error("expected a typing plan");
-    const closed = planToggle("bold", opened.state);
-    expect(closed.kind).toBe("close");
-    if (closed.kind !== "close") return;
-    expect(closed.insert).toBe("**");
-    expect(closed.state.open.size).toBe(0);
-  });
-
-  it("closes every open marker at once", () => {
-    let state = createInlineState();
-    for (const id of ["bold", "italic"] as const) {
-      const armed = planToggle(id, state);
-      if (armed.kind !== "arm") throw new Error("expected an arm plan");
-      const typed = planTypedCharacter("a", armed.state);
-      if (!typed) throw new Error("expected a typing plan");
-      state = typed.state;
-    }
-    const closed = planToggle("bold", state);
-    expect(closed.kind === "close" && closed.insert).toBe("***");
+  it("keeps each style apart when several are armed", () => {
+    let state = toggleArmedFormat("bold", createInlineState());
+    state = toggleArmedFormat("italic", state);
+    expect([...state.armed].sort()).toEqual(["bold", "italic"]);
   });
 });
 
@@ -99,36 +95,41 @@ describe("planTypedCharacter", () => {
     expect(planTypedCharacter("a", createInlineState())).toBeNull();
   });
 
-  it("wraps the character and clears the arming", () => {
-    const armed = planToggle("bold", createInlineState());
-    if (armed.kind !== "arm") throw new Error("expected an arm plan");
-    const plan = planTypedCharacter("a", armed.state);
-    expect(plan?.insert).toBe("**a");
+  /// Both markers go in at once, so what is on screen is what will be sent and
+  /// the caret sits where the next character belongs.
+  it("wraps the character in both markers and leaves the caret inside them", () => {
+    const armed = armFormat("bold", createInlineState());
+    const plan = planTypedCharacter("a", armed);
+
+    expect(plan?.insert).toBe("**a**");
+    expect(plan?.caretOffset).toBe(3);
     expect(plan?.state.armed.size).toBe(0);
-    expect(plan?.state.open.has("bold")).toBe(true);
+  });
+
+  it("wraps every armed style at once, in the same order as their markers", () => {
+    const armed = armFormat("italic", armFormat("bold", createInlineState()));
+    const plan = planTypedCharacter("a", armed);
+
+    expect(plan?.insert).toBe("***a***");
+    expect(plan?.caretOffset).toBe(4);
+  });
+
+  it("puts the caret after the character whatever the markers are", () => {
+    const armed = armFormat("code", armFormat("strike", createInlineState()));
+    const plan = planTypedCharacter("a", armed);
+
+    expect(plan?.caretOffset).toBe("~~`a".length);
   });
 
   it("inserts whitespace plainly and stays armed", () => {
-    const armed = planToggle("bold", createInlineState());
-    if (armed.kind !== "arm") throw new Error("expected an arm plan");
-    expect(planTypedCharacter(" ", armed.state)).toBeNull();
+    const armed = armFormat("bold", createInlineState());
+    expect(planTypedCharacter(" ", armed)).toBeNull();
   });
 
   it("treats a tab and a newline as whitespace", () => {
-    const armed = planToggle("italic", createInlineState());
-    if (armed.kind !== "arm") throw new Error("expected an arm plan");
-    expect(planTypedCharacter("\t", armed.state)).toBeNull();
-    expect(planTypedCharacter("\n", armed.state)).toBeNull();
-  });
-});
-
-describe("closingMarkers", () => {
-  it("is empty when nothing is open", () => {
-    expect(closingMarkers(createInlineState())).toBe("");
-  });
-
-  it("is the markers of everything open", () => {
-    expect(closingMarkers({ armed: new Set(), open: new Set(["bold"]) })).toBe("**");
+    const armed = armFormat("italic", createInlineState());
+    expect(planTypedCharacter("\t", armed)).toBeNull();
+    expect(planTypedCharacter("\n", armed)).toBeNull();
   });
 });
 

@@ -8,6 +8,7 @@ export type FormatToolbarProps = {
   status: ComposerStatus;
   onToggleFormat: (id: FormatId) => void;
   onToggleList: (kind: ListKind) => void;
+  onToggleQuote: () => void;
   onToggleCodeBlock: () => void;
 };
 
@@ -34,6 +35,7 @@ export function FormatToolbar({
   status,
   onToggleFormat,
   onToggleList,
+  onToggleQuote,
   onToggleCodeBlock,
 }: FormatToolbarProps) {
   return (
@@ -84,6 +86,17 @@ export function FormatToolbar({
           </button>
         );
       })}
+      <button
+        type="button"
+        className={status.quoted ? "format-button on" : "format-button"}
+        title="Quote"
+        aria-label="Quote"
+        aria-pressed={status.quoted}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onToggleQuote}
+      >
+        {">"}
+      </button>
     </div>
   );
 }

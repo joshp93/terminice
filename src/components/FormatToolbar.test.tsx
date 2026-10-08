@@ -12,6 +12,7 @@ const formatsOf = (...entries: [FormatId, StyleState][]): ReadonlyMap<FormatId, 
 const statusOf = (overrides: Partial<ComposerStatus> = {}): ComposerStatus => ({
   formats: formatsOf(),
   listKind: null,
+  quoted: false,
   inCodeBlock: false,
   text: "",
   caret: 0,
@@ -22,6 +23,7 @@ const toolbarProps = (overrides: Partial<FormatToolbarProps> = {}): FormatToolba
   status: statusOf(),
   onToggleFormat: vi.fn(),
   onToggleList: vi.fn(),
+  onToggleQuote: vi.fn(),
   onToggleCodeBlock: vi.fn(),
   ...overrides,
 });

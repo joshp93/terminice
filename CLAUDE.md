@@ -231,6 +231,36 @@ it with the user rather than quietly changing it.
   outdents. Likewise, while Enter is set to send, a bare Tab leaves the composer for the
   Send button instead of inserting a tab — a key that sends should not also be the key
   that inserts whitespace.
+- **An inline style is a mode, and the Markdown is the state.** Pressing a style button writes
+  nothing at all: it arms the style, and the first non-space character typed is wrapped in
+  *both* markers at once, with the caret left between the character and the closing ones. There
+  is no longer a set of styles "awaiting closing" — `InlineState` is only ever `armed`, and
+  whether the caret is inside a block is read from the parse rather than remembered, so moving
+  the caret in or out of a block needs nothing kept in step. That is also why `closeOpenFormats`
+  is gone: nothing is ever left half-written. Whitespace does not consume the arming, because
+  Markdown cannot open emphasis against a space.
+- **Pressing a style while inside that style leaves it, and lands between the markers.** The
+  caret goes to `span.closeTo` of the innermost node of *that* style, which is what makes
+  nesting work: `***both***` is one run of three asterisks belonging to two styles, and its bold
+  closes two of them while its italic closes the last — so leaving the bold from between them
+  puts the caret at `***both**|*`, still inside the italic. Do not "simplify" this to a jump past
+  the whole run: that would take the reader out of the italic as well, and past only the innermost
+  marker of a shared run would split the run and change what the Markdown means. Leaving a block
+  therefore no longer takes the markers out as it once did — un-formatting is done by selecting
+  the text and pressing the button.
+- **The quote button continues the quote on Enter, and a list inside it keeps being a list.**
+  `planQuoteEnter` peels the quote off, plans the rest of the line as whatever it is, and puts the
+  quote back — so `> - item` continues as `> - `. One divergence worth knowing: **a list carries
+  on whatever the send setting says, but a quote only carries on when Enter is not the key that
+  sends.** With Enter set to send, Enter sends and Shift+Enter is what carries the quote to the
+  next line. That is deliberate, and it is why quotes and lists behave differently on the same
+  keypress.
+- **Tab and Shift+Tab belong to a list when the caret is in one.** `handleKeyDownCapture` returns
+  early for `Tab` on a list line, which lets the key through to CodeMirror's own indent and outdent
+  — otherwise the capture handler would take Shift+Tab for the permission mode (which it still does
+  on every other line) and Tab for a way out to the Send button (likewise). The list kind comes from
+  `status.listKind`, so the decision is made from what the line is rather than from a flag that could
+  fall out of step.
 - **F6 is the composer's, and it is claimed on the document in the capture phase.** The
   composer is the one thing in the window worth a key of its own, since everything else can
   be reached by tabbing. Capturing on the document means whatever happens to be holding the

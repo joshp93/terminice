@@ -55,6 +55,7 @@ const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter
 const INITIAL_STATUS: ComposerStatus = {
   formats: new Map(),
   listKind: null,
+  quoted: false,
   inCodeBlock: false,
   text: "",
   caret: 0,
@@ -356,7 +357,6 @@ export function Composer({
   const submit = useCallback(() => {
     const handle = handleRef.current;
     if (!handle) return;
-    handle.closeOpenFormats();
     const text = handle.getText();
     handle.clear();
     if (text.trim().length === 0) return;
@@ -443,6 +443,7 @@ export function Composer({
 
   const toggleFormat = useCallback((id: FormatId) => handleRef.current?.toggleFormat(id), []);
   const toggleList = useCallback((kind: ListKind) => handleRef.current?.toggleList(kind), []);
+  const toggleQuote = useCallback(() => handleRef.current?.toggleQuote(), []);
   const toggleCodeBlock = useCallback(() => handleRef.current?.toggleCodeBlock(), []);
 
   /**
@@ -484,6 +485,12 @@ export function Composer({
     (event: React.KeyboardEvent) => {
       const handle = handleRef.current;
       if (!handle) return;
+
+      // In a list the tab keys belong to the list: they indent it and outdent
+      // it, which means letting them through to CodeMirror rather than taking
+      // them for the permission mode or for a way out to the Send button. On
+      // every other line they keep the jobs they had.
+      if (event.key === "Tab" && status.listKind !== null) return;
 
       if (event.key === "Tab" && event.shiftKey) {
         event.preventDefault();
@@ -610,6 +617,7 @@ export function Composer({
       menuOpen,
       mentionOpen,
       recall,
+      status.listKind,
       submenus,
       writingCommand,
     ],
@@ -675,6 +683,7 @@ export function Composer({
         status={status}
         onToggleFormat={toggleFormat}
         onToggleList={toggleList}
+        onToggleQuote={toggleQuote}
         onToggleCodeBlock={toggleCodeBlock}
       />
       <div className="composer-row" ref={rowRef}>

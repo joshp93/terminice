@@ -21,6 +21,7 @@ import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import {
   INDENT_UNIT,
   type LineEdit,
+  type ListEnterPlan,
   type ListKind,
   parseListLine,
   planIndent,
@@ -43,15 +44,16 @@ import {
   styleNodesInRange,
   styleStateInRange,
 } from "./markdownSpans";
+import { parseQuoteLine, planQuoteEnter, planQuoteToggle } from "./quoteMarkers";
 import {
-  closingMarkers,
   createInlineState,
+  disarmFormat,
   FORMAT_MARKERS,
   FORMATS,
   type FormatId,
   type InlineState,
-  planToggle,
   planTypedCharacter,
+  toggleArmedFormat,
   wrapOffsets,
 } from "./richFormat";
 import { findUrls, urlAt } from "./urls";
@@ -62,6 +64,8 @@ export type ComposerStatus = {
   formats: ReadonlyMap<FormatId, StyleState>;
   /** The list kind of the caret's line, if any. */
   listKind: ListKind | null;
+  /** Whether the caret's line carries a quote. */
+  quoted: boolean;
   /** Whether the caret sits inside a code block. */
   inCodeBlock: boolean;
   /** The composer's current contents, which drives the slash menu. */
@@ -86,8 +90,8 @@ export type ComposerHandle = {
   caretAtEnd: () => boolean;
   toggleFormat: (id: FormatId) => void;
   toggleList: (kind: ListKind) => void;
+  toggleQuote: () => void;
   toggleCodeBlock: () => void;
-  closeOpenFormats: () => void;
   destroy: () => void;
 };
 
@@ -240,9 +244,9 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
             ? "on"
             : "off"
           : styleStateInRange(tree, format.id, range.from, range.to);
-      if (state === "off" && (inline.armed.has(format.id) || inline.open.has(format.id))) {
-        state = "on";
-      }
+      // An armed style shows as on because the mode is on, even though nothing
+      // has been written yet.
+      if (state === "off" && inline.armed.has(format.id)) state = "on";
       formats.set(format.id, state);
     }
 
@@ -250,6 +254,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     options.onStatusChange({
       formats,
       listKind: readListMarker(line.text)?.kind ?? null,
+      quoted: parseQuoteLine(line.text) !== null,
       inCodeBlock: findCodeBlock(tree.resolveInner(range.head, -1)) !== null,
       text: view.state.doc.toString(),
       caret: range.head,
@@ -369,29 +374,25 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     }
 
     const caret = range.from;
-    const stored = inline.armed.has(id) || inline.open.has(id);
 
-    if (stored) {
-      const plan = planToggle(id, inline);
-      inline = plan.state;
-      if (plan.kind === "close") {
-        replaceRange(view, caret, caret, plan.insert, caret + plan.insert.length);
-        return;
-      }
-      report(view);
-      return;
-    }
-
+    // Inside a block of this style, the button means "leave it": the caret moves
+    // to just past the markers that belong to *this* style, and whatever else is
+    // wrapped around the text still is. The parse says which markers those are,
+    // which is what makes nesting work — `***a***` is one run of three
+    // asterisks, and its bold closes two of them and its italic the last, so
+    // leaving the bold from between them lands on `***a**|*`.
     if (styleAppliesAt(tree, id, caret)) {
       const enclosing = findStyleNode(tree.resolveInner(caret, -1), id, caret, caret);
-      if (enclosing) {
-        removeMarks(view, [enclosing], caret, caret);
+      const span = enclosing ? spanOf(enclosing) : null;
+      if (span) {
+        inline = disarmFormat(id, inline);
+        view.dispatch({ selection: { anchor: span.closeTo } });
         report(view);
         return;
       }
     }
 
-    inline = planToggle(id, inline).state;
+    inline = toggleArmedFormat(id, inline);
     report(view);
   };
 
@@ -399,6 +400,12 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     const cursor = view.state.selection.main.head;
     applyLineEdit(view, planListToggle(view.state.doc.lineAt(cursor).text, kind), cursor);
     renumberAround(view, cursor);
+    report(view);
+  };
+
+  const toggleQuote = (view: EditorView): void => {
+    const cursor = view.state.selection.main.head;
+    applyLineEdit(view, planQuoteToggle(view.state.doc.lineAt(cursor).text), cursor);
     report(view);
   };
 
@@ -436,41 +443,73 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     );
   };
 
-  const closeOpenFormats = (view: EditorView): void => {
-    const closing = closingMarkers(inline);
-    if (closing.length === 0) return;
-    const at = view.state.selection.main.head;
-    replaceRange(view, at, at, closing, at + closing.length);
-    inline = createInlineState();
+  /**
+   * Applies what Enter decided to do.
+   *
+   * @param view - The editor.
+   * @param plan - What to write, and how much of the line's start to clear.
+   * @param cursor - Where the caret is.
+   */
+  const applyEnterPlan = (view: EditorView, plan: ListEnterPlan, cursor: number): void => {
+    const line = view.state.doc.lineAt(cursor);
+    if (plan.removeMarker > 0) {
+      view.dispatch({
+        changes: [
+          { from: line.from, to: line.from + plan.removeMarker, insert: "" },
+          { from: cursor, insert: plan.insert },
+        ],
+        selection: { anchor: cursor - plan.removeMarker + plan.insert.length },
+      });
+    } else {
+      view.dispatch({
+        changes: { from: cursor, insert: plan.insert },
+        selection: { anchor: cursor + plan.insert.length },
+      });
+    }
+    renumberAround(view, view.state.selection.main.head);
+    report(view);
   };
 
+  /**
+   * What Enter does on the caret's line.
+   *
+   * A list carries on whatever the send setting says, because a list is a thing
+   * being written rather than a keypress to be honoured. A quote carries on only
+   * when Enter is not the key that sends: with Enter set to send, Enter sends
+   * and Shift+Enter is what carries the quote to the next line.
+   */
   const handleEnter = (view: EditorView): boolean => {
     const cursor = view.state.selection.main.head;
     const line = view.state.doc.lineAt(cursor);
 
-    const plan = planListEnter(line.text);
-    if (plan) {
-      if (plan.removeMarker > 0) {
-        view.dispatch({
-          changes: [
-            { from: line.from, to: line.from + plan.removeMarker, insert: "" },
-            { from: cursor, insert: plan.insert },
-          ],
-          selection: { anchor: cursor - plan.removeMarker + plan.insert.length },
-        });
-      } else {
-        view.dispatch({
-          changes: { from: cursor, insert: plan.insert },
-          selection: { anchor: cursor + plan.insert.length },
-        });
-      }
-      renumberAround(view, view.state.selection.main.head);
-      report(view);
+    const list = planListEnter(line.text);
+    if (list) {
+      applyEnterPlan(view, list, cursor);
       return true;
     }
 
-    if (!options.submitsOnEnter()) return false;
-    options.onSubmit();
+    if (options.submitsOnEnter()) {
+      options.onSubmit();
+      return true;
+    }
+
+    const quote = planQuoteEnter(line.text);
+    if (!quote) return false;
+    applyEnterPlan(view, quote, cursor);
+    return true;
+  };
+
+  /**
+   * Carries a quote on to the next line without sending anything.
+   *
+   * @param view - The editor.
+   * @returns True when the line was quoted and the quote continues.
+   */
+  const handleShiftEnter = (view: EditorView): boolean => {
+    const cursor = view.state.selection.main.head;
+    const quote = planQuoteEnter(view.state.doc.lineAt(cursor).text);
+    if (!quote) return false;
+    applyEnterPlan(view, quote, cursor);
     return true;
   };
 
@@ -503,6 +542,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
   const shortcuts = Prec.highest(
     keymap.of([
       { key: "Enter", run: (view) => handleEnter(view) },
+      { key: "Shift-Enter", run: (view) => handleShiftEnter(view) },
       {
         key: "Mod-Enter",
         run: () => {
@@ -555,7 +595,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const formatPlan = planTypedCharacter(text, inline);
       if (formatPlan) {
         inline = formatPlan.state;
-        replaceRange(view, from, to, formatPlan.insert, from + formatPlan.insert.length);
+        replaceRange(view, from, to, formatPlan.insert, from + formatPlan.caretOffset);
         return true;
       }
     }
@@ -596,17 +636,6 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
 
   const trackStatus = EditorView.updateListener.of((update: ViewUpdate) => {
     if (!update.docChanged && !update.selectionSet) return;
-
-    const closing = closingMarkers(inline);
-    if (update.docChanged && closing.length > 0) {
-      const head = update.state.selection.main.head;
-      const typed =
-        head >= closing.length ? update.state.sliceDoc(head - closing.length, head) : "";
-      if (typed === closing) {
-        inline = { armed: inline.armed, open: new Set() };
-      }
-    }
-
     report(update.view);
   });
 
@@ -669,8 +698,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     },
     toggleFormat: (id) => toggleFormat(view, id),
     toggleList: (kind) => toggleList(view, kind),
+    toggleQuote: () => toggleQuote(view),
     toggleCodeBlock: () => toggleCodeBlock(view),
-    closeOpenFormats: () => closeOpenFormats(view),
     destroy: () => view.destroy(),
   };
 }

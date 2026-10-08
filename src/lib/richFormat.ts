@@ -38,22 +38,27 @@ export const FORMATS: readonly FormatDefinition[] = [
   { id: "code", label: "Inline code", glyph: "‹›" },
 ];
 
-/** Which styles are armed, and which have been opened and await closing. */
+/**
+ * Which styles are armed.
+ *
+ * Armed means the next character typed will be wrapped, and nothing has been
+ * written yet — pressing a style writes nothing at all until there is something
+ * to put between the markers. Once a character has been wrapped the state is
+ * empty again: whether the caret is inside a style is read from the Markdown
+ * itself rather than remembered here, so moving the caret in or out of a block
+ * needs nothing to be kept in step.
+ */
 export type InlineState = {
   /** Styles that will wrap the next typed character. */
   armed: ReadonlySet<FormatId>;
-  /** Styles whose opening markers are written and await their closing markers. */
-  open: ReadonlySet<FormatId>;
 };
-
-/** What pressing a style control does. */
-export type TogglePlan =
-  | { kind: "close"; insert: string; state: InlineState }
-  | { kind: "arm"; state: InlineState };
 
 /** The result of typing a character while a style is armed. */
 export type TypingPlan = {
+  /** The opening markers, the character, and the closing markers. */
   insert: string;
+  /** Where the caret lands inside what is inserted. */
+  caretOffset: number;
   state: InlineState;
 };
 
@@ -64,16 +69,17 @@ function usesCommandKey(): boolean {
 /**
  * Creates the inline state for an empty composer.
  *
- * @returns The inline state, with nothing armed and nothing open.
+ * @returns The inline state, with nothing armed.
  */
 export function createInlineState(): InlineState {
-  return { armed: new Set(), open: new Set() };
+  return { armed: new Set() };
 }
 
 /**
  * Builds the marker string for a set of styles.
  *
- * Order is fixed so the same selection always produces the same markers.
+ * Order is fixed so the same set always produces the same markers, and so the
+ * closing markers mirror the opening ones.
  *
  * @param active - The styles to build markers for.
  * @returns The concatenated markers, or an empty string for none.
@@ -96,60 +102,65 @@ export function formatShortcutLabel(id: FormatId): string {
 }
 
 /**
- * Returns the markers needed to close the open group.
+ * Arms a style, so the next character typed is wrapped in it.
  *
+ * @param id - The style to arm.
  * @param state - The current inline state.
- * @returns The closing markers, or an empty string when nothing is open.
+ * @returns The state with the style armed.
  */
-export function closingMarkers(state: InlineState): string {
-  return formatMarkers(state.open);
+export function armFormat(id: FormatId, state: InlineState): InlineState {
+  const armed = new Set(state.armed);
+  armed.add(id);
+  return { armed };
 }
 
 /**
- * Plans what pressing a style control does when nothing is selected.
+ * Disarms a style.
  *
- * Pressing the same style again closes the group; pressing an unarmed style
- * arms it so the next typed character is wrapped.
+ * @param id - The style to disarm.
+ * @param state - The current inline state.
+ * @returns The state without the style armed.
+ */
+export function disarmFormat(id: FormatId, state: InlineState): InlineState {
+  const armed = new Set(state.armed);
+  armed.delete(id);
+  return { armed };
+}
+
+/**
+ * Arms a style that is not armed, and disarms one that is.
  *
  * @param id - The style that was pressed.
  * @param state - The current inline state.
- * @returns Either a close to perform, or the state to adopt.
+ * @returns The state with the style the other way round.
  */
-export function planToggle(id: FormatId, state: InlineState): TogglePlan {
-  if (state.armed.has(id)) {
-    const armed = new Set(state.armed);
-    armed.delete(id);
-    return { kind: "arm", state: { armed, open: state.open } };
-  }
-
-  if (state.open.has(id)) {
-    return { kind: "close", insert: closingMarkers(state), state: createInlineState() };
-  }
-
-  const armed = new Set(state.armed);
-  armed.add(id);
-  return { kind: "arm", state: { armed, open: state.open } };
+export function toggleArmedFormat(id: FormatId, state: InlineState): InlineState {
+  return state.armed.has(id) ? disarmFormat(id, state) : armFormat(id, state);
 }
 
 /**
  * Plans what to insert for a typed character.
  *
- * Whitespace is inserted plainly and the style stays armed, because Markdown
- * cannot open emphasis against a space — wrapping one would leave the markers
- * as literal characters.
+ * Both markers are written at once, with the caret left between the character
+ * and the closing markers, so what is on screen is what will be sent rather
+ * than a block waiting to be closed. Whitespace is inserted plainly and the
+ * styles stay armed, because Markdown cannot open emphasis against a space —
+ * wrapping one would leave the markers as literal characters.
  *
  * @param char - The character typed.
  * @param state - The current inline state.
- * @returns The text to insert and the resulting state, or null to insert plainly.
+ * @returns The text to insert and where the caret lands, or null to insert
+ *   plainly.
  */
 export function planTypedCharacter(char: string, state: InlineState): TypingPlan | null {
   if (state.armed.size === 0) return null;
   if (/\s/.test(char)) return null;
-  const open = new Set(state.open);
-  for (const id of state.armed) open.add(id);
+
+  const markers = formatMarkers(state.armed);
   return {
-    insert: formatMarkers(state.armed) + char,
-    state: { armed: new Set(), open },
+    insert: `${markers}${char}${markers}`,
+    caretOffset: markers.length + char.length,
+    state: createInlineState(),
   };
 }
 
