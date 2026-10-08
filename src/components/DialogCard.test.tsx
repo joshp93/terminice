@@ -581,6 +581,18 @@ describe("answering in your own words", () => {
     expect(screen.getByRole("textbox", { name: "Notes for Postgres" })).toHaveFocus();
   });
 
+  it("puts the keyboard back after arrowing out of the box and back", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+    fireEvent.keyDown(document, { key: "n" });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Notes for Postgres" }), {
+      key: "ArrowDown",
+    });
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+
+    expect(screen.getByRole("textbox", { name: "Notes for Postgres" })).toHaveFocus();
+  });
+
   it("moves the option on from inside the notes box, rather than typing a line into it", () => {
     render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={vi.fn()} />);
     fireEvent.keyDown(document, { key: "n" });
@@ -633,6 +645,46 @@ describe("which row the notes belong to", () => {
 
     expect(notes("A2")).toBeInTheDocument();
     expect(notes("A1")).not.toBeInTheDocument();
+  });
+
+  /// Two options whose notes are both open leave the pane on screen as the
+  /// keyboard moves between them, so nothing closes and reopens to bring the
+  /// caret back — the box has to take it as its subject changes.
+  it("moves the keyboard with it between two options whose notes are both open", () => {
+    render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "n" });
+    expect(notes("A2")).toHaveFocus();
+
+    fireEvent.keyDown(notes("A2") as HTMLElement, { key: "ArrowUp" });
+
+    expect(notes("A1")).toHaveFocus();
+  });
+
+  it("keeps the caret in the box when there is no other option to move to", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+    fireEvent.keyDown(document, { key: "n" });
+    const box = screen.getByRole("textbox", { name: "Notes for Postgres" });
+    expect(box).toHaveFocus();
+
+    // Postgres is the first row, so there is nothing above it to move to.
+    fireEvent.keyDown(box, { key: "ArrowUp" });
+
+    expect(box).toHaveFocus();
+  });
+
+  it("puts the keyboard back in the notes when the row is returned to", () => {
+    render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    expect(notes("A1")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "ArrowUp" });
+
+    expect(notes("A1")).toHaveFocus();
   });
 
   it("keeps a note against the option it was written for", () => {

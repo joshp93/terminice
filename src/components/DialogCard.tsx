@@ -214,17 +214,22 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const paneOpen = customOpen || notesOpen;
 
   // Whichever box is on screen takes the keyboard, so it can be typed into
-  // without reaching for the mouse first. Both are keyed on whether they are
-  // open rather than on which question they belong to, because the box is the
-  // same element as it moves between questions and moving it must not take the
-  // caret away from what is being written.
+  // without reaching for the mouse first, and it takes it again whenever it
+  // comes to belong to another row. Keying the notes on `notesOpen` alone was
+  // not enough: two options whose notes are both open leave the box where it is
+  // as the keyboard moves between them, so nothing closed and reopened to bring
+  // the caret back and the box sat there unfocused. Focusing a box that already
+  // has the caret does nothing, so following the subject costs nothing while it
+  // is being typed into.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the id is what the effect follows rather than something it reads — the box coming to belong to another row is exactly the event that has to put the caret back.
   useEffect(() => {
     if (notesOpen) notesRef.current?.focus();
-  }, [notesOpen]);
+  }, [notesOpen, notesId]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: as above, for the box that answers in the reader's own words.
   useEffect(() => {
     if (customOpen) customRef.current?.focus();
-  }, [customOpen]);
+  }, [customOpen, customQuestion?.question]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a rebuilt row list has to bring its settled row back into view even when the index is unchanged.
   useEffect(() => {
@@ -331,10 +336,18 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      const step = (delta: number): void => {
+      /**
+       * Moves to a neighbouring row.
+       *
+       * @param delta - -1 for the row above, 1 for the row below.
+       * @returns True when there was somewhere to move to.
+       */
+      const step = (delta: number): boolean => {
         const next = Math.min(Math.max(settledIndex + delta, 0), targets.length - 1);
         const target = targets[next];
-        if (target) setFocus(target);
+        if (!target || next === settledIndex) return false;
+        setFocus(target);
+        return true;
       };
 
       const writingCustom = event.target === customRef.current;
@@ -359,8 +372,10 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         if (forward || backward) {
           event.preventDefault();
           event.stopPropagation();
-          box?.blur();
-          step(forward ? 1 : -1);
+          // Left in the box when there is no other row to move to: blurring it
+          // would put the caret nowhere and leave a box on screen that looks
+          // ready to type into and is not.
+          if (step(forward ? 1 : -1)) box?.blur();
         }
         return;
       }
