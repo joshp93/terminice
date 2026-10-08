@@ -231,6 +231,22 @@ it with the user rather than quietly changing it.
   outdents. Likewise, while Enter is set to send, a bare Tab leaves the composer for the
   Send button instead of inserting a tab — a key that sends should not also be the key
   that inserts whitespace.
+- **F6 is the composer's, and it is claimed on the document in the capture phase.** The
+  composer is the one thing in the window worth a key of its own, since everything else can
+  be reached by tabbing. Capturing on the document means whatever happens to be holding the
+  keyboard cannot swallow it. With a card open the composer's slot is `inert`, so the focus
+  call is refused by the browser and F6 does nothing — which is the wanted behaviour rather
+  than a case to special-case.
+- **The arrow keys reach back into the history only from the edges of the text.**
+  `recallStepFor` in `src/lib/historyRecall.ts` is the whole of the rule and is a pure
+  function because the alternative is exercising CodeMirror's caret in jsdom, which cannot
+  be done by dispatching a keydown — the browser moves the caret for an arrow, not
+  CodeMirror. Back asks for the very start; forward asks for the very end, or the very start
+  of a *command*, whose end is where its menu is open and reading Down as a move through its
+  own entries. The caret moving into the middle of a message takes the arrows back for
+  editing, and there is no separate "browsing" mode that survives it — that escape hatch
+  (`historyIndexRef.current !== null ||`) is what made a recalled message a trap to get out
+  of. A recalled message always lands with the caret at the very start.
 - **Sessions change over the control channel, not by sending a command.** `set_model` and
   `set_permission_mode` exist as control requests, and they are the only way the app
   learns what happened: sending `/config model=…` as a message changes the setting with

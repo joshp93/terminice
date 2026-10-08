@@ -262,6 +262,91 @@ describe("Enter", () => {
   });
 });
 
+describe("recalling what has been sent", () => {
+  /** Sends a line, leaving the composer empty and the line in the history. */
+  const send = (content: HTMLElement, line: string): void => {
+    paste(content, line);
+    fireEvent.keyDown(content, { key: "Enter" });
+  };
+
+  it("brings back the last thing sent when Up is pressed on an empty composer", () => {
+    const { content, container } = renderComposer();
+    send(content, "first");
+    expect(text(container)).toBe("");
+
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+
+    expect(text(container)).toBe("first");
+  });
+
+  it("leaves the caret at the very start, so one more Up goes further back", () => {
+    const { content, container } = renderComposer();
+    send(content, "first");
+    send(content, "second");
+
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+    expect(text(container)).toBe("second");
+
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+
+    expect(text(container)).toBe("first");
+  });
+
+  it("walks back down from the start to whatever was half-written", () => {
+    const { content, container } = renderComposer();
+    send(content, "first");
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+
+    fireEvent.keyDown(content, { key: "ArrowDown" });
+
+    expect(text(container)).toBe("");
+  });
+
+  it("takes Down from the start of a command, whose end belongs to its menu", () => {
+    const { content, container } = renderComposer();
+    // The trailing space closes the menu, so Enter sends the line rather than
+    // being read by the menu as a choice from it.
+    send(content, "/clear ");
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+    expect(text(container)).toBe("/clear");
+
+    fireEvent.keyDown(content, { key: "ArrowDown" });
+
+    expect(text(container)).toBe("");
+  });
+});
+
+describe("F6", () => {
+  it("puts the keyboard in the composer from elsewhere in the window", () => {
+    const { content } = renderComposer();
+    const send = screen.getByRole("button", { name: "Send" });
+    send.focus();
+    expect(send).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "F6" });
+
+    expect(content).toHaveFocus();
+  });
+
+  it("keeps the key to itself rather than letting the window act on it", () => {
+    renderComposer();
+
+    const event = new KeyboardEvent("keydown", { key: "F6", bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves every other key to the composer", () => {
+    renderComposer();
+
+    const event = new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
+
 describe("Tab", () => {
   it("leaves the composer for the Send button rather than inserting a tab while Enter sends", () => {
     const { content, container, onSend } = renderComposer();

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { type ComposerHandle, type ComposerStatus, createComposer } from "../lib/createComposer";
 import { openExternal } from "../lib/externalLinks";
 import { subscribeToFileDrops } from "../lib/fileDrops";
+import { recallStepFor } from "../lib/historyRecall";
 import type { ListKind } from "../lib/listMarkers";
 import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
@@ -158,6 +159,8 @@ export function Composer({
   const shellCommand = shellCommandIn(status.text);
   const isShell = shellCommand !== null;
   const canSend = status.text.trim().length > 0;
+  /** Whether what is being written is a slash command rather than a message. */
+  const writingCommand = status.text.startsWith("/");
 
   const mention = mentionIn(status.text, status.caret);
   const mentionQuery = mention?.query ?? null;
@@ -474,19 +477,16 @@ export function Composer({
         return;
       }
 
-      // Recalling a prompt takes the arrow keys only at the edges of the text,
-      // so moving around inside a message still works normally. Once browsing
-      // has started, the arrows stay in history whatever the caret is doing.
-      if (event.key === "ArrowUp" && (historyIndexRef.current !== null || handle.caretAtStart())) {
+      const step = recallStepFor({
+        key: event.key,
+        atStart: handle.caretAtStart(),
+        atEnd: handle.caretAtEnd(),
+        writingCommand,
+      });
+      if (step !== null) {
         event.preventDefault();
         event.stopPropagation();
-        recall(-1);
-        return;
-      }
-      if (event.key === "ArrowDown" && (historyIndexRef.current !== null || handle.caretAtEnd())) {
-        event.preventDefault();
-        event.stopPropagation();
-        recall(1);
+        recall(step);
         return;
       }
 
@@ -510,6 +510,7 @@ export function Composer({
       mentionOpen,
       recall,
       submenus.length,
+      writingCommand,
     ],
   );
 
@@ -528,6 +529,23 @@ export function Composer({
       cancelled = true;
       unsubscribe?.();
     };
+  }, []);
+
+  /**
+   * Puts the keyboard in the composer from anywhere in the window.
+   *
+   * Everything else can be reached by tabbing, but the box a message is typed
+   * into is worth a key of its own. Captured on the document so it is not
+   * swallowed by whatever happens to be holding the keyboard.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "F6") return;
+      event.preventDefault();
+      handleRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
   useEffect(() => {
