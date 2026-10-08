@@ -653,3 +653,38 @@ export function buildRootEntries(host: SlashMenuHost): MenuEntry[] {
 export function filterEntries(entries: MenuEntry[], query: string): MenuEntry[] {
   return rankByMatch(entries, query, (item) => item.label.replace(/^\//, ""));
 }
+
+/**
+ * The command a label names, without its slash.
+ *
+ * Not every row is a command: terminice's own rows — the permission mode, its
+ * settings — are prose, and have no name to put in the composer.
+ *
+ * @param label - The row's label.
+ * @returns The command name, or an empty string when the row is not one.
+ */
+export function commandNameOf(label: string): string {
+  const trimmed = label.trim();
+  return trimmed.startsWith("/") ? trimmed.slice(1).trim() : "";
+}
+
+/**
+ * What has been typed after a command, which is what its submenu filters on.
+ *
+ * A submenu is opened from a command, and the composer is left holding that
+ * command so that what is typed next reads as its argument. This is the
+ * argument: `/resume my-session` filters the sessions by `my-session`.
+ *
+ * @param text - What the composer holds.
+ * @param command - The command the submenu was opened from, without its slash.
+ * @returns The text after it, or an empty string when the composer no longer
+ *   holds that command, or holds a different one that merely starts the same.
+ */
+export function textAfterCommand(text: string, command: string): string {
+  if (command.length === 0) return "";
+  const trimmed = text.trim();
+  const prefix = `/${command}`;
+  if (trimmed === prefix) return "";
+  if (!trimmed.startsWith(`${prefix} `)) return "";
+  return trimmed.slice(prefix.length + 1).trim();
+}

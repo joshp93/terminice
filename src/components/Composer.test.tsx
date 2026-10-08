@@ -262,6 +262,88 @@ describe("Enter", () => {
   });
 });
 
+describe("a menu entry with a submenu", () => {
+  const sessions = [
+    {
+      id: "aaaa1111-2222",
+      modified: 1_700_000_000_000,
+      bytes: 10,
+      preview: "Fix the parser",
+      live: false,
+    },
+    {
+      id: "bbbb3333-4444",
+      modified: 1_700_000_000_000,
+      bytes: 10,
+      preview: "Add the tests",
+      live: false,
+    },
+  ];
+  const withSessions = () => renderComposer({ menu: createMenuHost({ sessions }) });
+
+  /** Opens `/resume` from a partly typed command. */
+  const openResume = (content: HTMLElement): void => {
+    paste(content, "/resume");
+    fireEvent.keyDown(content, { key: "Enter" });
+  };
+
+  it("puts the whole command in the composer, so the rows read as its argument", () => {
+    const { content, container } = withSessions();
+
+    openResume(content);
+
+    expect(text(container)).toBe("/resume ");
+  });
+
+  it("shows the rows the command offers", () => {
+    const { content } = withSessions();
+
+    openResume(content);
+
+    expect(screen.getByRole("option", { name: /Fix the parser/ })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /Add the tests/ })).toBeInTheDocument();
+  });
+
+  it("filters those rows by what is typed after the command", () => {
+    const { content } = withSessions();
+    openResume(content);
+
+    paste(content, "tests");
+
+    expect(screen.queryByRole("option", { name: /Fix the parser/ })).toBeNull();
+    expect(screen.getByRole("option", { name: /Add the tests/ })).toBeInTheDocument();
+  });
+
+  it("puts the composer back when the submenu is backed out of", () => {
+    const { content, container } = withSessions();
+    openResume(content);
+
+    fireEvent.keyDown(content, { key: "Escape" });
+
+    expect(text(container)).toBe("/resume");
+    expect(screen.getByRole("option", { name: /^\/resume/ })).toBeInTheDocument();
+  });
+
+  it("leaves the composer alone for a row that is not a command", () => {
+    const { content, container } = renderComposer();
+    paste(content, "/perm");
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(text(container)).toBe("/perm");
+    expect(screen.getByText("Permission mode")).toBeInTheDocument();
+  });
+
+  it("leaves the composer alone when Tab is pressed on a row inside a submenu", () => {
+    const { content, container } = withSessions();
+    openResume(content);
+
+    fireEvent.keyDown(content, { key: "Tab" });
+
+    expect(text(container)).toBe("/resume ");
+    expect(screen.getByRole("option", { name: /Fix the parser/ })).toBeInTheDocument();
+  });
+});
+
 describe("recalling what has been sent", () => {
   /** Sends a line, leaving the composer empty and the line in the history. */
   const send = (content: HTMLElement, line: string): void => {

@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InitializePayload, PluginInfo } from "./controlProtocol";
 import {
   buildRootEntries,
+  commandNameOf,
   filterEntries,
   type MenuEntry,
   type SlashMenuHost,
+  textAfterCommand,
   valuesFromHint,
 } from "./slashMenu";
 
@@ -584,5 +586,49 @@ describe("filterEntries", () => {
 
   it("drops entries that do not match", () => {
     expect(filterEntries(buildRootEntries(makeHost()), "zzzz")).toEqual([]);
+  });
+});
+
+describe("commandNameOf", () => {
+  it("reads the name out of a row that is a command", () => {
+    expect(commandNameOf("/resume")).toBe("resume");
+    expect(commandNameOf("/output-style")).toBe("output-style");
+  });
+
+  it("finds no name in a row that is prose", () => {
+    expect(commandNameOf("Permission mode")).toBe("");
+    expect(commandNameOf("Terminice settings")).toBe("");
+    expect(commandNameOf("")).toBe("");
+  });
+
+  it("finds none in a bare slash either", () => {
+    expect(commandNameOf("/")).toBe("");
+  });
+});
+
+describe("textAfterCommand", () => {
+  it("reads what has been typed after the command", () => {
+    expect(textAfterCommand("/resume my-session", "resume")).toBe("my-session");
+    expect(textAfterCommand("/resume  spaced", "resume")).toBe("spaced");
+  });
+
+  it("reads nothing while the command stands alone", () => {
+    expect(textAfterCommand("/resume", "resume")).toBe("");
+    expect(textAfterCommand("/resume ", "resume")).toBe("");
+  });
+
+  it("reads nothing for a row that is not a command", () => {
+    expect(textAfterCommand("Permission mode", "")).toBe("");
+  });
+
+  /// A longer command that merely starts with this one is a different command,
+  /// so what follows it is not this one's argument.
+  it("is not fooled by a command that starts with the same letters", () => {
+    expect(textAfterCommand("/resumex foo", "resume")).toBe("");
+  });
+
+  it("reads nothing once the command has been replaced", () => {
+    expect(textAfterCommand("/model opus", "resume")).toBe("");
+    expect(textAfterCommand("just a message", "resume")).toBe("");
   });
 });

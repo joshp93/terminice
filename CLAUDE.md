@@ -237,6 +237,23 @@ it with the user rather than quietly changing it.
   keyboard cannot swallow it. With a card open the composer's slot is `inert`, so the focus
   call is refused by the browser and F6 does nothing — which is the wanted behaviour rather
   than a case to special-case.
+- **A submenu and the composer are one thing, not two.** Choosing a row that opens a
+  submenu leaves that row's command in the composer, trailing space and all, so the list
+  in front of the reader reads as the command it belongs to — and so what is typed next is
+  that command's argument, which is what the submenu is filtered by. `textAfterCommand` is
+  the whole of the rule and `filterEntries` does the rest, so `/config perm` narrows to
+  Permission mode exactly as `/perm` does one level up. Backing out with Escape puts the
+  composer back where it was: without that, the menu being returned to would be filtered by
+  the name of the submenu just left and, the name having a space after it, would not open at
+  all. Tab on a row inside a submenu does nothing, because there is no command to complete
+  and closing the menu for it would leave the command stranded with no list to choose from.
+  Two rows are outside all of this, and both are things the source says rather than things
+  that could be inferred: **Permission mode** is prose rather than a command, so there is no
+  name to put in the composer and `commandNameOf` returns nothing; and the **third level of
+  `/config`** — the values a key accepts — is opened by a key's label, which is also not a
+  command, so that level inherits no command and is not filtered. Every other submenu in the
+  menu comes off a command label and behaves the same way.
+
 - **The arrow keys reach back into the history only from the edges of the text.**
   `recallStepFor` in `src/lib/historyRecall.ts` is the whole of the rule and is a pure
   function because the alternative is exercising CodeMirror's caret in jsdom, which cannot

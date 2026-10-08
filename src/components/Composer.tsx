@@ -8,9 +8,11 @@ import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
 import {
   buildRootEntries,
+  commandNameOf,
   filterEntries,
   type MenuEntry,
   type SlashMenuHost,
+  textAfterCommand,
 } from "../lib/slashMenu";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
@@ -63,6 +65,18 @@ const SHELL_PREFIX = "!";
 
 /** How long typing pauses before the CLI is asked for suggestions. */
 const MENTION_DEBOUNCE_MS = 120;
+
+/** One level of the slash menu's submenu stack. */
+type SubmenuLevel = {
+  /** What the level is called in the menu's header. */
+  label: string;
+  /** The rows it offers, unfiltered. */
+  entries: MenuEntry[];
+  /** The command that opened it, without its slash, or an empty string. */
+  command: string;
+  /** What the composer held before it opened, so backing out can put it back. */
+  restore: string;
+};
 
 /**
  * Reads a local command out of what was typed.
@@ -124,7 +138,7 @@ export function Composer({
   const draftRef = useRef("");
 
   const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
-  const [submenus, setSubmenus] = useState<{ label: string; entries: MenuEntry[] }[]>([]);
+  const [submenus, setSubmenus] = useState<SubmenuLevel[]>([]);
   const [highlight, setHighlight] = useState(0);
   const [placeAbove, setPlaceAbove] = useState(true);
   const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
@@ -247,8 +261,13 @@ export function Composer({
   const query = status.text.startsWith("/") ? status.text.slice(1) : null;
   const typedArgument = query !== null && /[\s\n]/.test(query);
   const submenu = submenus.at(-1) ?? null;
+  // A submenu is filtered by what has been typed after the command that opened
+  // it, which is the same rule the top level uses one level up: what is typed
+  // narrows the list in front of it, whether that list is commands or the
+  // conversations `/resume` can reopen.
+  const submenuQuery = submenu ? textAfterCommand(status.text, submenu.command) : "";
   const entries = submenu
-    ? submenu.entries
+    ? filterEntries(submenu.entries, submenuQuery)
     : query !== null
       ? filterEntries(rootEntries, query)
       : [];
@@ -271,7 +290,7 @@ export function Composer({
   // biome-ignore lint/correctness/useExhaustiveDependencies: moving through the menu changes the list, which is the signal to put the highlight back on its first entry.
   useEffect(() => {
     setHighlight(0);
-  }, [entries.length, submenu]);
+  }, [entries.length, submenu, query, submenuQuery]);
 
   const submit = useCallback(() => {
     const handle = handleRef.current;
@@ -339,7 +358,17 @@ export function Composer({
   const choose = useCallback((entry: MenuEntry) => {
     const build = entry.submenu;
     if (build) {
-      setSubmenus((current) => [...current, { label: entry.label, entries: build() }]);
+      const command = commandNameOf(entry.label);
+      const restore = handleRef.current?.getText() ?? "";
+      // A submenu opened from a command leaves that command in the composer, so
+      // the rows the menu is showing read as the command they belong to and what
+      // is typed next filters them. A row that is not a command — the permission
+      // mode, say — is left alone: there is no name to put there.
+      if (command.length > 0) handleRef.current?.setText(`/${command} `, true);
+      setSubmenus((current) => [
+        ...current,
+        { label: entry.label, entries: build(), command, restore },
+      ]);
       setHighlight(0);
       handleRef.current?.focus();
       return;
@@ -361,9 +390,14 @@ export function Composer({
    * @param entry - The entry to insert.
    */
   const insertEntry = useCallback((entry: MenuEntry) => {
+    const command = commandNameOf(entry.label);
+    // A row that is not a command has nothing to complete, and closing the menu
+    // for it would leave the composer holding whatever command opened the
+    // submenu with no menu left to choose from.
+    if (command.length === 0) return;
     setSubmenus([]);
     setHighlight(0);
-    if (entry.label.startsWith("/")) handleRef.current?.setText(`${entry.label} `, true);
+    handleRef.current?.setText(`/${command} `, true);
   }, []);
 
   /**
@@ -432,8 +466,14 @@ export function Composer({
         event.preventDefault();
         event.stopPropagation();
         if (submenus.length > 0) {
+          // The composer goes back to what it held before the level opened, or
+          // the menu being returned to would be filtered by the name of the
+          // submenu just left — and, the name having a space after it, the menu
+          // would not open at all.
+          const leaving = submenus.at(-1);
           setSubmenus((current) => current.slice(0, -1));
           setHighlight(0);
+          if (leaving) handleRef.current?.setText(leaving.restore, true);
           return;
         }
         if (handle.getText().length > 0) {
@@ -509,7 +549,7 @@ export function Composer({
       menuOpen,
       mentionOpen,
       recall,
-      submenus.length,
+      submenus,
       writingCommand,
     ],
   );
