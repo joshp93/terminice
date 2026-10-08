@@ -40,7 +40,10 @@ function toggle(text: string, style: "bold" | "italic" = "bold"): string {
   const bare = text.slice(0, from) + text.slice(from + 1, to + 1) + text.slice(to + 2);
   const tree = markdownLanguage.parser.parse(bare);
   const plan = planSelectionToggle(tree, style, bare, from, to);
-  if (plan.kind === "wrap") throw new Error("nothing of that style was there");
+  if (plan.kind === "wrap") {
+    const markers = style === "bold" ? "**" : "*";
+    return bare.slice(0, from) + markers + bare.slice(from, to) + markers + bare.slice(to);
+  }
   return apply(bare, plan.changes);
 }
 
@@ -119,15 +122,48 @@ describe("a selection that carries the style only in part", () => {
     expect(result).toBe("**xy**z");
     expect(boldText(result)).toEqual(["xy"]);
   });
+
+  /// Two runs with nothing but a gap between them join up rather than a third
+  /// run being started in the gap: the markers between them go, and the two
+  /// become one covering the lot.
+  it("joins two runs a selection sits between", () => {
+    const result = toggle("***This** [is the] **best***");
+
+    expect(result).toBe("***This is the best***");
+    expect(boldText(result)).toEqual(["This is the best"]);
+  });
+
+  it("joins them whatever the gap is made of", () => {
+    expect(boldText(toggle("**a**[ x ]**b**"))).toEqual(["a x b"]);
+    expect(boldText(toggle("**a** [x] **b**"))).toEqual(["a x b"]);
+  });
+
+  /// What keeps that from running away: runs with real words between them are
+  /// not neighbours, so the selection is wrapped where it stands.
+  it("leaves runs alone when there are words between them", () => {
+    const result = toggle("**a** some longer [text] here **b**");
+
+    expect(result).toBe("**a** some longer **text** here **b**");
+    expect(boldText(result)).toEqual(["a", "text", "b"]);
+  });
+
+  /// Only a space and the markers stand between the selection and the run on
+  /// its right, so they are neighbours and the two runs become one rather than
+  /// a second pair of markers being written beside the first.
+  it("joins a run that is only a space away", () => {
+    const result = toggle("**a** entire [sentence] **b**");
+
+    expect(result).toBe("**a** entire **sentence b**");
+    expect(boldText(result)).toEqual(["a", "sentence b"]);
+  });
 });
 
 describe("a selection with none of the style in it", () => {
   it("has nothing to take off, so the caller wraps it instead", () => {
-    const text = "***Hello** [world]*";
-    const from = text.indexOf("[");
-    const bare = text.replace(/[[\]]/g, "");
+    const bare = "**bold** and plain here";
     const tree = markdownLanguage.parser.parse(bare);
-    const to = from + "world".length;
+    const from = bare.indexOf("plain");
+    const to = from + "plain".length;
 
     expect(planSelectionToggle(tree, "bold", bare, from, to)).toEqual({ kind: "wrap" });
   });

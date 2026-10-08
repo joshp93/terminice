@@ -246,6 +246,22 @@ it with the user rather than quietly changing it.
   is the one to keep in mind, because it is the case a "remove the markers" implementation gets
   wrong. The tests for these read the result back through the Markdown parser rather than
   comparing strings: what matters is what the result *means*, and only the parser knows.
+- **Toggling a style on reaches the runs on either side of the selection, and joins them.**
+  The selection does not have to overlap a run to belong with it: a run with nothing but
+  whitespace and markers between it and the selection is a neighbour, and a neighbour is
+  stretched over the selection. Where there is a neighbour on *both* sides the two become one —
+  the markers between them go and the style covers the lot — which is what turns
+  `***This** is the best**` back into `***This is the best***` instead of growing a third run
+  between the first two. The test for a neighbour is `isPadding`, and it is what stops this
+  running away: `**a** some longer text **b**` has real words between its runs, so a selection
+  in the middle is wrapped where it stands and the runs are left alone. Note that a run one
+  space away *is* joined, which is intended — the alternative is two pairs of markers written
+  side by side with a space between them.
+- **`involved` is deduplicated by where a run starts, never by the node.** The tree hands back
+  a fresh `SyntaxNode` every time the same one is asked for, so a run reached both by the walk
+  and by overlapping is counted twice — and then looks like its own neighbour and is joined with
+  itself, which deletes both of its marker pairs and leaves the text bare. That is exactly what
+  happened first time: `***Hello** world*` came out as `*Hello wor**ld*`.
 - **The spaces beside a selection decide where the markers land, and `slideOutward` is why.**
   Markdown will not open emphasis against a space nor close it against one, so a boundary has to
   slide out until the marker stands against a real character — an opening marker needs one after
