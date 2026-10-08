@@ -305,6 +305,13 @@ it with the user rather than quietly changing it.
   sends.** With Enter set to send, Enter sends and Shift+Enter is what carries the quote to the
   next line. That is deliberate, and it is why quotes and lists behave differently on the same
   keypress.
+- **The quote's shortcut is `Mod->`, and it is written that way on purpose.** `>` is behind the
+  shift key on most layouts, but CodeMirror reads a printed character from `event.key` and
+  deliberately does not add `Shift-` for one (`modifiers(name, event, !isChar)` in `@codemirror/view`
+  passes `false` for a single character), so `Ctrl->` is what both a shifted and an unshifted `>`
+  produce. Writing the binding as `Mod-Shift->` would match nothing on Windows, where the key the
+  reader actually presses is Ctrl+Shift+Period. When adding a shortcut for any printed character,
+  check which name the keymap will look up before writing the spec.
 - **Tab and Shift+Tab belong to a list when the caret is in one.** `handleKeyDownCapture` returns
   early for `Tab` on a list line, which lets the key through to CodeMirror's own indent and outdent
   — otherwise the capture handler would take Shift+Tab for the permission mode (which it still does

@@ -36,6 +36,7 @@ function makeComposer() {
 
   return {
     handle,
+    parent,
     onSubmit,
     /** The state the composer last reported, which is what the toolbar shows. */
     latest: (): ComposerStatus => {
@@ -191,6 +192,43 @@ describe("pressing a style with the caret inside that style", () => {
 
     expect(composer.handle.getText()).toBe("**bo**ld and *italic*");
     expect(composer.styleState("italic")).toBe("off");
+  });
+});
+
+describe("the quote shortcut", () => {
+  /** Presses Ctrl+`>` on the editor, as the keymap sees it. */
+  const press = (parent: HTMLElement): void => {
+    const content = parent.querySelector(".cm-content");
+    if (!(content instanceof HTMLElement)) throw new Error("the editor did not mount");
+    content.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: ">",
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  };
+
+  it("toggles the quote on the caret's line", () => {
+    const composer = makeComposer();
+    composer.handle.setText("some words");
+
+    press(composer.parent);
+
+    expect(composer.handle.getText()).toBe("> some words");
+    expect(composer.latest().quoted).toBe(true);
+  });
+
+  it("takes it off again on a second press", () => {
+    const composer = makeComposer();
+    composer.handle.setText("> some words");
+
+    press(composer.parent);
+
+    expect(composer.handle.getText()).toBe("some words");
+    expect(composer.latest().quoted).toBe(false);
   });
 });
 

@@ -101,13 +101,41 @@ export function formatMarkers(active: Iterable<FormatId>): string {
 }
 
 /**
+ * Names a shortcut the way the platform writes it.
+ *
+ * @param key - The key, as it appears after the modifier.
+ * @returns A label such as `Ctrl+B` or `⌘B`.
+ */
+function shortcutLabel(key: string): string {
+  return usesCommandKey() ? `⌘${key}` : `Ctrl+${key}`;
+}
+
+/**
  * Returns the platform-appropriate shortcut label for a style.
  *
  * @param id - The style.
  * @returns A label such as `Ctrl+B` or `⌘B`.
  */
 export function formatShortcutLabel(id: FormatId): string {
-  return usesCommandKey() ? `⌘${SHORTCUT_KEYS[id]}` : `Ctrl+${SHORTCUT_KEYS[id]}`;
+  return shortcutLabel(SHORTCUT_KEYS[id]);
+}
+
+/**
+ * The key that toggles a quote, as a keymap names it.
+ *
+ * `>` is written with the shift key on most layouts, but CodeMirror reads a
+ * character from `event.key` and does not add `Shift-` for one, so the binding
+ * is the same whether the layout puts `>` behind a shift or not.
+ */
+export const QUOTE_SHORTCUT_KEY = "Mod->";
+
+/**
+ * Returns the platform-appropriate shortcut label for the quote.
+ *
+ * @returns A label such as `Ctrl+>` or `⌘>`.
+ */
+export function quoteShortcutLabel(): string {
+  return shortcutLabel(">");
 }
 
 /**

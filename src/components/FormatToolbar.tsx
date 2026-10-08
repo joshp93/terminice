@@ -1,7 +1,7 @@
 import type { ComposerStatus } from "../lib/createComposer";
 import type { ListKind } from "../lib/listMarkers";
 import type { StyleState } from "../lib/markdownSpans";
-import { FORMATS, type FormatId, formatShortcutLabel } from "../lib/richFormat";
+import { FORMATS, type FormatId, formatShortcutLabel, quoteShortcutLabel } from "../lib/richFormat";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {
@@ -89,7 +89,7 @@ export function FormatToolbar({
       <button
         type="button"
         className={status.quoted ? "format-button on" : "format-button"}
-        title="Quote"
+        title={`Quote (${quoteShortcutLabel()})`}
         aria-label="Quote"
         aria-pressed={status.quoted}
         onMouseDown={(event) => event.preventDefault()}

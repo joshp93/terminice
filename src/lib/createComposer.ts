@@ -54,6 +54,7 @@ import {
   type InlineState,
   MARKER_CHARACTERS,
   planTypedCharacter,
+  QUOTE_SHORTCUT_KEY,
   toggleArmedFormat,
   wrapOffsets,
 } from "./richFormat";
@@ -584,6 +585,13 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       { key: "Mod-[", run: (view) => handleTab(view, true) },
       { key: "Mod-]", run: (view) => handleTab(view, false) },
       { key: "Backspace", run: (view) => handleBackspace(view) },
+      {
+        key: QUOTE_SHORTCUT_KEY,
+        run: (view) => {
+          toggleQuote(view);
+          return true;
+        },
+      },
       ...(
         [
           ["Mod-b", "bold"],

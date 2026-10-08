@@ -7,6 +7,7 @@ import {
   formatMarkers,
   formatShortcutLabel,
   planTypedCharacter,
+  quoteShortcutLabel,
   toggleArmedFormat,
   wrapOffsets,
 } from "./richFormat";
@@ -42,6 +43,10 @@ describe("formatShortcutLabel", () => {
     for (const format of FORMATS) {
       expect(formatShortcutLabel(format.id)).toMatch(/^(Ctrl\+|⌘)/);
     }
+  });
+
+  it("names the quote the way it names the styles", () => {
+    expect(quoteShortcutLabel()).toMatch(/^(Ctrl\+>|⌘>)$/);
   });
 });
 
