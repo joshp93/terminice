@@ -110,6 +110,40 @@ export type MarkDeletion = {
 const CODE_BLOCK_NODES = new Set(["FencedCode", "CodeBlock"]);
 
 /**
+ * Whether a range of the document holds any markers at all.
+ *
+ * Every marker a style is written with ends in `Mark` — `EmphasisMark`,
+ * `CodeMark`, `StrikethroughMark` — so a range with none of them is plain text,
+ * whatever styles wrap around it. It is what tells a caller whether something
+ * between two positions would be reordered by moving one of them.
+ *
+ * @param tree - The syntax tree to search.
+ * @param from - Start of the range.
+ * @param to - End of the range.
+ * @returns True when a marker overlaps the range.
+ */
+export function hasStyleMarkers(tree: Tree, from: number, to: number): boolean {
+  let found = false;
+  tree.iterate({
+    from,
+    to,
+    enter: (reference) => {
+      const node = reference.node;
+      // A marker that merely touches an end of the range is not between the two
+      // positions: the closing marker being moved to `to` starts exactly there,
+      // and counting it would refuse every move there is.
+      const between = node.from < to && node.to > from;
+      if (between && node.name.endsWith("Mark")) {
+        found = true;
+        return false;
+      }
+      return undefined;
+    },
+  });
+  return found;
+}
+
+/**
  * Finds the code block enclosing a node.
  *
  * @param node - The innermost node at the position of interest.

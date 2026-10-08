@@ -21,6 +21,15 @@ export const FORMAT_MARKERS: Record<FormatId, string> = {
   code: "`",
 };
 
+/**
+ * The characters a style is written with.
+ *
+ * A marker is only a marker when it stands beside real text: one that lands
+ * against another marker, or against nothing, is either swallowed into a longer
+ * run or fails to close at all.
+ */
+export const MARKER_CHARACTERS = "*_~`";
+
 const FORMAT_ORDER: readonly FormatId[] = ["bold", "italic", "strike", "code"];
 
 const SHORTCUT_KEYS: Record<FormatId, string> = {

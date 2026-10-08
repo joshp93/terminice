@@ -239,15 +239,23 @@ it with the user rather than quietly changing it.
   the caret in or out of a block needs nothing kept in step. That is also why `closeOpenFormats`
   is gone: nothing is ever left half-written. Whitespace does not consume the arming, because
   Markdown cannot open emphasis against a space.
-- **Pressing a style while inside that style leaves it, and lands between the markers.** The
-  caret goes to `span.closeTo` of the innermost node of *that* style, which is what makes
-  nesting work: `***both***` is one run of three asterisks belonging to two styles, and its bold
-  closes two of them while its italic closes the last — so leaving the bold from between them
-  puts the caret at `***both**|*`, still inside the italic. Do not "simplify" this to a jump past
-  the whole run: that would take the reader out of the italic as well, and past only the innermost
-  marker of a shared run would split the run and change what the Markdown means. Leaving a block
-  therefore no longer takes the markers out as it once did — un-formatting is done by selecting
-  the text and pressing the button.
+- **Pressing a style while inside that style says where the style should end, and the markers come
+  to the caret.** The caret is the fixed point, not the markers: with `***Hello** world*` and the
+  caret after the `He`, turning bold off leaves `***He**llo world*`, so the `llo world` stops being
+  bold rather than the reader being pulled out to where the bold used to end. The caret then sits
+  just outside the markers it moved, so typing carries on in whatever still wraps that point —
+  there, the italic. Where the style already ends at the caret there is nothing to move, so the
+  caret simply steps outside it. Un-formatting is still done by selecting the text and pressing the
+  button; this is the other thing the button does, and it is an edit rather than a move.
+- **Two of those moves are refused, and the reason is the same for both: they would change what
+  the Markdown *means*, not what it covers.** A style cannot be made to end inside another style
+  that closes before it — the italic of `***Hello** world*` cannot end before its bold, because the
+  bold is inside it — and the markers cannot be put where they would not close, which is against
+  another marker or against nothing at all. `hasStyleMarkers` is the first test and
+  `MARKER_CHARACTERS` the second. Two things about `hasStyleMarkers` are load-bearing: it looks for
+  nodes whose name ends in `Mark`, which is every marker there is, and it asks whether a node lies
+  *strictly* between the positions — a marker that merely starts at the far end is the closing
+  marker being moved, and counting it refuses every move there is.
 - **The quote button continues the quote on Enter, and a list inside it keeps being a list.**
   `planQuoteEnter` peels the quote off, plans the rest of the line as whatever it is, and puts the
   quote back — so `> - item` continues as `> - `. One divergence worth knowing: **a list carries

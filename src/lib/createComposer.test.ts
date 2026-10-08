@@ -78,67 +78,119 @@ describe("arming a style", () => {
 });
 
 describe("pressing a style with the caret inside that style", () => {
-  it("leaves the block, without rewriting it", () => {
+  /// The caret is the fixed point and the markers come to it, so everything
+  /// after the caret stops carrying the style rather than the reader being
+  /// taken out to where the style used to end.
+  it("brings the closing markers to the caret", () => {
+    const composer = makeComposer();
+    composer.handle.setText("***Hello** world*");
+    composer.caretAt(5);
+    expect(composer.styleState("bold")).toBe("on");
+
+    composer.handle.toggleFormat("bold");
+
+    expect(composer.handle.getText()).toBe("***He**llo world*");
+    expect(composer.styleState("bold")).toBe("off");
+    expect(composer.styleState("italic")).toBe("on");
+  });
+
+  it("leaves the caret just outside the markers it moved", () => {
+    const composer = makeComposer();
+    composer.handle.setText("***Hello** world*");
+    composer.caretAt(5);
+    composer.handle.toggleFormat("bold");
+
+    composer.handle.insertText("X");
+
+    expect(composer.handle.getText()).toBe("***He**Xllo world*");
+  });
+
+  it("ends the style at the caret on a plain block too", () => {
     const composer = makeComposer();
     composer.handle.setText("**bold**");
-    composer.caretAt(3);
+    composer.caretAt(4);
+
+    composer.handle.toggleFormat("bold");
+
+    expect(composer.handle.getText()).toBe("**bo**ld");
+    expect(composer.styleState("bold")).toBe("off");
+  });
+
+  /// Pressing a style where it already ends has nothing to move, so the caret
+  /// simply steps outside it.
+  it("steps out when the style already ends at the caret", () => {
+    const composer = makeComposer();
+    composer.handle.setText("***both***");
+    composer.caretAt(7);
     expect(composer.styleState("bold")).toBe("on");
+    expect(composer.styleState("italic")).toBe("on");
+
+    composer.handle.toggleFormat("bold");
+
+    expect(composer.handle.getText()).toBe("***both***");
+    expect(composer.styleState("bold")).toBe("off");
+    expect(composer.styleState("italic")).toBe("on");
+    composer.handle.insertText("X");
+    expect(composer.handle.getText()).toBe("***both**X*");
+  });
+
+  /// The bold is inside the italic, so the italic cannot be made to end before
+  /// it — the markers would have to jump over the bold's and the Markdown would
+  /// stop meaning what it looks like it means.
+  it("refuses when another style closes before the caret", () => {
+    const composer = makeComposer();
+    composer.handle.setText("***Hello** world*");
+    composer.caretAt(5);
+    expect(composer.styleState("italic")).toBe("on");
+
+    composer.handle.toggleFormat("italic");
+
+    expect(composer.handle.getText()).toBe("***Hello** world*");
+    expect(composer.styleState("italic")).toBe("on");
+  });
+
+  it("refuses to move markers against nothing, where they could not close", () => {
+    const composer = makeComposer();
+    composer.handle.setText("**bold**");
+    composer.caretAt(2);
 
     composer.handle.toggleFormat("bold");
 
     expect(composer.handle.getText()).toBe("**bold**");
-    expect(composer.styleState("bold")).toBe("off");
-  });
-
-  /// The markers of nested styles share one run — `***a***` is three asterisks
-  /// belonging to two styles — so leaving the bold has to land between the two
-  /// closing markers rather than after the whole run.
-  it("lands between the markers of a run shared by two styles", () => {
-    const composer = makeComposer();
-    composer.handle.setText("***both***");
-    composer.caretAt(4);
     expect(composer.styleState("bold")).toBe("on");
-    expect(composer.styleState("italic")).toBe("on");
-
-    composer.handle.toggleFormat("bold");
-
-    expect(composer.handle.getText()).toBe("***both***");
-    expect(composer.styleState("bold")).toBe("off");
-    expect(composer.styleState("italic")).toBe("on");
   });
 
-  it("leaves the whole run when the outer style is the one pressed", () => {
+  it("refuses to move markers to just after a space, where they could not close", () => {
     const composer = makeComposer();
-    composer.handle.setText("***both***");
-    composer.caretAt(4);
+    composer.handle.setText("***Hello** world*");
+    composer.caretAt(11);
 
     composer.handle.toggleFormat("italic");
 
-    expect(composer.handle.getText()).toBe("***both***");
-    expect(composer.styleState("italic")).toBe("off");
-    expect(composer.styleState("bold")).toBe("off");
+    expect(composer.handle.getText()).toBe("***Hello** world*");
   });
 
   it("arms again on the next press, now that the caret is outside", () => {
     const composer = makeComposer();
     composer.handle.setText("**bold**");
-    composer.caretAt(3);
+    composer.caretAt(4);
     composer.handle.toggleFormat("bold");
 
     composer.handle.toggleFormat("bold");
 
     expect(composer.styleState("bold")).toBe("on");
-    expect(composer.handle.getText()).toBe("**bold**");
+    expect(composer.handle.getText()).toBe("**bo**ld");
   });
 
-  it("leaves styles it was not asked about alone", () => {
+  it("ends only the style that was pressed", () => {
     const composer = makeComposer();
     composer.handle.setText("**bold** and *italic*");
-    composer.caretAt(3);
+    composer.caretAt(4);
 
     composer.handle.toggleFormat("bold");
 
-    expect(composer.handle.getText()).toBe("**bold** and *italic*");
+    expect(composer.handle.getText()).toBe("**bo**ld and *italic*");
+    expect(composer.styleState("italic")).toBe("off");
   });
 });
 

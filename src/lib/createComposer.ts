@@ -16,7 +16,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { SyntaxNode } from "@lezer/common";
+import type { SyntaxNode, Tree } from "@lezer/common";
 import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import {
   INDENT_UNIT,
@@ -36,6 +36,7 @@ import {
   codeBlockText,
   findCodeBlock,
   findStyleNode,
+  hasStyleMarkers,
   type StyleState,
   spanOf,
   spansCover,
@@ -52,6 +53,7 @@ import {
   FORMATS,
   type FormatId,
   type InlineState,
+  MARKER_CHARACTERS,
   planTypedCharacter,
   toggleArmedFormat,
   wrapOffsets,
@@ -339,6 +341,58 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     if (changes.length > 0) view.dispatch({ changes });
   };
 
+  /**
+   * Ends a style at the caret, by moving its closing markers there.
+   *
+   * The markers move rather than the caret, so the text between the caret and
+   * where the style used to end stops carrying it, instead of the reader being
+   * pulled out to where the style happens to end.
+   *
+   * Two things are refused, because moving the markers would change what the
+   * Markdown *means* rather than what it covers. A style cannot be made to end
+   * inside another style that closes before it — the italic of
+   * `***Hello** world*` cannot end before its bold, because the bold is inside
+   * it — and the markers cannot be put anywhere they would not close, which is
+   * against another marker or against nothing at all.
+   *
+   * @param view - The editor.
+   * @param tree - The document's syntax tree.
+   * @param id - The style to end.
+   * @param caret - The position the style should end at.
+   * @returns True when the markers moved, or were already there.
+   */
+  const endStyleAtCaret = (view: EditorView, tree: Tree, id: FormatId, caret: number): boolean => {
+    const enclosing = findStyleNode(tree.resolveInner(caret, -1), id, caret, caret);
+    const span = enclosing ? spanOf(enclosing) : null;
+    if (!span) return false;
+
+    const doc = view.state.doc;
+    const markers = doc.sliceString(span.closeFrom, span.closeTo);
+    if (markers.length === 0) return false;
+
+    // Already ending here, so there is nothing to move: the caret steps out.
+    if (caret === span.closeFrom) {
+      view.dispatch({ selection: { anchor: span.closeTo } });
+      return true;
+    }
+
+    if (hasStyleMarkers(tree, caret, span.closeFrom)) return false;
+
+    const before = caret > 0 ? doc.sliceString(caret - 1, caret) : "";
+    if (before.length === 0 || /\s/.test(before) || MARKER_CHARACTERS.includes(before)) {
+      return false;
+    }
+
+    view.dispatch({
+      changes: [
+        { from: span.closeFrom, to: span.closeTo, insert: "" },
+        { from: caret, insert: markers },
+      ],
+      selection: { anchor: caret + markers.length },
+    });
+    return true;
+  };
+
   const toggleFormat = (view: EditorView, id: FormatId): void => {
     const range = view.state.selection.main;
     const tree = treeAt(view);
@@ -375,21 +429,18 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
 
     const caret = range.from;
 
-    // Inside a block of this style, the button means "leave it": the caret moves
-    // to just past the markers that belong to *this* style, and whatever else is
-    // wrapped around the text still is. The parse says which markers those are,
-    // which is what makes nesting work — `***a***` is one run of three
-    // asterisks, and its bold closes two of them and its italic the last, so
-    // leaving the bold from between them lands on `***a**|*`.
+    // Inside a block of this style, the button says where the style should end:
+    // the closing markers come to the caret, and everything after it stops
+    // carrying the style. The caret is the fixed point, not the markers — with
+    // `***Hello** world*` and the caret after the `He`, turning bold off leaves
+    // `***He**llo world*`, rather than pulling the caret out to the old end and
+    // leaving the `llo world` bold.
     if (styleAppliesAt(tree, id, caret)) {
-      const enclosing = findStyleNode(tree.resolveInner(caret, -1), id, caret, caret);
-      const span = enclosing ? spanOf(enclosing) : null;
-      if (span) {
+      if (endStyleAtCaret(view, tree, id, caret)) {
         inline = disarmFormat(id, inline);
-        view.dispatch({ selection: { anchor: span.closeTo } });
         report(view);
-        return;
       }
+      return;
     }
 
     inline = toggleArmedFormat(id, inline);
