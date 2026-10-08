@@ -78,6 +78,27 @@ describe("a selection that carries the style throughout", () => {
     expect(result).toBe("***H**ell**o** world*");
     expect(boldText(result)).toEqual(["H", "o"]);
   });
+
+  /// The spaces beside the selection decide where the markers go: one against a
+  /// space could not close, so the hole takes them and the markers stand
+  /// against the words either side.
+  it("takes the spaces beside the selection into the hole", () => {
+    const result = toggle("***This [is the] best***");
+
+    expect(result).toBe("***This** is the **best***");
+    expect(boldText(result)).toEqual(["This", "best"]);
+  });
+
+  it("comes out the same whether the spaces were selected or not", () => {
+    expect(toggle("***This[ is the ]best***")).toBe("***This** is the **best***");
+  });
+
+  it("takes several spaces at once", () => {
+    const result = toggle("***This  [is]  best***");
+
+    expect(result).toBe("***This**  is  **best***");
+    expect(boldText(result)).toEqual(["This", "best"]);
+  });
 });
 
 describe("a selection that carries the style only in part", () => {

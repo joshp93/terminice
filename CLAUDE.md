@@ -246,6 +246,17 @@ it with the user rather than quietly changing it.
   is the one to keep in mind, because it is the case a "remove the markers" implementation gets
   wrong. The tests for these read the result back through the Markdown parser rather than
   comparing strings: what matters is what the result *means*, and only the parser knows.
+- **The spaces beside a selection decide where the markers land, and `slideOutward` is why.**
+  Markdown will not open emphasis against a space nor close it against one, so a boundary has to
+  slide out until the marker stands against a real character — an opening marker needs one after
+  it, a closing one before it, and which is tested follows the marker while the direction always
+  moves away from the selection. That is the whole difference between `***This** is the **best***`
+  and `***This **is the** best***`, of which the second does not parse at all: its markers are
+  against spaces and close nothing. The consequence worth knowing is that the result is the same
+  whether the selection happened to include the surrounding spaces or not, since the hole only
+  ever grows — so `***This [is the] best***` and `***This[ is the ]best***` give the same thing.
+  `wrapOffsets` is the same rule pointing the other way: wrapping trims whitespace *out* of the
+  markers, and cutting a hole takes it *in*.
 - **An inline style is a mode, and the Markdown is the state.** Pressing a style button writes
   nothing at all: it arms the style, and the first non-space character typed is wrapped in
   *both* markers at once, with the caret left between the character and the closing ones. There

@@ -19,6 +19,41 @@ export type SelectionPlan =
   | { kind: "wrap" };
 
 /**
+ * Slides a position outward until a marker there would sit against text.
+ *
+ * A marker is only a marker when it stands beside a real character: Markdown
+ * will not open emphasis against a space, nor close it against one. So the
+ * spaces at the edge of a selection decide where the markers can go, and they
+ * have to be given to whichever side the marker is not on. That is why
+ * `***This [is the] best***` becomes `***This** is the **best***` and not
+ * `***This **is the** best***`, whose markers are against spaces and cannot
+ * close at all. An opening marker needs a character after it and a closing one
+ * a character before it, so which character is tested depends on the marker,
+ * while the direction always moves away from the selection.
+ *
+ * @param text - The document's text.
+ * @param position - Where the boundary is before it is slid.
+ * @param step - -1 for a boundary at the start of the range, 1 for its end.
+ * @param marker - Whether the marker being placed opens or closes the style.
+ * @returns The position to put the marker at.
+ */
+function slideOutward(
+  text: string,
+  position: number,
+  step: -1 | 1,
+  marker: "open" | "close",
+): number {
+  const blocked = (at: number): boolean => {
+    const character = marker === "open" ? text[at] : text[at - 1];
+    return character === undefined || /\s/.test(character);
+  };
+
+  let at = position;
+  while (at + step >= 0 && at + step <= text.length && blocked(at)) at += step;
+  return at;
+}
+
+/**
  * Plans taking a style off the range that was selected.
  *
  * Everything outside the selection keeps the style, so the markers move to the
@@ -28,13 +63,19 @@ export type SelectionPlan =
  * how `***Hello** world*` with `He` selected becomes `*He**llo** world*`, the
  * `llo` keeping the bold the `He` lost.
  *
+ * The hole being cut is bounded by a closing marker at its start and an opening
+ * one at its end, and each has to be slid out until it sits against text. The
+ * hole only ever grows, so the spaces beside a selection are taken with it
+ * however much or little of them the selection happened to include.
+ *
+ * @param text - The document's text.
  * @param span - The style's markers and the text between them.
  * @param from - Start of the selection.
  * @param to - End of the selection.
- * @param markers - The markers, as they are written.
  * @returns The changes to make, in document order.
  */
-function removalFor(span: StyleSpan, from: number, to: number, markers: string): TextChange[] {
+function removalFor(text: string, span: StyleSpan, from: number, to: number): TextChange[] {
+  const markers = text.slice(span.openFrom, span.openTo);
   const takesStart = from <= span.openTo;
   const takesEnd = to >= span.closeFrom;
 
@@ -45,23 +86,26 @@ function removalFor(span: StyleSpan, from: number, to: number, markers: string):
     ];
   }
 
+  const start = slideOutward(text, from, -1, "close");
+  const end = slideOutward(text, to, 1, "open");
+
   if (takesStart) {
     return [
       { from: span.openFrom, to: span.openTo, insert: "" },
-      { from: to, to, insert: markers },
+      { from: end, to: end, insert: markers },
     ];
   }
 
   if (takesEnd) {
     return [
-      { from: from, to: from, insert: markers },
+      { from: start, to: start, insert: markers },
       { from: span.closeFrom, to: span.closeTo, insert: "" },
     ];
   }
 
   return [
-    { from: from, to: from, insert: markers },
-    { from: to, to, insert: markers },
+    { from: start, to: start, insert: markers },
+    { from: end, to: end, insert: markers },
   ];
 }
 
@@ -74,26 +118,34 @@ function removalFor(span: StyleSpan, from: number, to: number, markers: string):
  * `***Hel[lo** wor]ld*` leaves `***Hello wor**ld*`: the selection reaches past
  * where the bold ended, so the bold ends further along.
  *
+ * The boundaries slide out the same way they do when the style is taken off,
+ * for the same reason: the styled region has to end against text, so a space
+ * beside the selection is taken into the style rather than left outside a
+ * marker that could not close there.
+ *
  * Markers are not moved onto themselves, and a selection that starts or ends
  * inside a marker is left alone rather than having two changes overlap.
  *
+ * @param text - The document's text.
  * @param span - The style's markers and the text between them.
  * @param from - Start of the selection.
  * @param to - End of the selection.
- * @param markers - The markers, as they are written.
  * @returns The changes to make, in document order.
  */
-function extensionFor(span: StyleSpan, from: number, to: number, markers: string): TextChange[] {
+function extensionFor(text: string, span: StyleSpan, from: number, to: number): TextChange[] {
+  const markers = text.slice(span.openFrom, span.openTo);
   const changes: TextChange[] = [];
 
   if (from < span.openTo && from <= span.openFrom) {
+    const start = slideOutward(text, from, -1, "open");
     changes.push({ from: span.openFrom, to: span.openTo, insert: "" });
-    changes.push({ from, to: from, insert: markers });
+    changes.push({ from: start, to: start, insert: markers });
   }
 
   if (to > span.closeFrom && to >= span.closeTo) {
+    const end = slideOutward(text, to, 1, "close");
     changes.push({ from: span.closeFrom, to: span.closeTo, insert: "" });
-    changes.push({ from: to, to, insert: markers });
+    changes.push({ from: end, to: end, insert: markers });
   }
 
   return changes.sort((a, b) => a.from - b.from);
@@ -147,9 +199,8 @@ export function planSelectionToggle(
   for (const node of nodes) {
     const span = spanOf(node);
     if (!span) continue;
-    const markers = text.slice(span.openFrom, span.openTo);
     changes.push(
-      ...(within ? removalFor(span, from, to, markers) : extensionFor(span, from, to, markers)),
+      ...(within ? removalFor(text, span, from, to) : extensionFor(text, span, from, to)),
     );
   }
 
