@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
+import { MAX_CARD_OUTPUT, MAX_PREVIEW_LINE } from "../lib/outputLimits";
 import type { HookNote } from "../lib/toolResults";
 import { ExpansionProvider } from "./ExpansionContext";
 import { ToolCard, type ToolCardProps } from "./ToolCard";
@@ -196,5 +197,35 @@ describe("ToolCard", () => {
     await user.keyboard("{Enter}");
 
     expect(summary()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  /// Two long lines are still two lines, so counting them is not enough to keep
+  /// a collapsed card small: a tool that returned a minified document would
+  /// otherwise lay the whole of it out behind a two-line preview.
+  it("shortens a line too long for the collapsed card", () => {
+    render(<Harness {...base} result={`${"x".repeat(MAX_PREVIEW_LINE + 500)}TAIL`} />);
+
+    const preview = screen.getByRole("button", { name: "Expand Bash output" });
+
+    expect(preview).toHaveTextContent(`${"x".repeat(MAX_PREVIEW_LINE)}…`);
+    expect(preview).not.toHaveTextContent("TAIL");
+  });
+
+  it("still counts lines when it shortens them", () => {
+    render(<Harness {...base} result={`${"x".repeat(MAX_PREVIEW_LINE + 500)}\nsecond\nthird`} />);
+
+    expect(summary()).toHaveTextContent("show 1 more");
+  });
+
+  it("caps the output it renders once opened", async () => {
+    const user = userEvent.setup();
+    render(<Harness {...base} result={`${"x".repeat(MAX_CARD_OUTPUT)}TAIL`} />);
+
+    await user.click(summary());
+
+    expect(
+      screen.getByText(new RegExp(`output truncated at ${MAX_CARD_OUTPUT} characters`)),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/TAIL/)).toBeNull();
   });
 });

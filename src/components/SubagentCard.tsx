@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { capForCard } from "../lib/outputLimits";
 import type { ChatEntry } from "../types";
 import { useExpansion } from "./ExpansionContext";
 
@@ -61,7 +62,7 @@ export function SubagentCard({ entry, children }: SubagentCardProps) {
           {entry.result.length > 0 && (
             <div className="tool-section">
               <span className="tool-section-title">Report</span>
-              <pre>{entry.result}</pre>
+              <pre>{capForCard(entry.result)}</pre>
             </div>
           )}
         </div>

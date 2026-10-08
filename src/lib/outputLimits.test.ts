@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { capForDisplay, capForModel, MAX_DISPLAY_OUTPUT, MAX_MODEL_OUTPUT } from "./outputLimits";
+import {
+  capForCard,
+  capForDisplay,
+  capForModel,
+  clipLine,
+  MAX_CARD_OUTPUT,
+  MAX_DISPLAY_OUTPUT,
+  MAX_MODEL_OUTPUT,
+  MAX_PREVIEW_LINE,
+} from "./outputLimits";
 
 describe("capForModel", () => {
   it("leaves text that fits completely alone", () => {
@@ -69,5 +78,53 @@ describe("capForDisplay", () => {
   it("steps back a character rather than splitting a surrogate pair", () => {
     const text = `${"a".repeat(MAX_DISPLAY_OUTPUT - 1)}😀tail`;
     expect(capForDisplay(text)).not.toMatch(/[\uD800-\uDBFF]/);
+  });
+});
+
+describe("capForCard", () => {
+  it("leaves an output that fits completely alone", () => {
+    expect(capForCard("hello")).toBe("hello");
+  });
+
+  it("caps an output far below what the transcript would keep", () => {
+    const capped = capForCard("x".repeat(MAX_CARD_OUTPUT + 1));
+
+    expect(capped.startsWith("x".repeat(MAX_CARD_OUTPUT))).toBe(true);
+    expect(capped).toContain(`… output truncated at ${MAX_CARD_OUTPUT} characters`);
+    expect(MAX_CARD_OUTPUT).toBeLessThan(MAX_DISPLAY_OUTPUT);
+  });
+
+  it("keeps more than the model is given, because a reader can scroll", () => {
+    expect(MAX_CARD_OUTPUT).toBeGreaterThan(MAX_MODEL_OUTPUT / 2);
+  });
+
+  it("steps back a character rather than splitting a surrogate pair", () => {
+    const text = `${"a".repeat(MAX_CARD_OUTPUT - 1)}😀tail`;
+    expect(capForCard(text)).not.toMatch(/[\uD800-\uDBFF]/);
+  });
+});
+
+describe("clipLine", () => {
+  it("leaves a line that fits alone", () => {
+    expect(clipLine("short line")).toBe("short line");
+  });
+
+  it("leaves a line exactly at the limit alone", () => {
+    const line = "x".repeat(MAX_PREVIEW_LINE);
+    expect(clipLine(line)).toBe(line);
+  });
+
+  it("cuts a long line and says so", () => {
+    const clipped = clipLine("x".repeat(MAX_PREVIEW_LINE + 500));
+
+    expect(clipped).toBe(`${"x".repeat(MAX_PREVIEW_LINE)}…`);
+  });
+
+  it("takes a limit, so a caller can ask for a shorter one", () => {
+    expect(clipLine("abcdef", 3)).toBe("abc…");
+  });
+
+  it("steps back a character rather than splitting a surrogate pair", () => {
+    expect(clipLine(`${"a".repeat(MAX_PREVIEW_LINE - 1)}😀tail`)).not.toMatch(/[\uD800-\uDBFF]/);
   });
 });

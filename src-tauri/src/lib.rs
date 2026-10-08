@@ -1,5 +1,6 @@
 //! terminice — a chat client for Claude Code.
 
+mod browser;
 mod claude;
 mod home;
 mod path;
@@ -24,6 +25,7 @@ pub fn run() {
             sessions::forget_interrupted,
             sessions::take_interrupted,
             shell::run_shell_command,
+            browser::open_external_url,
             settings::load_settings,
             settings::save_settings,
         ])

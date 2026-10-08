@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { capForCard, clipLine } from "../lib/outputLimits";
 
 /** Props for {@link ShellCard}. */
 export type ShellCardProps = {
@@ -27,7 +28,12 @@ export function ShellCard({ command, stdout, stderr, code, running }: ShellCardP
     .join("\n");
   const lines = output.length === 0 ? [] : output.split("\n");
   const hidden = Math.max(0, lines.length - PREVIEW_LINES);
-  const shown = open ? lines : lines.slice(0, PREVIEW_LINES);
+  const shown = open
+    ? capForCard(output)
+    : lines
+        .slice(0, PREVIEW_LINES)
+        .map((line) => clipLine(line))
+        .join("\n");
   const failed = code !== null && code !== 0;
 
   return (
@@ -60,7 +66,7 @@ export function ShellCard({ command, stdout, stderr, code, running }: ShellCardP
           onClick={() => setOpen(true)}
         >
           <pre>
-            {shown.join("\n")}
+            {shown}
             {!open && hidden > 0 ? "\n…" : ""}
           </pre>
         </button>

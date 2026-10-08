@@ -81,4 +81,34 @@ describe("MessageBubble", () => {
     const { container } = render(<MessageBubble text={"```\nplain block\n```"} />);
     expect(container.querySelector("pre code")).toHaveTextContent("plain block");
   });
+
+  it("links a bare URL with no markup around it", () => {
+    render(<MessageBubble text="the notes are at https://example.com/docs if you need them" />);
+
+    expect(screen.getByRole("link", { name: "https://example.com/docs" })).toHaveAttribute(
+      "href",
+      "https://example.com/docs",
+    );
+  });
+
+  it("links a bare www address too", () => {
+    render(<MessageBubble text="try www.example.com" />);
+
+    expect(screen.getByRole("link", { name: "www.example.com" })).toHaveAttribute(
+      "href",
+      "http://www.example.com",
+    );
+  });
+
+  it("leaves a URL inside code alone, where it is being quoted rather than offered", () => {
+    const { container } = render(<MessageBubble text={"```\nhttps://example.com\n```"} />);
+
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("keeps the trailing full stop out of the address", () => {
+    render(<MessageBubble text="see https://example.com/docs." />);
+
+    expect(screen.getByRole("link", { name: "https://example.com/docs" })).toBeInTheDocument();
+  });
 });

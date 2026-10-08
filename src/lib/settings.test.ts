@@ -35,8 +35,10 @@ describe("saveSettings", () => {
     const settings = {
       enterBehaviour: "newline",
       theme: "light",
-      composerFontSize: "large",
-      chatFontSize: "small",
+      composerFontSize: 15,
+      chatFontSize: 13,
+      fontFamily: "JetBrainsMono Nerd Font",
+      appFontFamily: "Georgia",
     } as const;
 
     await saveSettings({ ...settings });

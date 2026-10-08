@@ -52,6 +52,15 @@ if (!globalThis.ResizeObserver) {
   } as unknown as typeof ResizeObserver;
 }
 
+/**
+ * jsdom has no 2D canvas without an optional native package, and calling
+ * through to it raises an error on the virtual console that vitest reports as
+ * noise on every test that renders a picker. Answering "no context" directly is
+ * the same thing the browser would say, and it is what makes the font picker
+ * fall back to its own list of candidates rather than to an empty one.
+ */
+HTMLCanvasElement.prototype.getContext = (() => null) as unknown as HTMLCanvasElement["getContext"];
+
 if (!globalThis.requestAnimationFrame) {
   globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) =>
     setTimeout(() => callback(Date.now()), 0) as unknown as number) as typeof requestAnimationFrame;

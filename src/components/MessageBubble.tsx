@@ -1,12 +1,24 @@
-import Markdown from "react-markdown";
+import Markdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { MessageLink } from "./MessageLink";
 
 const REMARK_PLUGINS = [remarkGfm];
 const REMARK_PLUGINS_WITH_BREAKS = [remarkGfm, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeSanitize, rehypeHighlight];
+
+/**
+ * Swaps the anchor for one that hands its address to the browser.
+ *
+ * A bare URL needs no Markdown around it to become a link: `remark-gfm` turns
+ * one into an anchor on its own, which is what keeps a link costing nothing
+ * more than the address itself.
+ */
+const COMPONENTS: Components = {
+  a: ({ href, children }) => <MessageLink href={href}>{children}</MessageLink>,
+};
 
 /** Props for {@link MessageBubble}. */
 export type MessageBubbleProps = {
@@ -31,6 +43,7 @@ export function MessageBubble({ text, preserveLineBreaks = false }: MessageBubbl
     <Markdown
       remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
+      components={COMPONENTS}
     >
       {text}
     </Markdown>

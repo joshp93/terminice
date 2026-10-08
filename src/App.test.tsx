@@ -6,7 +6,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import type { ClaudeEvent, Settings } from "./types";
+import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "./lib/fontSize";
+import { type ClaudeEvent, createDefaultSettings, type Settings } from "./types";
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => undefined;
@@ -14,9 +15,18 @@ beforeAll(() => {
 
 const STARTUP_CWD = "D:\\apps\\demo";
 
+/** Stored settings, complete, so a field the test does not name is still there. */
+const stored = (overrides: Partial<Settings> = {}): Settings => ({
+  ...createDefaultSettings(),
+  ...overrides,
+});
+
+/** Reads one of the custom properties the settings are written to. */
+const cssVariable = (name: string): string => document.documentElement.style.getPropertyValue(name);
+
 beforeEach(() => {
   routeInvoke("startup_directory_command", () => STARTUP_CWD);
-  routeInvoke("load_settings", () => ({ enterBehaviour: "send", theme: "dark" }));
+  routeInvoke("load_settings", () => stored());
   routeInvoke("save_settings", () => null);
   routeInvoke("list_sessions", () => []);
   routeInvoke("start_claude", () => "session-1");
@@ -42,17 +52,38 @@ describe("App", () => {
   });
 
   it("applies the stored theme and font sizes to the document", async () => {
-    routeInvoke("load_settings", () => ({
-      enterBehaviour: "send",
-      theme: "light",
-      composerFontSize: "large",
-      chatFontSize: "small",
-    }));
+    routeInvoke("load_settings", () =>
+      stored({ theme: "light", composerFontSize: 15, chatFontSize: 12.5 }),
+    );
     render(<App />);
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
-    expect(document.documentElement.dataset.composerFont).toBe("large");
-    expect(document.documentElement.dataset.chatFont).toBe("small");
+    expect(cssVariable("--composer-font-size")).toBe("15px");
+    expect(cssVariable("--chat-font-size")).toBe("12.5px");
+  });
+
+  it("puts the chosen code font in front of the built-in monospace stack", async () => {
+    routeInvoke("load_settings", () => stored({ fontFamily: "Hack" }));
+    render(<App />);
+
+    await waitFor(() => expect(cssVariable("--font-mono")).toContain("Hack"));
+    expect(cssVariable("--font-mono")).toContain("MesloLGLDZ Nerd Font Mono");
+  });
+
+  it("puts the chosen app font in front of the built-in interface stack", async () => {
+    routeInvoke("load_settings", () => stored({ appFontFamily: "Georgia" }));
+    render(<App />);
+
+    await waitFor(() => expect(cssVariable("--font-ui")).toContain("Georgia"));
+    expect(cssVariable("--font-ui")).toContain("Segoe UI");
+  });
+
+  it("keeps the two font settings apart", async () => {
+    routeInvoke("load_settings", () => stored({ fontFamily: "Hack" }));
+    render(<App />);
+
+    await waitFor(() => expect(cssVariable("--font-mono")).toContain("Hack"));
+    expect(cssVariable("--font-ui")).not.toContain("Hack");
   });
 
   it("leaves the font sizes at their defaults when the stored file predates them", async () => {
@@ -62,8 +93,8 @@ describe("App", () => {
     render(<App />);
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
-    expect(document.documentElement.dataset.composerFont).toBe("medium");
-    expect(document.documentElement.dataset.chatFont).toBe("medium");
+    expect(cssVariable("--composer-font-size")).toBe(`${DEFAULT_COMPOSER_FONT_SIZE}px`);
+    expect(cssVariable("--chat-font-size")).toBe(`${DEFAULT_CHAT_FONT_SIZE}px`);
   });
 
   it("shows the model and cost once the session reports them", async () => {
@@ -98,7 +129,7 @@ describe("App", () => {
   });
 
   it("loads the stored settings and applies the theme", async () => {
-    routeInvoke("load_settings", () => ({ enterBehaviour: "newline", theme: "light" }));
+    routeInvoke("load_settings", () => stored({ enterBehaviour: "newline", theme: "light" }));
     render(<App />);
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
@@ -122,7 +153,7 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
     await userEvent.click(screen.getByRole("button", { name: "Light" }));
 
-    await waitFor(() => expect(saved).toEqual([{ enterBehaviour: "send", theme: "light" }]));
+    await waitFor(() => expect(saved).toEqual([stored({ theme: "light" })]));
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 });

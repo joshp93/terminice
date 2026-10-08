@@ -1,3 +1,4 @@
+import { capForCard, clipLine } from "../lib/outputLimits";
 import type { HookNote } from "../lib/toolResults";
 import { useExpansion } from "./ExpansionContext";
 
@@ -23,6 +24,9 @@ const PREVIEW_LINES = 2;
 /**
  * Takes the first lines of a result, and counts what is left.
  *
+ * Each line is shortened as well as counted, so output written without line
+ * breaks in it cannot fill the card by wrapping.
+ *
  * @param text - The full result.
  * @param count - How many lines to keep.
  * @returns The lines to show and how many were held back.
@@ -31,7 +35,10 @@ function previewOf(text: string, count: number): { lines: string[]; hidden: numb
   const trimmed = text.replace(/\s+$/, "");
   if (trimmed.length === 0) return { lines: [], hidden: 0 };
   const lines = trimmed.split("\n");
-  return { lines: lines.slice(0, count), hidden: Math.max(0, lines.length - count) };
+  return {
+    lines: lines.slice(0, count).map((line) => clipLine(line)),
+    hidden: Math.max(0, lines.length - count),
+  };
 }
 
 /**
@@ -49,6 +56,7 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
   const expandable = input.length > 0 || result.length > 0;
   const open = expandable && isOpen(id);
   const preview = previewOf(result, PREVIEW_LINES);
+  const shownResult = open ? capForCard(result) : "";
   const notable = hooks.filter(
     (hook) => (hook.exitCode !== null && hook.exitCode !== 0) || hook.output.trim().length > 0,
   );
@@ -114,7 +122,7 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
           {result.length > 0 && (
             <div className="tool-section">
               <span className="tool-section-title">Output</span>
-              <pre className={status === "error" ? "failed" : ""}>{result}</pre>
+              <pre className={status === "error" ? "failed" : ""}>{shownResult}</pre>
             </div>
           )}
           {notable.length > 0 && (

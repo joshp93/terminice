@@ -6,6 +6,7 @@ import { DialogCard } from "./components/DialogCard";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
 import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
+import { monoFontStack, uiFontStack } from "./lib/fonts";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { SlashMenuHost } from "./lib/slashMenu";
 import { createDefaultSettings, type Settings } from "./types";
@@ -30,9 +31,17 @@ export function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.dataset.theme = settings.theme;
-    root.dataset.composerFont = settings.composerFontSize;
-    root.dataset.chatFont = settings.chatFontSize;
-  }, [settings.theme, settings.composerFontSize, settings.chatFontSize]);
+    root.style.setProperty("--composer-font-size", `${settings.composerFontSize}px`);
+    root.style.setProperty("--chat-font-size", `${settings.chatFontSize}px`);
+    root.style.setProperty("--font-mono", monoFontStack(settings.fontFamily));
+    root.style.setProperty("--font-ui", uiFontStack(settings.appFontFamily));
+  }, [
+    settings.theme,
+    settings.composerFontSize,
+    settings.chatFontSize,
+    settings.fontFamily,
+    settings.appFontFamily,
+  ]);
 
   const chat = useClaudeChat(cwd);
 

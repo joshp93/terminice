@@ -6,7 +6,7 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { EditorState, Prec } from "@codemirror/state";
+import { EditorState, Prec, type Range } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -18,7 +18,6 @@ import {
 } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { pairNeedsTrim, planAutoPair } from "./autoPair";
-import { MONO_FONT_STACK } from "./fonts";
 import {
   INDENT_UNIT,
   type LineEdit,
@@ -55,6 +54,7 @@ import {
   planTypedCharacter,
   wrapOffsets,
 } from "./richFormat";
+import { findUrls, urlAt } from "./urls";
 
 /** Everything the toolbar needs to render the composer's current state. */
 export type ComposerStatus = {
@@ -100,6 +100,8 @@ export type ComposerOptions = {
   submitsOnEnter: () => boolean;
   /** Reports what the toolbar should show. */
   onStatusChange: (status: ComposerStatus) => void;
+  /** Opens a URL the reader has clicked, when they hold Ctrl or Cmd. */
+  onOpenUrl: (url: string) => void;
 };
 
 const FENCE = "```";
@@ -133,6 +135,44 @@ const shellPrefix = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
+/**
+ * Marks every bare URL so it reads as a link while it is being written.
+ *
+ * The address is found in the text itself rather than in the Markdown tree, so
+ * a URL is recognised the moment it is pasted without having to be wrapped in
+ * link syntax first.
+ *
+ * @param view - The editor to inspect.
+ * @returns A decoration over each URL in the document.
+ */
+function urlDecorations(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  for (const match of findUrls(view.state.doc.toString())) {
+    ranges.push(
+      Decoration.mark({
+        class: "cm-url",
+        attributes: { title: "Ctrl+click to open in your browser" },
+      }).range(match.from, match.to),
+    );
+  }
+  return Decoration.set(ranges);
+}
+
+const urlMarks = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = urlDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = urlDecorations(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
 const editorTheme = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
@@ -142,7 +182,9 @@ const editorTheme = EditorView.theme({
     fontSize: "var(--composer-font-size)",
   },
   ".cm-content": {
-    fontFamily: MONO_FONT_STACK,
+    // Read from the document rather than fixed here, so a change to the code
+    // font applies without rebuilding the editor.
+    fontFamily: "var(--font-mono)",
     padding: "10px 12px",
     caretColor: "var(--caret)",
   },
@@ -540,6 +582,18 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     return true;
   });
 
+  const openLink = EditorView.domEventHandlers({
+    mousedown: (event, view) => {
+      if (!event.ctrlKey && !event.metaKey) return false;
+      const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      const url = position === null ? null : urlAt(view.state.doc.toString(), position);
+      if (url === null) return false;
+      event.preventDefault();
+      options.onOpenUrl(url);
+      return true;
+    },
+  });
+
   const trackStatus = EditorView.updateListener.of((update: ViewUpdate) => {
     if (!update.docChanged && !update.selectionSet) return;
 
@@ -571,6 +625,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         handleTypedCharacter,
         trackStatus,
         shellPrefix,
+        urlMarks,
+        openLink,
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,
       ],

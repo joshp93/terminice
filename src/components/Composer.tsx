@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { type ComposerHandle, type ComposerStatus, createComposer } from "../lib/createComposer";
+import { openExternal } from "../lib/externalLinks";
 import { subscribeToFileDrops } from "../lib/fileDrops";
 import type { ListKind } from "../lib/listMarkers";
 import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
@@ -538,6 +539,7 @@ export function Composer({
       onSubmit: () => submit(),
       submitsOnEnter: () => submitsRef.current(),
       onStatusChange: handleStatusChange,
+      onOpenUrl: (url) => void openExternal(url),
     });
     handleRef.current = handle;
     handle.focus();

@@ -96,6 +96,25 @@ it with the user rather than quietly changing it.
    from an empty stderr — a command can fail quietly and look like one that worked. Do not
    remove it to "match the format"; it is the one thing here that is better than parity.
 
+   **Re-checked against the binary, and the answer is still no — but for a reason worth
+   writing down.** `claude.exe` does contain a `bash_command` frame with a `{uuid, command,
+   cwd}` shape and a `runHeadlessBashCommand` function, which looks like the way in. It is
+   not: every occurrence sits in the Remote Control / headless-cloud protocol, where a
+   *cloud* session asks *this* computer to run something over the network. The message
+   types the local `--input-format stream-json` channel accepts are a separate, closed list
+   — `stream_event`, `tool_progress`, `tool_use_summary`, `rate_limit_event`,
+   `prompt_suggestion`, `conversation_reset`, `command_lifecycle`, `transcript_mirror`,
+   `auth_status`, `active_goal`, `autocompact_state`, `keep_alive`, `control_request`,
+   `control_response`, `control_cancel_request` — and no control subtype in it runs a
+   command. The terminal UI's own `!` handler (`tengu_input_bash`, which is what emits
+   `<bash-stdout>`) is internal to the TUI and is not reachable from here.
+
+   So `!` cannot share the shell the Bash tool uses, and that is the whole of what is
+   missing: the command runs in a fresh `bash -c` in `shell.rs` rather than in the CLI's
+   long-lived shell, so an `export` or a `cd` does not reach Claude's own tool calls, and a
+   command that prompts on stdin gets EOF instead. The wrappers are right; the shell is not
+   the same one.
+
 ## Code style
 
 - **Functional style.** Small functions with a single responsibility.
@@ -291,13 +310,79 @@ it with the user rather than quietly changing it.
   the same reason. The child still gets a console and its streams are pipes either way, so
   output capture is unaffected — the shell tests cover that and fail if the flag ever
   breaks it.
-- **Local command output has two caps, one per consumer, and they are not
-  interchangeable.** Both live in `src/lib/outputLimits.ts`: `capForModel` (30,000
+- **Local command output has three caps, one per consumer, and they are not
+  interchangeable.** All live in `src/lib/outputLimits.ts`: `capForModel` (30,000
   characters) is applied where the output is wrapped in `<bash-stdout>` and handed to
-  Claude, and `capForDisplay` (1,000,000) where it is stored in the transcript entry and
-  rendered. `shell.rs` returns output in full on purpose — capping it there, as it once
-  did, applies the model's limit to the card as well and loses the output everywhere.
-  Neither number should be moved to a single choke point; they bound different things.
+  Claude, `capForDisplay` (1,000,000) where it is stored in the transcript entry, and
+  `capForCard` (20,000) where an expanded tool card renders it. `shell.rs` returns output
+  in full on purpose — capping it there, as it once did, applies the model's limit to the
+  card as well and loses the output everywhere. No number should be moved to a single
+  choke point; they bound different things.
+- **A collapsed card has to cap the length of a line, not only the number of them.**
+  `clipLine` exists because output with no line breaks in it — a minified document, one
+  long JSON result — is a single line however long it runs, so a two-line preview of it
+  is not a preview at all. Counting lines alone was the bug: the card laid out the whole
+  result behind a preview that looked small. The `max-height` on `.tool-preview pre` and
+  `.shell-output pre` is the backstop, not the mechanism, and it is sized in em to cover
+  the previewed lines *plus* the ellipsis line both cards append.
+- **A link must never be left for the webview to follow.** Following one replaces the
+  application with the page and there is no way back, so `MessageLink` refuses the click
+  whichever button made it — the middle button opens a window of its own, which is the
+  same trap by another route — and hands the address to `open_external_url` instead. That
+  command takes `explorer.exe` on Windows rather than the `start` builtin because it needs
+  no shell, and it refuses anything that is not `http` or `https` so a link in model output
+  cannot ask the system to run a local file or a custom protocol handler. `mailto:` links
+  are therefore inert: that is deliberate, and better than the alternative.
+- **A bare URL costs nothing to link, so do not ask for markup.** `remark-gfm` already
+  turns `https://…` and `www.…` into anchors, which is why a link in a message needs no
+  `[text](url)` around it — the token count of the address is the whole cost. The composer
+  recognises the same addresses from the text itself rather than from the Markdown tree, so
+  one is marked the moment it is pasted; Ctrl+click opens it, which is the only way a URL
+  in a text box can be followed without moving the caret.
+- **Font sizes are pixels, and the transcript is sized in `em` against one of them.** A
+  size is a number in the settings rather than a named scale, because the stepper moves it
+  half a pixel at a time; `FontSize` in `settings.rs` still reads the names an older file
+  stored, measured against the size *that field* was drawn at, which is not the same for
+  the composer as for the chat. Nothing below `.transcript` may carry a `px` font size: the
+  chat size reaches the tool cards, the code blocks and the reasoning only because they are
+  `em` multiples of it, and one hardcoded `12px` in there is a thing the setting silently
+  stops applying to. `App` writes `--composer-font-size`, `--chat-font-size`, `--font-mono`
+  and `--font-ui` onto the document element.
+- **There are two font settings, and they are not variants of one another.** *Code font*
+  is `--font-mono`: the composer, every tool and code output, and anything else holding
+  machine text. *App font* is `--font-ui`: replies, labels, and the rest of the interface.
+  Markdown code is code: `.bubble code` carries `--font-mono`, so a fenced block and an
+  inline span both follow the Code font while the prose around them follows the App font.
+  The app list is a superset — `UI_FONT_GROUPS` in `fonts.ts` holds an *Interface* section
+  and a *Code and Nerd Fonts* section, the second being the code candidates verbatim, so a
+  Nerd Font can be used everywhere and the picker shows which section a family came from
+  rather than one undifferentiated list of 300. The code picker deliberately does *not*
+  have the interface faces: nothing about the composer wants Georgia. An empty value means
+  that setting's built-in stack, and a chosen family is always *prepended* to it rather
+  than replacing it, so a missing glyph still falls back. Which families are offered is
+  decided by measuring them: the candidate list is drawn twice on a canvas, once as the
+  generic face and once with the family named, and anything measuring the same is not
+  installed. Nothing listed is therefore known-good — a browser that hands over no canvas
+  context gets the whole candidate list instead, on the grounds that an over-full list is
+  better than an unusable setting. Sections are measured separately so one with nothing
+  installed is dropped rather than left as an empty heading.
+- **The font picker is drawn by the application, and it has to be.** A native `select`
+  will not reliably draw an option in the face that option names, which is the entire point
+  of a font picker, and how the arrow keys behave inside its popup differs by platform —
+  macOS does not commit until the popup closes. `FontFamilySelect` is therefore a
+  select-only combobox: focus stays on the trigger, `aria-activedescendant` names the
+  highlighted row, and the rows are `div`s that are never focused. Two consequences worth
+  knowing. The arrow keys move through the list **and take what they land on**, whether or
+  not the list is open, so the settings can be cycled with the keyboard alone; hovering a
+  row takes it too, because everything in the list is a preview rather than a proposal —
+  which is also why there is no undo, only the built-in row at the top. And the rows must
+  stay non-focusable: turning them into buttons puts 300 of them in the settings panel's
+  focus trap, which is why the `useKeyWithClickEvents` suppression on them is correct
+  rather than lazy.
+- **The working indicator turns in whole steps on purpose.** `steps(8, end)` over half a
+  second is 45 degrees at a time, which reads as an instrument moving rather than as a page
+  still loading, and `prefers-reduced-motion` stops it. The mark is the application logo at
+  13px, and it is `aria-hidden` because it only repeats the words beside it.
 - **`!` only counts as the first character.** `shellCommandIn` tests the prefix before
   trimming, so a line typed with leading whitespace is an ordinary message for Claude —
   which matches the terminal UI, where `!` is entered as the first key of an empty prompt.
@@ -308,6 +393,17 @@ it with the user rather than quietly changing it.
   once per streamed character, and a `scrollIntoView` on that dependency forces a
   synchronous layout of the whole transcript each time. `ChatPane` coalesces it to one
   scroll per animation frame and cancels the pending frame on unmount.
+- **Following the newest content is the reader's choice, and it is decided inside the
+  frame.** The pane scrolls only while the transcript is at the bottom, and scrolled up it
+  does nothing at all — the browser holds `scrollTop` as content grows below, so the view
+  stays where it was without any work from us. Two things about that are easy to get wrong.
+  The check happens in the frame *callback*, not when the frame is asked for, because
+  sending a message resumes the following in the same commit and a check made earlier would
+  read the state from before it. And the position is read on the `scroll` event rather than
+  in the effect, so the transcript re-renders when the button comes and goes rather than
+  once per frame. `FOLLOW_THRESHOLD_PX` is not zero on purpose: a reader who nudged the
+  transcript up to finish a line is still reading the newest content, and snapping them
+  back is the jitter this exists to prevent.
 - **Green buttons are one visual language, and the fill is the whole of it.** They rest as
   an outline, fill on hover *or* focus, and draw no focus ring of their own — the fill is
   the indicator, and two indicators for one state reads as a mistake. The Send button and
@@ -336,16 +432,27 @@ it with the user rather than quietly changing it.
   does not exist to be read.
 - **The free-text answer is a row in the option list, not a pane beside it.** A
   single-select question is laid out with one more row than the CLI sent it —
-  `rowsForQuestion` appends "Type your own response", and that row is focused, hovered and
-  chosen by exactly the same machinery as a suggested option. What sets it apart is only
-  that its box opens on being reached instead of on `n`, and that its answer is the typed
-  text rather than its own label. `answerFor` is the one place that knows this, so an empty
-  or whitespace-only box is no answer and the card cannot be sent on it. The box follows the
-  row exactly as an option's notes follow theirs — open while the row has the keyboard or the
-  pointer, closed the moment either moves away — so `typedQuestion` must not also keep it
-  open for a row that is merely still selected. The text is kept per question, so leaving the
-  row and coming back does not lose it, and picking a suggested option clears it as picking
-  any other single-select option would.
+  `rowsForQuestion` appends "Type your own response", and that row is focused and chosen by
+  exactly the same machinery as a suggested option. What sets it apart is only that its box
+  opens on being reached instead of on `n`, and that its answer is the typed text rather
+  than its own label. `answerFor` is the one place that knows this, so an empty or
+  whitespace-only box is no answer and the card cannot be sent on it. `typedQuestion` must
+  not also keep the box open for a row that is merely still selected. The text is kept per
+  question, so leaving the row and coming back does not lose it, and picking a suggested
+  option clears it as picking any other single-select option would.
+- **The pane beside the list belongs to the keyboard's row, and the pointer is not the
+  keyboard.** Question rows carry no `onMouseMove` at all: hovering lights a row up through
+  `.dialog-option:hover` and moves nothing else, so running the mouse down the list cannot
+  replace the notes for the option being considered with those of an option merely crossed
+  on the way to a button. The keyboard is a deliberate move towards an option, so it does
+  move the pane, which is what keeps notes reachable at all — on a card whose only question
+  is single-select, choosing an option sends the card, so a pane that followed the selection
+  alone could never be opened. `chooseOption` also sets the focus to the row it chose, which
+  is what makes clicking "Type your own response" open its box; before that, a click only
+  opened it if the pointer had travelled far enough on the way in to trip `useHoverIntent`.
+  Notes work on multi-select options too, which the annotations in `resolveQuestions` always
+  carried — nothing there needed changing. Permission and plan cards keep the hover-to-focus
+  they have always had, because they have no pane for a stray hover to disturb.
 - **Escape closes a card without answering, and that is a refusal.** `PromptResolution`
   carries a `dismiss` kind for it, and `responseFor` turns it into a deny whose message asks
   Claude to clarify — never into an allow, because a card nobody answered is not consent. In

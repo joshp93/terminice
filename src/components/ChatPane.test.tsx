@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEntry, type ChatState, createChatState } from "../types";
 import { ChatPane } from "./ChatPane";
 
@@ -207,5 +207,130 @@ describe("following the newest content", () => {
     expect(frames.cancelled).toEqual([1]);
     frames.runAll();
     expect(scroll).not.toHaveBeenCalled();
+  });
+
+  const transcriptOf = (container: HTMLElement): HTMLElement =>
+    container.querySelector(".transcript") as HTMLElement;
+
+  /**
+   * Reports a scroll position, which jsdom cannot work out for itself.
+   *
+   * Everything it measures is zero, so without this the transcript always looks
+   * as though it is at the bottom and is scrolled to.
+   *
+   * @param element - The transcript.
+   * @param position - How far down it is scrolled, how tall it is, and how much
+   *   of it can be seen.
+   */
+  function reportScroll(
+    element: HTMLElement,
+    position: { top: number; height: number; viewport: number },
+  ): void {
+    Object.defineProperties(element, {
+      scrollHeight: { value: position.height, configurable: true },
+      clientHeight: { value: position.viewport, configurable: true },
+      scrollTop: { value: position.top, writable: true, configurable: true },
+    });
+    fireEvent.scroll(element);
+  }
+
+  const away = (element: HTMLElement): void =>
+    reportScroll(element, { top: 0, height: 1000, viewport: 400 });
+
+  const atTheBottom = (element: HTMLElement): void =>
+    reportScroll(element, { top: 600, height: 1000, viewport: 400 });
+
+  const userEntry = (id: string): ChatEntry => ({ id, role: "user", text: `said ${id}` });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("leaves the view alone once the reader has scrolled away", () => {
+    const frames = captureFrames();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+
+    const { container, rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
+    away(transcriptOf(container));
+
+    rerender(<ChatPane state={stateWith({ streaming: "ab" })} />);
+    frames.runAll();
+
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it("offers a way back to the end once the reader has scrolled away", () => {
+    captureFrames();
+    const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+    expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
+
+    away(transcriptOf(container));
+
+    expect(screen.getByRole("button", { name: "Jump to end" })).toBeInTheDocument();
+  });
+
+  it("goes back to the end when the button is used", async () => {
+    const user = userEvent.setup();
+    const frames = captureFrames();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+
+    const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+    away(transcriptOf(container));
+    frames.runAll();
+    scroll.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Jump to end" }));
+
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+    expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
+  });
+
+  it("follows again once the reader comes back to the bottom", () => {
+    const frames = captureFrames();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+
+    const { container, rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
+    away(transcriptOf(container));
+    rerender(<ChatPane state={stateWith({ streaming: "ab" })} />);
+    frames.runAll();
+    expect(scroll).not.toHaveBeenCalled();
+
+    atTheBottom(transcriptOf(container));
+    rerender(<ChatPane state={stateWith({ streaming: "abc" })} />);
+    frames.runAll();
+
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+  });
+
+  /// Sending is taken as wanting to watch the answer, so it does not leave the
+  /// reader stranded above a reply they cannot see.
+  it("follows again when a message is sent", () => {
+    const frames = captureFrames();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+
+    const { container, rerender } = render(
+      <ChatPane state={stateWith({ entries: [userEntry("u1")] })} />,
+    );
+    away(transcriptOf(container));
+    frames.runAll();
+    scroll.mockClear();
+
+    rerender(<ChatPane state={stateWith({ entries: [userEntry("u1"), userEntry("u2")] })} />);
+    frames.runAll();
+
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+  });
+
+  it("offers no way back while there is nothing to go back to", () => {
+    captureFrames();
+    const { container } = render(<ChatPane state={stateWith({})} />);
+
+    away(transcriptOf(container));
+
+    expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
   });
 });

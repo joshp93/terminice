@@ -1,14 +1,10 @@
 import { useEffect, useRef } from "react";
-import type { FontScale, Settings } from "../types";
+import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "../lib/fontSize";
+import type { Settings } from "../types";
 import { CogIcon } from "./CogIcon";
+import { FontFamilySelect } from "./FontFamilySelect";
+import { FontSizeStepper } from "./FontSizeStepper";
 import { SegmentedChoice } from "./SegmentedChoice";
-
-/** The font sizes on offer, in the order they run. */
-const FONT_SCALES: readonly { value: FontScale; label: string }[] = [
-  { value: "small", label: "Small" },
-  { value: "medium", label: "Medium" },
-  { value: "large", label: "Large" },
-];
 
 /** Props for {@link SettingsMenu}. */
 export type SettingsMenuProps = {
@@ -37,7 +33,9 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
     const controls = (): HTMLElement[] => {
       const panel = panelRef.current;
       if (!panel) return [];
-      return Array.from(panel.querySelectorAll<HTMLElement>("button:not([disabled])"));
+      return Array.from(
+        panel.querySelectorAll<HTMLElement>("button:not([disabled]), select:not([disabled])"),
+      );
     };
 
     controls()[0]?.focus();
@@ -110,17 +108,29 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
             ]}
             onSelect={(theme) => onChange({ ...settings, theme })}
           />
-          <SegmentedChoice
+          <FontSizeStepper
             label="Composer text"
             value={settings.composerFontSize}
-            options={FONT_SCALES}
-            onSelect={(composerFontSize) => onChange({ ...settings, composerFontSize })}
+            defaultValue={DEFAULT_COMPOSER_FONT_SIZE}
+            onChange={(composerFontSize) => onChange({ ...settings, composerFontSize })}
           />
-          <SegmentedChoice
+          <FontSizeStepper
             label="Chat text"
             value={settings.chatFontSize}
-            options={FONT_SCALES}
-            onSelect={(chatFontSize) => onChange({ ...settings, chatFontSize })}
+            defaultValue={DEFAULT_CHAT_FONT_SIZE}
+            onChange={(chatFontSize) => onChange({ ...settings, chatFontSize })}
+          />
+          <FontFamilySelect
+            kind="code"
+            label="Code font"
+            value={settings.fontFamily}
+            onChange={(fontFamily) => onChange({ ...settings, fontFamily })}
+          />
+          <FontFamilySelect
+            kind="app"
+            label="App font"
+            value={settings.appFontFamily}
+            onChange={(appFontFamily) => onChange({ ...settings, appFontFamily })}
           />
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>

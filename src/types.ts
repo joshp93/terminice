@@ -5,6 +5,8 @@ import type {
   McpServerInfo,
   PluginInfo,
 } from "./lib/controlProtocol";
+import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "./lib/fontSize";
+import { BUILT_IN_FONT_VALUE } from "./lib/fonts";
 import type { HookNote } from "./lib/toolResults";
 
 /** Events emitted by a Claude session in the Rust backend. */
@@ -135,30 +137,40 @@ export type EnterBehaviour = "send" | "newline";
 /** Colour scheme for the whole application. */
 export type ThemeName = "dark" | "light";
 
-/** How large the text is, in the two places it can be set. */
-export type FontScale = "small" | "medium" | "large";
-
 /** Settings persisted to `~/.config/terminice-settings.json`. */
 export type Settings = {
   enterBehaviour: EnterBehaviour;
   theme: ThemeName;
-  /** Size of the text in the composer. */
-  composerFontSize: FontScale;
-  /** Size of the text in the transcript. */
-  chatFontSize: FontScale;
+  /** Size of the text in the composer, in CSS pixels. */
+  composerFontSize: number;
+  /** Size of the text in the transcript, in CSS pixels. */
+  chatFontSize: number;
+  /**
+   * The family the composer and every tool and code output is drawn in, or an
+   * empty string for the built-in monospace stack.
+   */
+  fontFamily: string;
+  /**
+   * The family everything else is drawn in — replies, labels and the rest of
+   * the interface — or an empty string for the built-in proportional stack.
+   */
+  appFontFamily: string;
 };
 
 /**
  * Creates the settings used when no file exists yet.
  *
- * @returns The default settings: Enter sends, the theme is dark, and both font
- *   sizes are medium.
+ * @returns The default settings: Enter sends, the theme is dark, both font
+ *   sizes are the ones the application was designed around, and the built-in
+ *   monospace stack is used.
  */
 export function createDefaultSettings(): Settings {
   return {
     enterBehaviour: "send",
     theme: "dark",
-    composerFontSize: "medium",
-    chatFontSize: "medium",
+    composerFontSize: DEFAULT_COMPOSER_FONT_SIZE,
+    chatFontSize: DEFAULT_CHAT_FONT_SIZE,
+    fontFamily: BUILT_IN_FONT_VALUE,
+    appFontFamily: BUILT_IN_FONT_VALUE,
   };
 }

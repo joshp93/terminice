@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "./lib/fontSize";
+import { BUILT_IN_FONT_VALUE } from "./lib/fonts";
 import { createChatState, createDefaultSettings } from "./types";
 
 describe("createChatState", () => {
@@ -52,13 +54,20 @@ describe("createChatState", () => {
 });
 
 describe("createDefaultSettings", () => {
-  it("sends on Enter, starts dark, and puts both font sizes in the middle", () => {
+  it("sends on Enter, starts dark, and draws at the sizes the app was designed at", () => {
     expect(createDefaultSettings()).toEqual({
       enterBehaviour: "send",
       theme: "dark",
-      composerFontSize: "medium",
-      chatFontSize: "medium",
+      composerFontSize: DEFAULT_COMPOSER_FONT_SIZE,
+      chatFontSize: DEFAULT_CHAT_FONT_SIZE,
+      fontFamily: BUILT_IN_FONT_VALUE,
+      appFontFamily: BUILT_IN_FONT_VALUE,
     });
+  });
+
+  it("starts on the built-in font stacks rather than on a family that may be missing", () => {
+    expect(createDefaultSettings().fontFamily).toBe("");
+    expect(createDefaultSettings().appFontFamily).toBe("");
   });
 
   it("returns a fresh object each time", () => {

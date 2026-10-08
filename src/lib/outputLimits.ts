@@ -16,6 +16,25 @@ export const MAX_MODEL_OUTPUT = 30_000;
 export const MAX_DISPLAY_OUTPUT = 1_000_000;
 
 /**
+ * How much of one tool's output an expanded card renders.
+ *
+ * A tool can return as much as it likes, and a card is a summary of a call
+ * rather than a file viewer: without a cap one call that returned a large file
+ * renders the whole of it into the document, which is slow to lay out and
+ * impossible to read past. What is dropped is said so on the card itself.
+ */
+export const MAX_CARD_OUTPUT = 20_000;
+
+/**
+ * How much of one line a collapsed card shows.
+ *
+ * Lines are capped as well as counted, because output with no line breaks in it
+ * — a minified document, a long JSON result — is one line however long it runs,
+ * and a card that shows two of those shows all of it.
+ */
+export const MAX_PREVIEW_LINE = 240;
+
+/**
  * Steps back off a surrogate pair so a cut never splits a character.
  *
  * @param text - The text being cut.
@@ -64,4 +83,27 @@ export function capForDisplay(text: string): string {
     MAX_DISPLAY_OUTPUT,
     `… output truncated for display at ${MAX_DISPLAY_OUTPUT} bytes`,
   );
+}
+
+/**
+ * Caps one tool output before an expanded card renders it.
+ *
+ * @param text - The output, in full.
+ * @returns The text unchanged when it fits, otherwise a prefix and a note
+ *   saying how much was held back.
+ */
+export function capForCard(text: string): string {
+  return cap(text, MAX_CARD_OUTPUT, `… output truncated at ${MAX_CARD_OUTPUT} characters`);
+}
+
+/**
+ * Shortens one line to what a collapsed card has room for.
+ *
+ * @param line - The line to shorten.
+ * @param limit - The most characters to keep.
+ * @returns The line unchanged when it fits, otherwise a prefix and an ellipsis.
+ */
+export function clipLine(line: string, limit: number = MAX_PREVIEW_LINE): string {
+  if (line.length <= limit) return line;
+  return `${line.slice(0, safeCut(line, limit))}…`;
 }

@@ -90,9 +90,9 @@ function answerFor(chosen: string[], typed: string): string {
  * The question whose box for a typed answer belongs on screen.
  *
  * The box follows the row the way an option's notes do: it is open while the
- * free-text row is the row under the keyboard or the pointer, so it needs no
- * key to reach, and it closes the moment either moves away. What was typed is
- * kept, so coming back finds it again.
+ * free-text row is the row the keyboard is on, so it needs no key to reach, and
+ * it closes the moment the keyboard moves away. What was typed is kept, so
+ * coming back finds it again.
  *
  * @param focus - The row the keyboard is on.
  * @param questions - The card's questions.
@@ -133,10 +133,16 @@ function sameTarget(a: FocusTarget, b: FocusTarget): boolean {
  * Beside its suggested options, a single-select question offers one more row:
  * an answer in the reader's own words. Reaching it opens the box for that answer
  * in the same pane the notes use, without needing a key, and the box closes
- * again as soon as the row loses the keyboard or the pointer — the same way an
- * option's notes behave. The row must hold at least one character before the
- * card can be sent, and whatever has been typed is kept per question, so moving
- * down the list and back does not lose it.
+ * again as soon as the keyboard leaves the row — the same way an option's notes
+ * behave. The row must hold at least one character before the card can be sent,
+ * and whatever has been typed is kept per question, so moving down the list and
+ * back does not lose it.
+ *
+ * The pane belongs to the row the keyboard is on, not to the row the pointer is
+ * over. Running the mouse down the list lights each row up as it passes — that
+ * is what `:hover` is for — but the pane stays where it was, so the notes for
+ * the option being considered cannot be replaced by the notes of an option that
+ * merely happened to be crossed on the way to the button.
  *
  * Escape closes the card without answering, which leaves the tool call refused
  * so Claude has to ask again rather than acting on a guess.
@@ -190,7 +196,7 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
     if (focus.kind !== "option") return null;
     const question = questions[focus.question];
     const option = question?.options[focus.option];
-    if (!question || !option || question.multiSelect) return null;
+    if (!question || !option) return null;
     return { question, option };
   }, [focus, questions]);
 
@@ -288,6 +294,9 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
 
     const updated = { ...selections, [question.question]: next };
     setSelections(updated);
+    // The row just chosen is the row the pane beside the list belongs to, so
+    // choosing from the pointer brings the pane to it as the keyboard does.
+    setFocus({ kind: "option", question: questionNumber, option: optionNumber });
     if (question.multiSelect) return;
 
     // Picking a suggested option abandons whatever had been typed, so only one
@@ -502,11 +511,6 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                         ]
                           .filter(Boolean)
                           .join(" ")}
-                        onMouseMove={hover({
-                          kind: "option",
-                          question: questionNumber,
-                          option: optionNumber,
-                        })}
                         onClick={() => chooseOption(questionNumber, optionNumber)}
                       >
                         {question.multiSelect && (

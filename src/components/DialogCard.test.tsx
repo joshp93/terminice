@@ -453,7 +453,7 @@ describe("answering in your own words", () => {
     expect(container.querySelector(".dialog-card")).not.toHaveClass("with-notes");
   });
 
-  it("closes its box when the pointer moves onto another option", () => {
+  it("leaves its box alone when the pointer moves onto another option", () => {
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
     reachTypedRow();
     expect(box()).toBeInTheDocument();
@@ -463,7 +463,27 @@ describe("answering in your own words", () => {
       clientY: 40,
     });
 
+    expect(box()).toBeInTheDocument();
+  });
+
+  it("opens its box when the row itself is chosen, which is what picking one means", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+
+    fireEvent.click(typedRow());
+
+    expect(box()).toBeInTheDocument();
+  });
+
+  it("counts the chosen row as the keyboard's row, so the box stays open", () => {
+    const { container } = render(
+      <DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />,
+    );
+
+    fireEvent.click(typedRow());
+
+    expect(container.querySelector(".dialog-card")).toHaveClass("with-notes");
+    expect(typedRow()).toHaveClass("focused");
   });
 
   it("keeps what was typed while the keyboard moves off the row and back", () => {
@@ -534,6 +554,101 @@ describe("answering in your own words", () => {
     fireEvent.keyDown(document, { key: "n" });
 
     expect(screen.queryByRole("textbox", { name: /^Notes for/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("which row the notes belong to", () => {
+  const notes = (label: string) => screen.queryByRole("textbox", { name: `Notes for ${label}` });
+
+  it("leaves the notes where they are when the pointer crosses another option", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    expect(notes("Postgres")).toBeInTheDocument();
+
+    fireEvent.mouseMove(screen.getByRole("button", { name: /SQLite/ }), {
+      clientX: 40,
+      clientY: 40,
+    });
+
+    expect(notes("Postgres")).toBeInTheDocument();
+    expect(notes("SQLite")).not.toBeInTheDocument();
+  });
+
+  /// The keyboard is a deliberate move towards an option, so it previews the
+  /// notes the way it always has; the pointer is not.
+  it("moves the notes with the keyboard", () => {
+    render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    expect(notes("A1")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "ArrowDown" });
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(notes("A2")).toBeInTheDocument();
+    expect(notes("A1")).not.toBeInTheDocument();
+  });
+
+  it("keeps a note against the option it was written for", () => {
+    const onResolve = vi.fn();
+    render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={onResolve} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "A1" }));
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Notes for A1" }), {
+      target: { value: "the first one" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "B1" }));
+
+    expect(onResolve).toHaveBeenCalledWith({
+      kind: "question",
+      answers: { "First?": "A1", "Second?": "B1" },
+      annotations: { "First?": { notes: "the first one" } },
+    });
+  });
+});
+
+describe("notes on a multi-select question", () => {
+  const notes = (label: string) => screen.queryByRole("textbox", { name: `Notes for ${label}` });
+
+  it("offers them, which a ticked answer has as much use for as a picked one", () => {
+    render(<DialogCard prompt={questionPrompt(multiSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(notes("Bash")).toBeInTheDocument();
+  });
+
+  it("leaves them alone when the pointer crosses another box", () => {
+    render(<DialogCard prompt={questionPrompt(multiSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.mouseMove(screen.getByRole("button", { name: "Read" }), {
+      clientX: 40,
+      clientY: 40,
+    });
+
+    expect(notes("Bash")).toBeInTheDocument();
+  });
+
+  it("sends a note with the box it was written against", () => {
+    const onResolve = vi.fn();
+    render(<DialogCard prompt={questionPrompt(multiSelect)} onResolve={onResolve} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Notes for Bash" }), {
+      target: { value: "only in the sandbox" },
+    });
+    fireEvent.keyDown(document, { key: " " });
+    fireEvent.click(screen.getByRole("button", { name: /Send answer/ }));
+
+    expect(onResolve).toHaveBeenCalledWith({
+      kind: "question",
+      answers: { "Which tools?": "Bash" },
+      annotations: { "Which tools?": { notes: "only in the sandbox" } },
+    });
   });
 });
 
