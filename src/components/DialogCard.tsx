@@ -134,9 +134,11 @@ function sameTarget(a: FocusTarget, b: FocusTarget): boolean {
  * an answer in the reader's own words. Reaching it opens the box for that answer
  * in the same pane the notes use, without needing a key, and the box closes
  * again as soon as the keyboard leaves the row — the same way an option's notes
- * behave. The row must hold at least one character before the card can be sent,
- * and whatever has been typed is kept per question, so moving down the list and
- * back does not lose it.
+ * behave. Either box takes the keyboard as it opens, so it can be typed into
+ * straight away; the arrow keys still move the option on from inside it, which
+ * the card's own handler does once the box has been blurred. The row must hold
+ * at least one character before the card can be sent, and whatever has been
+ * typed is kept per question, so moving down the list and back does not lose it.
  *
  * The pane belongs to the row the keyboard is on, not to the row the pointer is
  * over. Running the mouse down the list lights each row up as it passes — that
@@ -207,12 +209,22 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
   const notesValue = notesId !== null ? (notes[notesId] ?? "") : "";
 
   const customQuestion = typedQuestion(focus, questions);
+  const customOpen = customQuestion !== null;
   const customValue = customQuestion ? (custom[customQuestion.question] ?? "") : "";
-  const paneOpen = customQuestion !== null || notesOpen;
+  const paneOpen = customOpen || notesOpen;
 
+  // Whichever box is on screen takes the keyboard, so it can be typed into
+  // without reaching for the mouse first. Both are keyed on whether they are
+  // open rather than on which question they belong to, because the box is the
+  // same element as it moves between questions and moving it must not take the
+  // caret away from what is being written.
   useEffect(() => {
     if (notesOpen) notesRef.current?.focus();
   }, [notesOpen]);
+
+  useEffect(() => {
+    if (customOpen) customRef.current?.focus();
+  }, [customOpen]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: a rebuilt row list has to bring its settled row back into view even when the index is unchanged.
   useEffect(() => {

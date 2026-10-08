@@ -453,6 +453,14 @@ it with the user rather than quietly changing it.
   Notes work on multi-select options too, which the annotations in `resolveQuestions` always
   carried — nothing there needed changing. Permission and plan cards keep the hover-to-focus
   they have always had, because they have no pane for a stray hover to disturb.
+- **Both boxes take the keyboard as they open, and the arrow keys still move the option on
+  from inside them.** Reaching the free-text row or pressing `n` puts the caret in the box,
+  so neither needs a click before it can be typed into; the card's own key handler, which
+  listens on the document, then blurs the box and steps when an arrow arrives, which is why
+  arrowing out works with the caret where it is. Both effects are keyed on whether the box
+  is *open*, not on which question it belongs to: it is the same element as it moves between
+  questions, and keying it on the question would re-focus on every move and take the caret
+  away from whoever is writing.
 - **Escape closes a card without answering, and that is a refusal.** `PromptResolution`
   carries a `dismiss` kind for it, and `responseFor` turns it into a deny whose message asks
   Claude to clarify — never into an allow, because a card nobody answered is not consent. In

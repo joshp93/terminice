@@ -395,6 +395,32 @@ describe("answering in your own words", () => {
     expect(container.querySelector(".dialog-card")).toHaveClass("with-notes");
   });
 
+  it("puts the keyboard in the box as it opens, so it can be typed into at once", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+
+    reachTypedRow();
+
+    expect(box()).toHaveFocus();
+  });
+
+  it("puts the keyboard in the box when the row is clicked rather than reached", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.click(typedRow());
+
+    expect(box()).toHaveFocus();
+  });
+
+  it("moves the option on from inside the box instead of typing a line into it", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+    reachTypedRow();
+    expect(box()).toHaveFocus();
+
+    fireEvent.keyDown(box(), { key: "ArrowUp" });
+
+    expect(screen.getByRole("button", { name: /SQLite/ })).toHaveClass("focused");
+  });
+
   it("selects the row like any other, as soon as something is typed", () => {
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
     reachTypedRow();
@@ -545,6 +571,25 @@ describe("answering in your own words", () => {
     fireEvent.keyDown(document, { key: "n" });
 
     expect(screen.getByRole("textbox", { name: "Notes for Postgres" })).toBeInTheDocument();
+  });
+
+  it("puts the keyboard in the notes box as it opens", () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+
+    expect(screen.getByRole("textbox", { name: "Notes for Postgres" })).toHaveFocus();
+  });
+
+  it("moves the option on from inside the notes box, rather than typing a line into it", () => {
+    render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={vi.fn()} />);
+    fireEvent.keyDown(document, { key: "n" });
+    const box = screen.getByRole("textbox", { name: "Notes for A1" });
+    expect(box).toHaveFocus();
+
+    fireEvent.keyDown(box, { key: "ArrowDown" });
+
+    expect(screen.getByRole("button", { name: "A2" })).toHaveClass("focused");
   });
 
   it("opens no notes for the typed-answer row, which has none to give", () => {
