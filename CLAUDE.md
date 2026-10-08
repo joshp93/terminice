@@ -237,6 +237,23 @@ it with the user rather than quietly changing it.
   keyboard cannot swallow it. With a card open the composer's slot is `inert`, so the focus
   call is refused by the browser and F6 does nothing — which is the wanted behaviour rather
   than a case to special-case.
+- **The recall history is the reader's own typing, and it is written beside the
+  application.** One file per session, at
+  `<install folder>/sessions/<session id>/user-message-history.json`, resolved from
+  `current_exe().parent()` in `src-tauri/src/history.rs` rather than from the OS config
+  directory — which is only safe because the installer is **per-user**: a per-machine
+  install would put it under `Program Files`, where an ordinary user cannot write, and
+  every save would fail. That is not hypothetical, and it is the whole reason the frontend
+  says so out loud when one does. `save_user_history` is fire and forget — the message has
+  already been sent, and being unable to recall it later is not worth interrupting a turn —
+  but a failure puts one truncated line under the composer rather than being swallowed,
+  because a history that has quietly stopped being kept is worse than one that admits it.
+  The folder name comes from the CLI, so `is_safe_session_name` checks it before it is
+  joined to a path; without that a name carrying a separator would place the file outside
+  its own session's folder. The file is an object rather than a bare array so a field can
+  be added later without making every file already written unreadable. Note that in `pnpm
+  app` the executable lives in `src-tauri/target/debug`, so development history is written
+  there and `cargo clean` takes it with it.
 - **A submenu and the composer are one thing, not two.** Choosing a row that opens a
   submenu leaves that row's command in the composer, trailing space and all, so the list
   in front of the reader reads as the command it belongs to — and so what is typed next is

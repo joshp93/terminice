@@ -2,6 +2,7 @@
 
 mod browser;
 mod claude;
+mod history;
 mod home;
 mod path;
 mod sessions;
@@ -26,6 +27,8 @@ pub fn run() {
             sessions::take_interrupted,
             shell::run_shell_command,
             browser::open_external_url,
+            history::load_user_history,
+            history::save_user_history,
             settings::load_settings,
             settings::save_settings,
         ])

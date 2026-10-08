@@ -148,6 +148,7 @@ export function App() {
           fastMode={chat.state.fastMode !== "off"}
           fastModeTitle={describeFastMode(chat.state.fastMode, chat.state.fastModeReason)}
           onSuggestFiles={chat.suggestFiles}
+          sessionId={chat.state.sessionId}
         />
       </div>
       {chat.prompt && (

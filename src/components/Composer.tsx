@@ -14,6 +14,7 @@ import {
   type SlashMenuHost,
   textAfterCommand,
 } from "../lib/slashMenu";
+import { loadUserHistory, saveUserHistory } from "../lib/userHistory";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
 import { ProgressBar } from "./ProgressBar";
@@ -45,6 +46,8 @@ export type ComposerProps = {
   fastModeTitle: string;
   /** Paths matching what is being typed after an `@`. */
   onSuggestFiles: (query: string) => Promise<string[]>;
+  /** The session whose history the arrow keys recall, or null before there is one. */
+  sessionId: string | null;
 };
 
 const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
@@ -117,6 +120,7 @@ export function Composer({
   fastMode,
   fastModeTitle,
   onSuggestFiles,
+  sessionId,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -136,6 +140,11 @@ export function Composer({
   const historyIndexRef = useRef<number | null>(null);
   /** What was typed but not sent, kept while browsing history. */
   const draftRef = useRef("");
+  /** The session the history belongs to, read by the save that outlives a render. */
+  const sessionRef = useRef(sessionId);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  sessionRef.current = sessionId;
 
   const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
   const [submenus, setSubmenus] = useState<SubmenuLevel[]>([]);
@@ -157,18 +166,70 @@ export function Composer({
   const sessionSignature = menu.sessions.map((item) => `${item.id}:${item.live ? 1 : 0}`).join("|");
 
   /**
+   * Writes the recall history down, reporting a failure rather than raising one.
+   *
+   * Saving is fire and forget: the message has already been sent, and being
+   * unable to recall it later is not worth interrupting a turn for. It is still
+   * said out loud when it fails, because a history that has quietly stopped
+   * being kept is worse than one that admits it.
+   */
+  const persistHistory = useCallback(() => {
+    const session = sessionRef.current;
+    if (session === null) return;
+    void saveUserHistory(session, historyRef.current)
+      .then(() => setHistoryError(null))
+      .catch((error: unknown) =>
+        setHistoryError(`Could not save your message history: ${String(error)}`),
+      );
+  }, []);
+
+  /**
    * Adds a prompt to the recall history.
    *
    * @param text - What was sent.
    */
-  const remember = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (trimmed.length === 0) return;
-    if (historyRef.current.at(-1) === trimmed) return;
-    historyRef.current = [...historyRef.current, trimmed];
+  const remember = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (trimmed.length === 0) return;
+      if (historyRef.current.at(-1) === trimmed) return;
+      historyRef.current = [...historyRef.current, trimmed];
+      historyIndexRef.current = null;
+      draftRef.current = "";
+      persistHistory();
+    },
+    [persistHistory],
+  );
+
+  /**
+   * Reads the history the session being switched to already has.
+   *
+   * It replaces whatever the previous session's history was rather than adding
+   * to it, which is also what stops one session's messages being recalled in
+   * another.
+   */
+  useEffect(() => {
+    historyRef.current = [];
     historyIndexRef.current = null;
     draftRef.current = "";
-  }, []);
+    if (sessionId === null) return;
+
+    let cancelled = false;
+    void loadUserHistory(sessionId)
+      .then((messages) => {
+        if (cancelled) return;
+        historyRef.current = messages;
+        setHistoryError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setHistoryError(`Could not read your message history: ${String(error)}`);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   const shellCommand = shellCommandIn(status.text);
   const isShell = shellCommand !== null;
@@ -701,6 +762,13 @@ export function Composer({
           Send
         </button>
       </div>
+      {historyError !== null && (
+        // Kept to one line: it reports something the reader can do nothing
+        // about, so it must not be allowed to push the composer around.
+        <p className="history-error" title={historyError}>
+          {historyError}
+        </p>
+      )}
     </footer>
   );
 }

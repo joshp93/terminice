@@ -1,4 +1,8 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { invoke, routeInvoke } from "@test/tauriMock";
+
+vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
+
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { SlashMenuHost } from "../lib/slashMenu";
 import { Composer, type ComposerProps } from "./Composer";
@@ -45,24 +49,25 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
   const onStop = vi.fn();
   const onSuggestFiles = vi.fn(async () => [] as string[]);
 
-  const view = render(
-    <Composer
-      submitsOnEnter={() => true}
-      onSend={onSend}
-      menu={createMenuHost()}
-      running={false}
-      compacting={false}
-      contextTokens={null}
-      onStop={onStop}
-      onCycleMode={onCycleMode}
-      onRunShell={onRunShell}
-      suggestion={null}
-      fastMode={false}
-      fastModeTitle=""
-      onSuggestFiles={onSuggestFiles}
-      {...overrides}
-    />,
-  );
+  const props: ComposerProps = {
+    submitsOnEnter: () => true,
+    menu: createMenuHost(),
+    running: false,
+    compacting: false,
+    contextTokens: null,
+    suggestion: null,
+    fastMode: false,
+    fastModeTitle: "",
+    sessionId: null,
+    onSend,
+    onRunShell,
+    onCycleMode,
+    onStop,
+    onSuggestFiles,
+    ...overrides,
+  };
+
+  const view = render(<Composer {...props} />);
 
   const content = view.container.querySelector(".cm-content");
   if (!(content instanceof HTMLElement)) throw new Error("the composer did not mount");
@@ -75,9 +80,11 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     onCycleMode,
     onStop,
     onSuggestFiles,
+    props,
     content,
     host,
     container: view.container,
+    rerender: view.rerender,
   };
 }
 
@@ -262,6 +269,143 @@ describe("Enter", () => {
   });
 });
 
+describe("the message history kept on disk", () => {
+  const SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e";
+  const OTHER = "11111111-2222-3333-4444-555555555555";
+  const error = () => screen.queryByText(/Could not .* your message history/);
+
+  /**
+   * Registers both commands.
+   *
+   * Routes are the test's to set, rather than the default being registered here:
+   * doing it here would quietly replace the one a test had just set up to fail.
+   */
+  const routeHistory = (
+    load: (args: Record<string, unknown>) => string[] = () => [],
+    save: (args: Record<string, unknown>) => void = () => undefined,
+  ): void => {
+    routeInvoke("load_user_history", load);
+    routeInvoke("save_user_history", save);
+  };
+
+  /** Renders a composer belonging to a session, and lets its load settle. */
+  async function renderForSession(session: string) {
+    const view = renderComposer({ sessionId: session });
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("load_user_history", { session }));
+    await act(async () => undefined);
+    return view;
+  }
+
+  it("recalls what the session was sent before, so it outlives the window", async () => {
+    routeHistory(() => ["from last time"]);
+    const { content, container } = await renderForSession(SESSION);
+
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+
+    expect(text(container)).toBe("from last time");
+  });
+
+  it("writes each message as it is sent", async () => {
+    const written: string[][] = [];
+    routeHistory(
+      () => [],
+      (args) => written.push(args.messages as string[]),
+    );
+    const { content } = await renderForSession(SESSION);
+
+    paste(content, "first");
+    fireEvent.keyDown(content, { key: "Enter" });
+    await act(async () => undefined);
+
+    expect(written.at(-1)).toEqual(["first"]);
+  });
+
+  it("writes the whole history, not only the message just sent", async () => {
+    const written: string[][] = [];
+    routeHistory(
+      () => ["older"],
+      (args) => written.push(args.messages as string[]),
+    );
+    const { content } = await renderForSession(SESSION);
+
+    paste(content, "newer");
+    fireEvent.keyDown(content, { key: "Enter" });
+    await act(async () => undefined);
+
+    expect(written.at(-1)).toEqual(["older", "newer"]);
+  });
+
+  it("says nothing while the history is being kept", async () => {
+    routeHistory();
+    const { content } = await renderForSession(SESSION);
+
+    paste(content, "first");
+    fireEvent.keyDown(content, { key: "Enter" });
+    await act(async () => undefined);
+
+    expect(error()).toBeNull();
+  });
+
+  it("says so under the composer when a save fails, and why", async () => {
+    routeHistory(
+      () => [],
+      () => {
+        throw new Error("access is denied");
+      },
+    );
+    const { content } = await renderForSession(SESSION);
+
+    paste(content, "first");
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    expect(await screen.findByText(/Could not save your message history/)).toBeInTheDocument();
+    expect(await screen.findByText(/access is denied/)).toBeInTheDocument();
+  });
+
+  it("takes the message away once saving works again", async () => {
+    let failing = true;
+    routeHistory(
+      () => [],
+      () => {
+        if (failing) throw new Error("access is denied");
+      },
+    );
+    const { content } = await renderForSession(SESSION);
+    paste(content, "first");
+    fireEvent.keyDown(content, { key: "Enter" });
+    expect(await screen.findByText(/access is denied/)).toBeInTheDocument();
+
+    failing = false;
+    paste(content, "second");
+    fireEvent.keyDown(content, { key: "Enter" });
+
+    await waitFor(() => expect(error()).toBeNull());
+  });
+
+  it("says so under the composer when the history cannot be read", async () => {
+    routeHistory(() => {
+      throw new Error("no such folder");
+    });
+    renderComposer({ sessionId: SESSION });
+
+    expect(await screen.findByText(/Could not read your message history/)).toBeInTheDocument();
+    expect(await screen.findByText(/no such folder/)).toBeInTheDocument();
+  });
+
+  it("does not carry one session's messages into the next", async () => {
+    routeHistory((args) => (args.session === SESSION ? ["from the first"] : []));
+    const { content, container, props, rerender } = await renderForSession(SESSION);
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+    expect(text(container)).toBe("from the first");
+
+    rerender(<Composer {...props} sessionId={OTHER} />);
+    await act(async () => undefined);
+    fireEvent.keyDown(content, { key: "Escape" });
+    fireEvent.keyDown(content, { key: "ArrowUp" });
+
+    expect(text(container)).toBe("");
+  });
+});
 describe("a menu entry with a submenu", () => {
   const sessions = [
     {
