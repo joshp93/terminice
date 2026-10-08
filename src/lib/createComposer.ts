@@ -16,7 +16,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { SyntaxNode, Tree } from "@lezer/common";
+import type { Tree } from "@lezer/common";
 import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import {
   INDENT_UNIT,
@@ -39,7 +39,6 @@ import {
   hasStyleMarkers,
   type StyleState,
   spanOf,
-  spansCover,
   stripMarkers,
   styleAppliesAt,
   styleNodesInRange,
@@ -58,6 +57,7 @@ import {
   toggleArmedFormat,
   wrapOffsets,
 } from "./richFormat";
+import { planSelectionToggle } from "./styleEdits";
 import { findUrls, urlAt } from "./urls";
 
 /** Everything the toolbar needs to render the composer's current state. */
@@ -278,35 +278,6 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     report(view);
   };
 
-  const removeMarks = (
-    view: EditorView,
-    nodes: readonly SyntaxNode[],
-    from: number,
-    to: number,
-  ): void => {
-    const deletions: { from: number; to: number }[] = [];
-    for (const node of nodes) {
-      const span = spanOf(node);
-      if (!span) continue;
-      deletions.push({ from: span.openFrom, to: span.openTo });
-      deletions.push({ from: span.closeFrom, to: span.closeTo });
-    }
-    if (deletions.length === 0) return;
-
-    deletions.sort((a, b) => a.from - b.from);
-    const shiftBefore = (position: number): number =>
-      deletions.reduce(
-        (total, deletion) =>
-          deletion.to <= position ? total + (deletion.to - deletion.from) : total,
-        0,
-      );
-
-    view.dispatch({
-      changes: deletions.map((deletion) => ({ ...deletion, insert: "" })),
-      selection: { anchor: from - shiftBefore(from), head: to - shiftBefore(to) },
-    });
-  };
-
   const applyLineEdit = (view: EditorView, edit: LineEdit, cursor: number): void => {
     const line = view.state.doc.lineAt(cursor);
     const from = line.from + edit.offset;
@@ -406,14 +377,21 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       const from = range.from + offsets.start;
       const to = range.from + offsets.end;
 
-      const nodes = styleNodesInRange(tree, id, from, to);
-      if (nodes.length > 0 && spansCover(nodes, from, to)) {
-        removeMarks(view, nodes, from, to);
-        report(view);
+      // Most of the selection already carrying the style means the rest of it
+      // should too, so the markers move out to the selection's edges; all of it
+      // carrying the style means take it off, which may mean leaving the style
+      // on both sides of a hole scooped out of the middle.
+      const planned = planSelectionToggle(tree, id, view.state.doc.toString(), from, to);
+      if (planned.kind !== "wrap") {
+        if (planned.changes.length > 0) {
+          view.dispatch({ changes: planned.changes });
+          report(view);
+        }
         return;
       }
 
       const markers = FORMAT_MARKERS[id];
+      const nodes = styleNodesInRange(tree, id, from, to);
       const inner = stripMarkers(nodes, from, to, view.state.sliceDoc(from, to));
       const insert = markers + inner + markers;
       replaceRange(

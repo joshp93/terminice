@@ -231,6 +231,21 @@ it with the user rather than quietly changing it.
   outdents. Likewise, while Enter is set to send, a bare Tab leaves the composer for the
   Send button instead of inserting a tab — a key that sends should not also be the key
   that inserts whitespace.
+- **A selection is the same question asked over a range, and the answer is a rewrite.**
+  `planSelectionToggle` decides between three outcomes by asking how much of the selection
+  already carries the style, and the first of them is the one worth stating precisely: taking
+  the style *off* is what every character of the selection carrying it means — **not** the
+  selection being the whole of the style. A selection of the first word of a bold sentence
+  carries the bold throughout and comes off; one that runs off the end of the bold does not,
+  and the bold is stretched over the rest of it instead. Getting that condition wrong makes
+  every case but the exact match fall through to "do nothing", which is a silent failure.
+  What is left outside the selection keeps the style, which is what makes the edits what they
+  are: a selection at one end moves the markers at that end, and a hole scooped out of the
+  middle puts a pair at each of its edges, leaving the style on both sides.
+  `***H[ell]o** world*` becomes `***H**ell**o** world*` — two bold runs with a gap — and that
+  is the one to keep in mind, because it is the case a "remove the markers" implementation gets
+  wrong. The tests for these read the result back through the Markdown parser rather than
+  comparing strings: what matters is what the result *means*, and only the parser knows.
 - **An inline style is a mode, and the Markdown is the state.** Pressing a style button writes
   nothing at all: it arms the style, and the first non-space character typed is wrapped in
   *both* markers at once, with the caret left between the character and the closing ones. There
