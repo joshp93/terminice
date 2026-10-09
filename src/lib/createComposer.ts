@@ -60,6 +60,8 @@ import {
 } from "./richFormat";
 import { planSelectionToggle } from "./styleEdits";
 import { findUrls, urlAt } from "./urls";
+import { setVoiceCaret, voiceCaret } from "./voiceCaret";
+import { holdCleanupRange } from "./voiceHold";
 
 /** Everything the toolbar needs to render the composer's current state. */
 export type ComposerStatus = {
@@ -95,6 +97,11 @@ export type ComposerHandle = {
   toggleList: (kind: ListKind) => void;
   toggleQuote: () => void;
   toggleCodeBlock: () => void;
+  /**
+   * Ends dictation with no key release to report it, for when the microphone
+   * could not be opened at all.
+   */
+  cancelVoice: () => void;
   destroy: () => void;
 };
 
@@ -109,6 +116,20 @@ export type ComposerOptions = {
   onStatusChange: (status: ComposerStatus) => void;
   /** Opens a URL the reader has clicked, when they hold Ctrl or Cmd. */
   onOpenUrl: (url: string) => void;
+  /** Hold-to-talk, when the session has an engine and a model to use. */
+  voice?: VoiceOptions;
+};
+
+/** What the composer needs to know about dictation. */
+export type VoiceOptions = {
+  /** How long the space bar must be held before recording starts. */
+  holdMs: number;
+  /** Whether the microphone and the engine are ready to be used. */
+  enabled: () => boolean;
+  /** The hold has been recognised: the spaces are gone and the bars are up. */
+  onStart: () => void;
+  /** The key was released, so what was recorded can be transcribed. */
+  onEnd: () => void;
 };
 
 const FENCE = "```";
@@ -655,6 +676,91 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     return true;
   };
 
+  /** The timer that turns a held space bar into an open microphone. */
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Where the caret was when the hold began, before any space was typed. */
+  let holdFrom: number | null = null;
+  /** Whether the bars are up, which is this editor's view of the microphone. */
+  let listening = false;
+
+  const clearHold = (): void => {
+    if (holdTimer !== null) clearTimeout(holdTimer);
+    holdTimer = null;
+    holdFrom = null;
+  };
+
+  /**
+   * Opens the microphone, taking back the spaces the hold typed.
+   *
+   * @param view - The editor.
+   */
+  const startListening = (view: EditorView): void => {
+    const caret = view.state.selection.main.head;
+    const typed =
+      holdFrom === null ? null : holdCleanupRange(view.state.doc.toString(), holdFrom, caret);
+    clearHold();
+
+    if (typed) {
+      view.dispatch({
+        changes: { from: typed.from, to: typed.to, insert: "" },
+        selection: { anchor: typed.from },
+      });
+    }
+
+    listening = true;
+    view.dispatch({ effects: setVoiceCaret.of(true) });
+    report(view);
+    options.voice?.onStart();
+  };
+
+  /**
+   * Puts the bars away and lets the recording be transcribed.
+   *
+   * @param view - The editor.
+   */
+  const stopListening = (view: EditorView): void => {
+    if (!listening) return;
+    listening = false;
+    view.dispatch({ effects: setVoiceCaret.of(false) });
+    options.voice?.onEnd();
+  };
+
+  /**
+   * Turns a held space bar into speech, and a tapped one into a space.
+   *
+   * The first press is let through rather than held back, so a tap needs no
+   * round trip to become a space and the repeats are left to pile up — they
+   * are what the cleanup takes back a second later. Once the microphone is
+   * open the repeats are swallowed instead, because there is nothing left to
+   * clean up after.
+   */
+  const voiceKeys = EditorView.domEventHandlers({
+    keydown: (event, view) => {
+      const voice = options.voice;
+      if (!voice || event.key !== " " || event.ctrlKey || event.metaKey || event.altKey)
+        return false;
+      if (listening) return true;
+      if (event.repeat || holdFrom !== null || !voice.enabled()) return false;
+
+      holdFrom = view.state.selection.main.head;
+      holdTimer = setTimeout(() => startListening(view), voice.holdMs);
+      return false;
+    },
+
+    keyup: (event, view) => {
+      if (event.key !== " ") return false;
+      if (listening) stopListening(view);
+      else clearHold();
+      return false;
+    },
+
+    blur: (_event, view) => {
+      clearHold();
+      stopListening(view);
+      return false;
+    },
+  });
+
   const shortcuts = Prec.highest(
     keymap.of([
       { key: "Enter", run: (view) => handleEnter(view) },
@@ -779,6 +885,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         shellPrefix,
         urlMarks,
         codeTint,
+        voiceCaret,
+        voiceKeys,
         openLink,
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,
@@ -824,6 +932,10 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     toggleList: (kind) => toggleList(view, kind),
     toggleQuote: () => toggleQuote(view),
     toggleCodeBlock: () => toggleCodeBlock(view),
+    cancelVoice: () => {
+      clearHold();
+      stopListening(view);
+    },
     destroy: () => view.destroy(),
   };
 }

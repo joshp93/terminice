@@ -5,6 +5,7 @@ import { Composer } from "./components/Composer";
 import { DialogCard } from "./components/DialogCard";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
+import { useVoice } from "./hooks/useVoice";
 import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
 import { monoFontStack, uiFontStack } from "./lib/fonts";
 import { runningGroups } from "./lib/runningTools";
@@ -45,6 +46,7 @@ export function App() {
   ]);
 
   const chat = useClaudeChat(cwd);
+  const voice = useVoice(settings.voiceEnabled);
   const [reveal, setReveal] = useState<RevealTarget | null>(null);
 
   /**
@@ -113,6 +115,7 @@ export function App() {
           onChange={updateSettings}
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
+          voice={voice}
         />
         <span className="session-agent">CLAUDE</span>
         <div className="session">
@@ -164,6 +167,7 @@ export function App() {
           fastModeTitle={describeFastMode(chat.state.fastMode, chat.state.fastModeReason)}
           onSuggestFiles={chat.suggestFiles}
           sessionId={chat.state.sessionId}
+          voice={voice}
         />
       </div>
       {chat.prompt && (

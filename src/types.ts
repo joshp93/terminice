@@ -15,6 +15,29 @@ export type ClaudeEvent =
   | { kind: "stderr"; line: string }
   | { kind: "exit"; code: number | null };
 
+/** Events emitted by the microphone and the speech engine. */
+export type VoiceEvent =
+  /** How loud the recording is right now, from 0 to 1. */
+  | { kind: "level"; level: number }
+  /** What was said, once the utterance has been transcribed. */
+  | { kind: "transcript"; text: string }
+  /** How much of the speech model has arrived. */
+  | { kind: "modelProgress"; received: number; total: number }
+  /** The model is on disk and can be loaded. */
+  | { kind: "modelReady" }
+  /** Something went wrong, in words worth showing the reader. */
+  | { kind: "error"; message: string };
+
+/** What the backend knows about the speech model. */
+export type VoiceStatus = {
+  /** The file the model is expected at, whether or not it is there. */
+  modelPath: string;
+  /** True once a complete model has been downloaded. */
+  modelPresent: boolean;
+  /** How large it is, or zero when it is not there. */
+  modelBytes: number;
+};
+
 /** One item in the chat transcript. */
 export type ChatEntry =
   | {
@@ -155,6 +178,13 @@ export type Settings = {
    * the interface — or an empty string for the built-in proportional stack.
    */
   appFontFamily: string;
+  /**
+   * Whether holding the space bar starts dictating.
+   *
+   * Off by default: it changes what the space bar does, and a setting that
+   * quietly eats a keystroke is worse than one that has to be found.
+   */
+  voiceEnabled: boolean;
 };
 
 /**
@@ -172,5 +202,6 @@ export function createDefaultSettings(): Settings {
     chatFontSize: DEFAULT_CHAT_FONT_SIZE,
     fontFamily: BUILT_IN_FONT_VALUE,
     appFontFamily: BUILT_IN_FONT_VALUE,
+    voiceEnabled: false,
   };
 }

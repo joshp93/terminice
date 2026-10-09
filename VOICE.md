@@ -1,7 +1,14 @@
 # Voice input — investigation
 
-> **Status: investigated, not built.** Nothing here has been implemented. This records
-> what was found and what the options cost, so a direction can be chosen deliberately.
+> **Status: built.** §5's revised direction (§9) is implemented: `cpal` for capture,
+> `whisper-rs` behind a `SpeechEngine` trait, the model fetched on demand. §2–§8 are kept
+> as the reasoning that led there, and §10 records what the build added and what is still
+> unproven.
+
+> **Build requirements, which are not obvious.** `whisper-rs-sys` compiles whisper.cpp with
+> **cmake** and generates its bindings with **bindgen**, which needs **libclang**. Neither
+> is on this machine by default: cmake ships inside Visual Studio's BuildTools and so is not
+> on `PATH`, and there is no LLVM install at all. See §10.
 
 Written 2026-10-07 against `claude` 2.1.291 on Windows 11, with crate metadata read from
 the crates.io API directly. Anything marked **Verified** was confirmed here; anything
@@ -377,3 +384,88 @@ option rather than a footnote.
   end of the utterance instead of a stream of them. The caret capture and the
   `input_diverged` abandonment are still worth copying — they matter more with one insert
   than with many, because there is no chance to correct a misplaced one.
+
+---
+
+## 10. Built, and what the build added
+
+### What exists
+
+| File | What it does |
+|---|---|
+| `src-tauri/src/mic.rs` | `cpal` capture on its own thread, the loudness, the stop flag |
+| `src-tauri/src/resample.rs` | Interleaved → mono, and any rate → 16 kHz. Pure, and the only arithmetic in the audio path |
+| `src-tauri/src/speech.rs` | The `SpeechEngine` trait, the Whisper implementation, the model's path and its `.part` file |
+| `src-tauri/src/voice.rs` | The four commands, the `VoiceEvent` stream, the model download |
+| `src/lib/createComposer.ts` | The hold, taking back the spaces, the bars |
+| `src/lib/voiceCaret.ts` | The three bars, as a `StateField` holding a `Decoration.widget` |
+| `src/hooks/useVoice.ts` | The engine's state, the download's progress, the level subscription |
+
+Four commands: `voice_status`, `start_voice_recording`, `stop_voice_recording`,
+`download_voice_model`. `VoiceEvent` is `level`, `transcript`, `modelProgress`, `modelReady`
+and `error`, on the same `Channel<T>` pattern `claude.rs` uses.
+
+The model is `ggml-base.en.bin`, kept at `~/.config/terminice/`, fetched from Hugging Face
+by the **backend** — so the address never has to be allowed through the CSP — and written
+to a `.part` file that is renamed only once it is whole.
+
+### Two deliberate departures from the notes above
+
+**`BufferSize::Default`, not `Fixed(1024)` (§7).** The fixed size is asked for there because
+the system default is "poor for a responsive level meter" — but that meter is driven here by
+`cpal`'s buffers arriving, and this one is not: the audio callback only *stores* a loudness,
+and a thread of its own reads it 30 times a second. With the arrival rate taken out of it, a
+fixed size buys nothing and costs something real, because a buffer size the device refuses
+turns a working microphone into one that will not open.
+
+**The level is never put in React state.** It arrives 30–50 times a second; re-rendering the
+editor, the toolbar and the slash menu that often to move three bars would be an expensive
+way to draw the same picture. It reaches the bars as a CSS custom property instead — one
+`setProperty` per buffer, inherited by the bars, with the whole animation living in CSS.
+
+### Building it needs cmake and libclang, and neither is obvious
+
+`whisper-rs-sys` builds whisper.cpp through the `cmake` crate and generates its bindings
+with `bindgen`, which loads **libclang** at build time. On this machine that meant two
+things that are not on `PATH` by default:
+
+- **cmake** exists, but inside Visual Studio's BuildTools, at
+  `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin`.
+- **libclang** did not exist at all. There is no LLVM install, and no `VC\Tools\Llvm`
+  component in either Visual Studio installation.
+
+Two ways to satisfy the second, and the smaller one was used to verify this build:
+
+1. **`python -m pip install --user libclang`** — 26 MB, user-scoped, no administrator, and
+   removed again with `pip uninstall libclang`. It lands in
+   `%APPDATA%\Python\Python313\site-packages\clang\native`, and the build needs
+   `LIBCLANG_PATH` pointed at that directory.
+2. **`winget install --id LLVM.LLVM -e`** — the full toolchain, machine-wide, administrator.
+   Needed if anything else on the machine ever wants clang.
+
+Whichever is used, a plain `cargo build` still needs `LIBCLANG_PATH` set and cmake on
+`PATH`, because `cargo` does not read either from this document. `cargo test` and
+`cargo build` were both run with:
+
+```
+LIBCLANG_PATH = %APPDATA%\Python\Python313\site-packages\clang\native
+PATH          = <the BuildTools cmake directory>;%PATH%
+```
+
+**This is the one part of the feature that can break a build that has nothing to do with
+voice**, and it is worth knowing that before assuming a failure is a code failure.
+
+### Verified, and not
+
+**Verified here:** 59 Rust tests (14 on resampling and loudness, 6 on the model's path and
+its part file, 4 on the download, plus the 34 that were already there) and 1268 frontend
+tests, including the hold threshold, the cleanup range, the bars, the level subscription,
+the download's progress, and the whole interaction driven through the Tauri mock. `cargo
+build` and `vite build` both succeed with no warnings.
+
+**Not verified, and not claimed:** that a microphone on this machine is heard, that Whisper
+transcribes accurately, and that the one-second hold feels right. There is no microphone in
+the environment this was built in, and no model on the machine — the download has never
+been run against the real URL. Those three are the first things to try, and the constants
+worth turning are `HOLD_TO_TALK_MS` in `src/lib/voiceHold.ts` and the model in
+`src-tauri/src/speech.rs`.

@@ -125,6 +125,8 @@ pub struct Settings {
     /// The family everything else is drawn in, or an empty string for the
     /// built-in proportional stack.
     pub app_font_family: String,
+    /// Whether holding the space bar starts dictating.
+    pub voice_enabled: bool,
 }
 
 impl Default for Settings {
@@ -136,6 +138,7 @@ impl Default for Settings {
             chat_font_size: FontSize(DEFAULT_CHAT_FONT_SIZE),
             font_family: String::new(),
             app_font_family: String::new(),
+            voice_enabled: false,
         }
     }
 }
@@ -201,6 +204,7 @@ mod tests {
             chat_font_size: FontSize(12.5),
             font_family: "JetBrainsMono Nerd Font".to_string(),
             app_font_family: "Georgia".to_string(),
+            voice_enabled: true,
         };
         let json = serde_json::to_string(&settings).expect("serialises");
         assert!(json.contains("\"enterBehaviour\":\"newline\""), "{json}");
@@ -212,6 +216,7 @@ mod tests {
             "{json}"
         );
         assert!(json.contains("\"appFontFamily\":\"Georgia\""), "{json}");
+        assert!(json.contains("\"voiceEnabled\":true"), "{json}");
 
         let parsed: Settings = serde_json::from_str(&json).expect("parses");
         assert_eq!(parsed.theme, Theme::Light);
@@ -219,6 +224,7 @@ mod tests {
         assert_eq!(parsed.chat_font_size, FontSize(12.5));
         assert_eq!(parsed.font_family, "JetBrainsMono Nerd Font");
         assert_eq!(parsed.app_font_family, "Georgia");
+        assert!(parsed.voice_enabled);
     }
 
     /// A file written before the app font existed still loads, with that one
@@ -229,6 +235,14 @@ mod tests {
             serde_json::from_str(r#"{"fontFamily":"Hack","theme":"light"}"#).expect("parses");
         assert_eq!(parsed.font_family, "Hack");
         assert_eq!(parsed.app_font_family, "");
+    }
+
+    /// Dictation changes what the space bar does, so a file written before it
+    /// existed has to come back with it off rather than on.
+    #[test]
+    fn a_settings_file_written_before_dictation_has_it_off() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"light"}"#).expect("parses");
+        assert!(!parsed.voice_enabled);
     }
 
     #[test]

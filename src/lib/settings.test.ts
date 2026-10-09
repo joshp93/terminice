@@ -39,6 +39,7 @@ describe("saveSettings", () => {
       chatFontSize: 13,
       fontFamily: "JetBrainsMono Nerd Font",
       appFontFamily: "Georgia",
+      voiceEnabled: true,
     } as const;
 
     await saveSettings({ ...settings });

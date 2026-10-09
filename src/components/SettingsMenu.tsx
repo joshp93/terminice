@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
+import type { Voice } from "../hooks/useVoice";
 import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "../lib/fontSize";
 import type { Settings } from "../types";
 import { CogIcon } from "./CogIcon";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { FontSizeStepper } from "./FontSizeStepper";
 import { SegmentedChoice } from "./SegmentedChoice";
+import { VoiceSetting } from "./VoiceSetting";
 
 /** Props for {@link SettingsMenu}. */
 export type SettingsMenuProps = {
@@ -12,6 +14,8 @@ export type SettingsMenuProps = {
   onChange: (settings: Settings) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The voice session, for the dictation setting and the model's state. */
+  voice: Voice;
 };
 
 /**
@@ -23,7 +27,7 @@ export type SettingsMenuProps = {
  * @param props - The current settings, a change handler, and the open state.
  * @returns The rendered menu.
  */
-export function SettingsMenu({ settings, onChange, open, onOpenChange }: SettingsMenuProps) {
+export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: SettingsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -131,6 +135,11 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange }: Setting
             label="App font"
             value={settings.appFontFamily}
             onChange={(appFontFamily) => onChange({ ...settings, appFontFamily })}
+          />
+          <VoiceSetting
+            enabled={settings.voiceEnabled}
+            onEnabledChange={(voiceEnabled) => onChange({ ...settings, voiceEnabled })}
+            voice={voice}
           />
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>

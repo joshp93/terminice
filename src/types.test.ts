@@ -62,7 +62,13 @@ describe("createDefaultSettings", () => {
       chatFontSize: DEFAULT_CHAT_FONT_SIZE,
       fontFamily: BUILT_IN_FONT_VALUE,
       appFontFamily: BUILT_IN_FONT_VALUE,
+      voiceEnabled: false,
     });
+  });
+
+  /// It changes what the space bar does, so it has to be asked for.
+  it("leaves dictation off", () => {
+    expect(createDefaultSettings().voiceEnabled).toBe(false);
   });
 
   it("starts on the built-in font stacks rather than on a family that may be missing", () => {

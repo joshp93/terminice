@@ -253,6 +253,50 @@ body {
   color: var(--text-dim);
 }
 
+/* The model's state, or the button that fetches it. */
+.voice-model {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+}
+
+.voice-model-state {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.voice-download-button {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.voice-download-button:hover {
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
+}
+
+.voice-download {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.voice-download-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
 .stepper {
   display: flex;
   align-items: stretch;
@@ -954,7 +998,8 @@ body {
  * do nothing about: a failure that reflowed the composer would be a second
  * thing wrong with the same moment.
  */
-.history-error {
+.history-error,
+.voice-error {
   margin: 0;
   color: var(--danger-text);
   font-size: 11.5px;
@@ -1546,6 +1591,62 @@ body {
    background and no other family to tell it apart from the prose. */
 .cm-code {
   color: var(--composer-code);
+}
+
+/*
+ * Three bars stand where the caret was while the microphone is open, and the
+ * caret itself is hidden so there is only one thing to look at.
+ *
+ * The height of each bar is one number: --voice-level, written to the composer
+ * as the audio arrives. Each bar scales it by a different amount and lags a
+ * little behind the one before, which is what turns a single value into
+ * something that reads as a wave. A break in the speech takes the level to
+ * nothing and the bars collapse on their own — that is the same rule, not a
+ * second one.
+ */
+.composer-host {
+  --voice-level: 0;
+}
+
+.composer-host.listening .cm-content {
+  caret-color: transparent;
+}
+
+.voice-caret {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.05em;
+  margin: 0 1px;
+  vertical-align: text-bottom;
+}
+
+.voice-caret i {
+  display: block;
+  width: 2px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transform: scaleY(calc(0.28 + 0.72 * var(--voice-level)));
+  transition: transform 55ms linear;
+}
+
+.voice-caret i:nth-child(2) {
+  transform: scaleY(calc(0.5 + 0.5 * var(--voice-level)));
+  transition-delay: 18ms;
+}
+
+.voice-caret i:nth-child(3) {
+  transform: scaleY(calc(0.36 + 0.64 * var(--voice-level)));
+  transition-delay: 36ms;
+}
+
+/* The bars still answer the voice without the smoothing; the height is what
+   says the microphone is hearing something, so it is not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-caret i {
+    transition: none;
+  }
 }
 
 .send {

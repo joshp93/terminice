@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Voice } from "../hooks/useVoice";
 import { type ComposerHandle, type ComposerStatus, createComposer } from "../lib/createComposer";
 import { openExternal } from "../lib/externalLinks";
 import { subscribeToFileDrops } from "../lib/fileDrops";
@@ -17,6 +18,7 @@ import {
 } from "../lib/slashMenu";
 import { turnLabel } from "../lib/turnStatus";
 import { loadUserHistory, saveUserHistory } from "../lib/userHistory";
+import { HOLD_TO_TALK_MS } from "../lib/voiceHold";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
 import { MarkdownPreview } from "./MarkdownPreview";
@@ -54,6 +56,8 @@ export type ComposerProps = {
   onSuggestFiles: (query: string) => Promise<string[]>;
   /** The session whose history the arrow keys recall, or null before there is one. */
   sessionId: string | null;
+  /** The microphone, the speech engine and the model behind hold-to-talk. */
+  voice: Voice;
 };
 
 const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
@@ -130,6 +134,7 @@ export function Composer({
   fastModeTitle,
   onSuggestFiles,
   sessionId,
+  voice,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -152,9 +157,14 @@ export function Composer({
   const draftRef = useRef("");
   /** The session the history belongs to, read by the save that outlives a render. */
   const sessionRef = useRef(sessionId);
+  /** The voice session, read by the editor's own handlers between renders. */
+  const voiceRef = useRef(voice);
+  /** The last transcript put into the composer, so each one lands exactly once. */
+  const transcriptRef = useRef(0);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   sessionRef.current = sessionId;
+  voiceRef.current = voice;
 
   const [status, setStatus] = useState<ComposerStatus>(INITIAL_STATUS);
   const [submenus, setSubmenus] = useState<SubmenuLevel[]>([]);
@@ -691,6 +701,44 @@ export function Composer({
   }, []);
 
   /**
+   * Feeds the audio level to the bars, without going through a render.
+   *
+   * The level changes tens of times a second. Writing it to a custom property
+   * on the composer is one assignment; putting it in state would re-render the
+   * editor, the toolbar and the menu with it.
+   */
+  useEffect(
+    () =>
+      voice.subscribeToLevel((level) => {
+        hostRef.current?.style.setProperty("--voice-level", String(level));
+      }),
+    [voice.subscribeToLevel],
+  );
+
+  /**
+   * Puts what was dictated into the composer, where the microphone was opened.
+   *
+   * The spaces the hold typed were taken back as it opened, so the caret is
+   * already where the words belong and nothing has to be inserted around them.
+   */
+  useEffect(() => {
+    const arrived = voice.transcript;
+    if (!arrived || arrived.seq === transcriptRef.current) return;
+    transcriptRef.current = arrived.seq;
+    handleRef.current?.insertText(arrived.text);
+  }, [voice.transcript]);
+
+  /**
+   * Takes the bars down when the microphone never opened.
+   *
+   * The editor puts them up the moment it recognises a hold, which is before
+   * the backend has had a chance to refuse; this is how a refusal reaches it.
+   */
+  useEffect(() => {
+    if (!voice.listening) handleRef.current?.cancelVoice();
+  }, [voice.listening]);
+
+  /**
    * Puts the keyboard in the composer from anywhere in the window.
    *
    * Everything else can be reached by tabbing, but the box a message is typed
@@ -717,6 +765,14 @@ export function Composer({
       submitsOnEnter: () => submitsRef.current(),
       onStatusChange: handleStatusChange,
       onOpenUrl: (url) => void openExternal(url),
+      // Read through a ref, so turning dictation on or off in the settings does
+      // not tear the editor down and take what has been typed with it.
+      voice: {
+        holdMs: HOLD_TO_TALK_MS,
+        enabled: () => voiceRef.current.ready,
+        onStart: () => voiceRef.current.start(),
+        onEnd: () => voiceRef.current.stop(),
+      },
     });
     handleRef.current = handle;
     handle.focus();
@@ -796,6 +852,7 @@ export function Composer({
               isShell ? "shell" : "",
               fastMode ? "fast" : "",
               previewing ? "previewing" : "",
+              voice.listening ? "listening" : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -830,6 +887,11 @@ export function Composer({
         // about, so it must not be allowed to push the composer around.
         <p className="history-error" title={historyError}>
           {historyError}
+        </p>
+      )}
+      {voice.error !== null && (
+        <p className="voice-error" title={voice.error}>
+          {voice.error}
         </p>
       )}
     </footer>

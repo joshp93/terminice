@@ -695,3 +695,53 @@ it with the user rather than quietly changing it.
   nothing else can be tracked once anything has been typed. The emphasis characters are
   exempt and must stay exempt: `**bold**` with the caret between the leading asterisks is
   the opening marker of a style, and deleting both there would break the Markdown.
+- **Holding the space bar is dictation, and the composer owns it.** The hold, the cleanup
+  and the bars all live in `createComposer.ts`, because taking back the spaces is a
+  document edit and the editor is the only thing that can make one. The first press is let
+  through rather than held back, so a quick tap is a plain space with no round trip at all
+  and the auto-repeat is left to pile up; a second later `holdCleanupRange` takes back
+  *exactly the range that press typed*. Not "every space before the caret": a space typed
+  deliberately before the hold is not redundant, and eating it would run the dictated words
+  into the word before them. Once the microphone is open the repeats are swallowed instead,
+  because there is nothing left to clean up after.
+- **The bars are a widget and one custom property, not an animation.** `voiceCaret` is a
+  `StateField` holding a `Decoration.widget` at the caret, switched on and off with
+  `setVoiceCaret` from inside the composer (which knows immediately, rather than waiting
+  for a round trip through React) and re-placed whenever the selection moves. Height comes
+  from `--voice-level`, and the level is written **once per buffer** with a single
+  `setProperty` on the composer host, which the bars inherit — so nothing has to be found,
+  measured or re-rendered. **The level never enters React state**: it arrives 30–50 times a
+  second, and re-rendering the editor, the toolbar and the slash menu that often to move
+  three bars would be the expensive way to draw the same thing. `useVoice` hands it out
+  through `subscribeToLevel` for the same reason. A break in the speech is not a second
+  rule — the level goes to nothing and the bars collapse on their own.
+- **The microphone is opened on its own thread and left there.** `cpal`'s stream is not
+  sendable on every backend, so `mic.rs` builds, plays and drops it on the thread that made
+  it, and the only things that cross threads are a stop flag, a loudness and the samples.
+  The audio callback **stores** the loudness and returns; a meter thread of its own reads it
+  and sends the event. Sending over the IPC channel from inside the callback would put a
+  round trip in the path of every buffer, which is how audio starts to crackle. The sample
+  buffer is taken with `try_lock`, never `lock`, for the same reason.
+- **`BufferSize::Default`, against VOICE.md §7.** That note asks for `Fixed(1024)` because
+  the system default is "poor for a responsive level meter" — but this meter is polled on a
+  timer rather than driven by the buffer's arrival, so a fixed size buys nothing here and
+  costs something real: a size the device refuses turns a working microphone into one that
+  will not open. The reasoning is in the function, not just here.
+- **A recording of silence is a failure, not an empty transcript.** Windows hands back a
+  stream of zeros and no error at all when desktop applications are not allowed the
+  microphone, so `is_silent` catches it and the message names the setting to go and look
+  at. Without it the feature would look like it was working and simply failing to hear.
+- **The model lives beside the settings, not beside the executable.** Session history goes
+  next to the exe because the installer is per-user; a 140 MB model must not, because in
+  development the exe is inside `target` and a `cargo clean` would cost a fresh download.
+  It is fetched from Hugging Face by the **backend**, not the webview, so the address never
+  has to be allowed through the CSP, and it is written to a `.part` file that is only
+  renamed once it is whole — so an interrupted download can never be mistaken for a model.
+  Progress is reported every 256 kB rather than per 64 kB buffer, which would be two
+  thousand messages for one download.
+- **Building this crate needs cmake and libclang, and neither is obvious.** `whisper-rs-sys`
+  compiles whisper.cpp through the `cmake` crate and generates its bindings with bindgen,
+  which loads libclang at build time. On this machine cmake exists inside Visual Studio's
+  BuildTools and is therefore **not on `PATH`**, and there is no LLVM install at all. The
+  dependency is also why `rust-version` reads 1.88 and why `panic = "abort"` now sits in
+  front of C++ FFI. See VOICE.md §10 for the two ways to satisfy it.

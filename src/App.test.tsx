@@ -15,6 +15,13 @@ beforeAll(() => {
 
 const STARTUP_CWD = "D:\\apps\\demo";
 
+/** A speech engine with its model already in place. */
+const VOICE_STATUS = {
+  modelPath: "C:\\Users\\demo\\.config\\terminice\\ggml-base.en.bin",
+  modelPresent: true,
+  modelBytes: 147_951_465,
+};
+
 /** Stored settings, complete, so a field the test does not name is still there. */
 const stored = (overrides: Partial<Settings> = {}): Settings => ({
   ...createDefaultSettings(),
@@ -32,6 +39,10 @@ beforeEach(() => {
   routeInvoke("start_claude", () => "session-1");
   routeInvoke("send_claude_line", () => null);
   routeInvoke("close_claude", () => null);
+  routeInvoke("voice_status", () => VOICE_STATUS);
+  routeInvoke("start_voice_recording", () => null);
+  routeInvoke("stop_voice_recording", () => null);
+  routeInvoke("download_voice_model", () => null);
 });
 
 describe("App", () => {
@@ -175,6 +186,39 @@ describe("App", () => {
     await screen.findByText("CLAUDE");
 
     expect(screen.queryByText(/running$/)).toBeNull();
+  });
+
+  it("remembers that dictation was turned on", async () => {
+    const saved: Settings[] = [];
+    routeInvoke("save_settings", (args) => {
+      saved.push(args.settings as Settings);
+    });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Hold space" }));
+
+    await waitFor(() => expect(saved).toEqual([stored({ voiceEnabled: true })]));
+  });
+
+  it("shows the model the backend found", async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByText("141 MB on disk")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download" })).toBeNull();
+  });
+
+  it("leaves dictation off until it is asked for, whichever way the model is", async () => {
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+
+    expect(await screen.findByRole("button", { name: "Off" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("saves a theme change made from the header", async () => {

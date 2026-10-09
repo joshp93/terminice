@@ -1,3 +1,4 @@
+import { fakeVoice } from "@test/fakeVoice";
 import { routeInvoke } from "@test/tauriMock";
 
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
@@ -26,6 +27,7 @@ const menuProps = (overrides: Partial<SettingsMenuProps> = {}): SettingsMenuProp
   onChange: vi.fn(),
   open: true,
   onOpenChange: vi.fn(),
+  voice: fakeVoice(),
   ...overrides,
 });
 

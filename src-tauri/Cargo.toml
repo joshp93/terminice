@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "A chat client for Claude Code"
 authors = ["joshp93"]
 edition = "2021"
-rust-version = "1.77"
+# Raised from 1.77 by whisper-rs-sys, which declares 1.88 of its own.
+rust-version = "1.88"
 
 [lib]
 name = "terminice_lib"
@@ -18,6 +19,15 @@ tauri = { version = "2.12.1", features = [] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 uuid = { version = "1.27.0", features = ["v4"] }
+# The microphone. Pure Rust on Windows; nothing else has to be installed.
+cpal = "0.18"
+# Speech recognition, run on this machine rather than sent anywhere. Its build
+# script compiles whisper.cpp with cmake and generates bindings with bindgen,
+# so a C++ toolchain and libclang are needed to build this crate.
+whisper-rs = "0.16"
+# The model download. Windows' own TLS rather than a bundled one, which keeps
+# the binary nearer the size the release profile is tuned for.
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
 
 [profile.release]
 codegen-units = 1

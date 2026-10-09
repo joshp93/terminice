@@ -1,3 +1,4 @@
+import { fakeVoice } from "@test/fakeVoice";
 import { invoke, routeInvoke } from "@test/tauriMock";
 
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
@@ -65,6 +66,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     onRunShell,
     onCycleMode,
     onReveal: vi.fn(),
+    voice: fakeVoice(),
     onStop,
     onSuggestFiles,
     ...overrides,
@@ -1127,5 +1129,80 @@ describe("the Markdown preview", () => {
 
     expect(backToEdit()).toHaveAttribute("aria-pressed", "true");
     expect(backToEdit()).toHaveAttribute("title", "Return to edit (Esc)");
+  });
+});
+
+describe("dictation", () => {
+  it("hides the caret and shows the bars while the microphone is open", () => {
+    const { host } = renderComposer({ voice: fakeVoice({ listening: true }) });
+
+    expect(host).toHaveClass("listening");
+  });
+
+  it("leaves the caret alone the rest of the time", () => {
+    const { host } = renderComposer();
+
+    expect(host).not.toHaveClass("listening");
+  });
+
+  /// The level arrives tens of times a second, so it is written to the composer
+  /// as a custom property for the bars to inherit rather than put in state.
+  it("hands the audio level to the composer's own property", () => {
+    const listeners: Array<(level: number) => void> = [];
+    const voice = fakeVoice({
+      subscribeToLevel: (listener) => {
+        listeners.push(listener);
+        return () => undefined;
+      },
+    });
+    const { host } = renderComposer({ voice });
+    expect(listeners).toHaveLength(1);
+
+    act(() => {
+      for (const listener of listeners) listener(0.42);
+    });
+
+    expect(host.style.getPropertyValue("--voice-level")).toBe("0.42");
+  });
+
+  it("puts what was dictated where the microphone was opened", () => {
+    const { container, rerender, props } = renderComposer();
+    paste(container.querySelector(".cm-content") as Element, "hello ");
+
+    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "world", seq: 1 } })} />);
+
+    expect(text(container)).toBe("hello world");
+  });
+
+  it("puts each thing that is said in once", () => {
+    const { container, rerender, props } = renderComposer();
+    const said = fakeVoice({ transcript: { text: "once", seq: 1 } });
+
+    rerender(<Composer {...props} voice={said} />);
+    rerender(<Composer {...props} voice={said} />);
+    rerender(<Composer {...props} voice={{ ...said }} />);
+
+    expect(text(container)).toBe("once");
+  });
+
+  it("puts a second thing that is said in after the first", () => {
+    const { container, rerender, props } = renderComposer();
+    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "one", seq: 1 } })} />);
+
+    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "two", seq: 2 } })} />);
+
+    expect(text(container)).toBe("onetwo");
+  });
+
+  it("says so when dictation fails, in one line under the composer", () => {
+    renderComposer({ voice: fakeVoice({ error: "the microphone is muted" }) });
+
+    expect(screen.getByText("the microphone is muted")).toHaveClass("voice-error");
+  });
+
+  it("says nothing when dictation has nothing to report", () => {
+    const { container } = renderComposer();
+
+    expect(container.querySelector(".voice-error")).toBeNull();
   });
 });

@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ComposerHandle, type ComposerStatus, createComposer } from "./createComposer";
+import {
+  type ComposerHandle,
+  type ComposerStatus,
+  createComposer,
+  type VoiceOptions,
+} from "./createComposer";
+import { HOLD_TO_TALK_MS } from "./voiceHold";
 
 /** Composers built by the current test, torn down when it ends. */
 const built: { handle: ComposerHandle; parent: HTMLElement }[] = [];
@@ -18,12 +24,14 @@ afterEach(() => {
  * cannot move it: for an arrow key it is the browser that moves the caret, not
  * CodeMirror, and jsdom does not do it at all.
  */
-function makeComposer() {
+function makeComposer(voice?: Partial<VoiceOptions>) {
   const parent = document.createElement("div");
   document.body.append(parent);
 
   const statuses: ComposerStatus[] = [];
   const onSubmit = vi.fn();
+  const start = vi.fn();
+  const end = vi.fn();
   const handle = createComposer({
     parent,
     placeholder: "",
@@ -31,6 +39,13 @@ function makeComposer() {
     submitsOnEnter: () => true,
     onStatusChange: (status) => statuses.push(status),
     onOpenUrl: () => undefined,
+    voice: voice && {
+      holdMs: HOLD_TO_TALK_MS,
+      enabled: () => true,
+      onStart: start,
+      onEnd: end,
+      ...voice,
+    },
   });
   built.push({ handle, parent });
 
@@ -38,6 +53,8 @@ function makeComposer() {
     handle,
     parent,
     onSubmit,
+    start,
+    end,
     /** The state the composer last reported, which is what the toolbar shows. */
     latest: (): ComposerStatus => {
       const last = statuses.at(-1);
@@ -378,5 +395,258 @@ describe("the quote button", () => {
     composer.handle.toggleQuote();
 
     expect(composer.handle.getText()).toBe("first\n> second");
+  });
+});
+
+describe("holding the space bar", () => {
+  /** Presses or releases the space bar on the editor, as the browser would. */
+  const key = (parent: HTMLElement, type: "keydown" | "keyup", repeat = false): KeyboardEvent => {
+    const content = parent.querySelector(".cm-content");
+    if (!(content instanceof HTMLElement)) throw new Error("the editor did not mount");
+    const event = new KeyboardEvent(type, { key: " ", repeat, bubbles: true, cancelable: true });
+    content.dispatchEvent(event);
+    return event;
+  };
+
+  /** Runs the timer that turns a hold into a recording, and nothing else. */
+  const holdForLongEnough = (): void => {
+    vi.advanceTimersByTime(HOLD_TO_TALK_MS);
+  };
+
+  const bars = (parent: HTMLElement): number => parent.querySelectorAll(".voice-caret i").length;
+
+  /** Everything in the line that the bars are standing after. */
+  const textBeforeBars = (parent: HTMLElement): string => {
+    const line = parent.querySelector(".cm-line");
+    if (!line) throw new Error("the line did not render");
+    const children = [...line.childNodes];
+    const at = children.findIndex(
+      (node) => node instanceof HTMLElement && node.classList.contains("voice-caret"),
+    );
+    if (at < 0) throw new Error("the bars are not in the line");
+    return children
+      .slice(0, at)
+      .map((node) => node.textContent ?? "")
+      .join("");
+  };
+
+  const withTimers = (body: () => void): void => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      body();
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+
+  it("opens the microphone once the press has lasted the threshold", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("hello ");
+      composer.caretAt(6);
+
+      key(composer.parent, "keydown");
+      expect(composer.start).not.toHaveBeenCalled();
+
+      holdForLongEnough();
+
+      expect(composer.start).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("takes back the spaces the hold typed", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("hello");
+      composer.caretAt(5);
+
+      key(composer.parent, "keydown");
+      composer.handle.replaceRange(5, 5, "   ");
+
+      holdForLongEnough();
+
+      expect(composer.handle.getText()).toBe("hello");
+    });
+  });
+
+  it("leaves the space that was typed before the hold", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("hello ");
+      composer.caretAt(6);
+
+      key(composer.parent, "keydown");
+      composer.handle.replaceRange(6, 6, "  ");
+
+      holdForLongEnough();
+
+      expect(composer.handle.getText()).toBe("hello ");
+    });
+  });
+
+  it("leaves the caret where the words will go", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("hello");
+      composer.caretAt(5);
+
+      key(composer.parent, "keydown");
+      composer.handle.replaceRange(5, 5, "   ");
+      holdForLongEnough();
+
+      composer.handle.insertText("world");
+
+      expect(composer.handle.getText()).toBe("helloworld");
+    });
+  });
+
+  it("stands three bars where the caret was", () => {
+    withTimers(() => {
+      const composer = makeComposer({ enabled: () => true });
+      expect(bars(composer.parent)).toBe(0);
+
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      expect(bars(composer.parent)).toBe(3);
+    });
+  });
+
+  it("puts the bars away again when the key is released", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      key(composer.parent, "keyup");
+
+      expect(bars(composer.parent)).toBe(0);
+      expect(composer.end).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("takes a tap as a space rather than as speech", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("hello");
+
+      key(composer.parent, "keydown");
+      key(composer.parent, "keyup");
+      holdForLongEnough();
+
+      expect(composer.start).not.toHaveBeenCalled();
+      expect(composer.handle.getText()).toBe("hello");
+    });
+  });
+
+  it("swallows the repeats once the microphone is open, so none pile up", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      const repeat = key(composer.parent, "keydown", true);
+
+      expect(repeat.defaultPrevented).toBe(true);
+    });
+  });
+
+  it("lets the repeats type while the threshold has not been reached", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+
+      const repeat = key(composer.parent, "keydown", true);
+
+      expect(repeat.defaultPrevented).toBe(false);
+    });
+  });
+
+  it("does nothing at all when the microphone is not ready", () => {
+    withTimers(() => {
+      const composer = makeComposer({ enabled: () => false });
+
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      expect(composer.start).not.toHaveBeenCalled();
+      expect(bars(composer.parent)).toBe(0);
+    });
+  });
+
+  it("does nothing at all when there is no dictation to be had", () => {
+    withTimers(() => {
+      const composer = makeComposer();
+
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      expect(bars(composer.parent)).toBe(0);
+    });
+  });
+
+  it("leaves a modified space to whatever else wants it", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      const content = composer.parent.querySelector(".cm-content");
+      if (!(content instanceof HTMLElement)) throw new Error("the editor did not mount");
+
+      content.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: " ",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      holdForLongEnough();
+
+      expect(composer.start).not.toHaveBeenCalled();
+    });
+  });
+
+  it("stops the recording when the editor loses the keyboard", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      const content = composer.parent.querySelector(".cm-content");
+      if (!(content instanceof HTMLElement)) throw new Error("the editor did not mount");
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      content.dispatchEvent(new FocusEvent("blur"));
+
+      expect(composer.end).toHaveBeenCalledTimes(1);
+      expect(bars(composer.parent)).toBe(0);
+    });
+  });
+
+  it("puts the bars away when the microphone never opened", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+      expect(bars(composer.parent)).toBe(3);
+
+      composer.handle.cancelVoice();
+
+      expect(bars(composer.parent)).toBe(0);
+      expect(composer.end).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /// The bars stand in the line itself rather than floating over it, so where
+  /// they sit in the line's children is where the caret is.
+  it("follows the caret while the microphone is open", () => {
+    withTimers(() => {
+      const composer = makeComposer({});
+      composer.handle.setText("one two", true);
+      key(composer.parent, "keydown");
+      holdForLongEnough();
+
+      expect(textBeforeBars(composer.parent)).toBe("one two");
+
+      composer.caretAt(3);
+
+      expect(textBeforeBars(composer.parent)).toBe("one");
+    });
   });
 });
