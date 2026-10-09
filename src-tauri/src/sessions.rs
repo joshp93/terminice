@@ -56,7 +56,10 @@ fn read_preview(path: &Path) -> String {
                 .iter()
                 .find_map(|block| {
                     if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                        block.get("text").and_then(|t| t.as_str()).map(str::to_string)
+                        block
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .map(str::to_string)
                     } else {
                         None
                     }

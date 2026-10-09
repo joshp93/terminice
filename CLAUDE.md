@@ -755,3 +755,11 @@ it with the user rather than quietly changing it.
   BuildTools and is therefore **not on `PATH`**, and there is no LLVM install at all. The
   dependency is also why `rust-version` reads 1.88 and why `panic = "abort"` now sits in
   front of C++ FFI. See VOICE.md §10 for the two ways to satisfy it.
+- **Enabling a TLS feature in `ureq` is not the same as choosing it.** The voice download
+  takes `ureq` with default features off and `native-tls` on, so that Windows' own schannel
+  is used rather than a TLS stack bundled into the binary. That is only half the job: ureq's
+  provider defaults to `Rustls` whatever is compiled in — its own documentation says the
+  setting "is never picked up automatically" — so a request through a default agent panics
+  on the first https URL with *"provider is Rustls but feature is not enabled: rustls"*.
+  Everything that fetches goes through `voice::agent()`, which names
+  `TlsProvider::NativeTls`, and a test fails if that line goes away.

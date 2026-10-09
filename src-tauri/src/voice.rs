@@ -16,6 +16,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::ipc::Channel;
+use ureq::tls::{TlsConfig, TlsProvider};
+use ureq::Agent;
 
 /// Events the microphone and the speech engine emit to the frontend.
 #[derive(Clone, Serialize)]
@@ -176,9 +178,33 @@ pub fn stop_voice_recording(state: tauri::State<'_, Voice>) -> Result<(), String
 /// whole, so an interrupted download can never be mistaken for a model.
 #[tauri::command]
 pub async fn download_voice_model(on_event: Channel<VoiceEvent>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || fetch(&on_event))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch(&mut |event| {
+            let _ = on_event.send(event);
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+/// The agent every download goes through.
+///
+/// The TLS provider has to be named here rather than left to ureq's default.
+/// This build compiles in `native-tls` and not `rustls`, because it uses the TLS
+/// libraries Windows already has instead of bundling one — but ureq's default
+/// provider is Rustls regardless, and its own documentation says the setting "is
+/// never picked up automatically". Enabling a feature is not choosing it: a
+/// request made without this line panics on the first https URL it is given,
+/// with "provider is Rustls but feature is not enabled".
+fn agent() -> Agent {
+    Agent::config_builder()
+        .tls_config(
+            TlsConfig::builder()
+                .provider(TlsProvider::NativeTls)
+                .build(),
+        )
+        .build()
+        .into()
 }
 
 /// Loads the engine if it is not loaded, and transcribes one recording.
@@ -203,11 +229,22 @@ fn model_path() -> Result<std::path::PathBuf, String> {
         .ok_or_else(|| "there is no home directory to keep the model in".to_string())
 }
 
-/// Downloads the model, reporting how far it has got.
-fn fetch(on_event: &Channel<VoiceEvent>) -> Result<(), String> {
+/// Downloads the model, reporting what happens as it happens.
+///
+/// The reporting is a callback rather than the channel itself, so that what the
+/// download does can be exercised without an IPC bridge in the way.
+///
+/// # Arguments
+///
+/// * `report` - Called with each event the reader would be shown.
+///
+/// # Returns
+///
+/// Nothing, or why the model could not be fetched.
+fn fetch(report: &mut impl FnMut(VoiceEvent)) -> Result<(), String> {
     let path = model_path()?;
     if speech::model_is_present(&path) {
-        let _ = on_event.send(VoiceEvent::ModelReady);
+        report(VoiceEvent::ModelReady);
         return Ok(());
     }
 
@@ -217,7 +254,8 @@ fn fetch(on_event: &Channel<VoiceEvent>) -> Result<(), String> {
     }
 
     let partial = speech::partial_path(&path);
-    let mut response = ureq::get(speech::MODEL_URL)
+    let mut response = agent()
+        .get(speech::MODEL_URL)
         .call()
         .map_err(|error| format!("could not reach the model: {error}"))?;
 
@@ -226,19 +264,16 @@ fn fetch(on_event: &Channel<VoiceEvent>) -> Result<(), String> {
     // the frontend already knows how to draw as "no idea how long this is".
     let total = response.body_mut().content_length().unwrap_or(0);
 
-    let mut report = |received: u64, total: u64| {
-        let _ = on_event.send(VoiceEvent::ModelProgress { received, total });
-    };
     save(
         &mut response.body_mut().as_reader(),
         &partial,
         total,
-        &mut report,
+        &mut |received, total| report(VoiceEvent::ModelProgress { received, total }),
     )?;
 
     std::fs::rename(&partial, &path)
         .map_err(|error| format!("could not put the model in place: {error}"))?;
-    let _ = on_event.send(VoiceEvent::ModelReady);
+    report(VoiceEvent::ModelReady);
 
     Ok(())
 }
@@ -295,9 +330,22 @@ fn save(
 
 #[cfg(test)]
 mod tests {
-    use super::{save, PROGRESS_STEP};
+    use super::{agent, save, PROGRESS_STEP};
     use std::io::Cursor;
     use std::path::PathBuf;
+    use ureq::tls::TlsProvider;
+
+    /// Enabling the `native-tls` feature is not the same as choosing it: ureq's
+    /// default provider stays Rustls, which this build does not compile in, and
+    /// an https request made through the default panics. It reached a reader
+    /// once, as "provider is Rustls but feature is not enabled".
+    #[test]
+    fn the_download_agent_asks_for_the_tls_this_build_has() {
+        assert_eq!(
+            agent().config().tls_config().provider(),
+            TlsProvider::NativeTls
+        );
+    }
 
     fn scratch(label: &str) -> PathBuf {
         let dir =

@@ -78,8 +78,14 @@ pub fn start_claude(
         .map_err(|error| format!("could not start {program}: {error}"))?;
 
     let stdin = child.stdin.take().ok_or("claude stdin was not captured")?;
-    let stdout = child.stdout.take().ok_or("claude stdout was not captured")?;
-    let stderr = child.stderr.take().ok_or("claude stderr was not captured")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("claude stdout was not captured")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("claude stderr was not captured")?;
     let id = Uuid::new_v4().to_string();
 
     pump_lines(stdout, on_event.clone(), ClaudeEvent::line);
@@ -90,13 +96,12 @@ pub fn start_claude(
         let _ = on_event.send(ClaudeEvent::Exit { code });
     });
 
-    state
-        .0
-        .lock()
-        .map_err(|error| error.to_string())?
-        .insert(id.clone(), Session {
+    state.0.lock().map_err(|error| error.to_string())?.insert(
+        id.clone(),
+        Session {
             stdin: Arc::new(Mutex::new(stdin)),
-        });
+        },
+    );
 
     Ok(id)
 }

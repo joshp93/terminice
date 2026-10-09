@@ -464,15 +464,23 @@ voice**, and it is worth knowing before assuming a failure is a code failure.
 
 ### Verified, and not
 
-**Verified here:** 59 Rust tests (14 on resampling and loudness, 6 on the model's path and
-its part file, 4 on the download, plus the 34 that were already there) and 1268 frontend
-tests, including the hold threshold, the cleanup range, the bars, the level subscription,
-the download's progress, and the whole interaction driven through the Tauri mock. `cargo
-build` and `vite build` both succeed with no warnings.
+**Verified here:** 60 Rust tests (14 on resampling and loudness, 6 on the model's path and
+its part file, 4 on the download, one pinning the TLS provider, plus the 34 that were
+already there) and 1276 frontend tests, including the hold threshold, the cleanup range,
+the bars, the level subscription, the download's progress, and the whole interaction driven
+through the Tauri mock. `cargo build` and `vite build` both succeed with no warnings.
 
-**Not verified, and not claimed:** that a microphone on this machine is heard, that Whisper
-transcribes accurately, and that the one-second hold feels right. There is no microphone in
-the environment this was built in, and no model on the machine — the download has never
-been run against the real URL. Those three are the first things to try, and the constants
-worth turning are `HOLD_TO_TALK_MS` in `src/lib/voiceHold.ts` and the model in
-`src-tauri/src/speech.rs`.
+**Verified against the real thing, once, by hand:** the download was run against Hugging
+Face through `voice::fetch` itself. It returned 200 after one redirect, wrote all
+147,964,211 bytes, reported progress as it went, renamed the part file into place, and the
+model then loaded into Whisper in 1.7 seconds and transcribed a second of silence without
+complaining. The model is now at `~/.config/terminice/ggml-base.en.bin`, so a first run
+does not have to fetch it again. Those two checks were written as `#[ignore]`d tests and
+have since been removed, because a suite that needs the network is worse than one that
+does not — this paragraph is the record of what they found.
+
+**Not verified, and not claimed:** that a microphone is heard at all, that Whisper
+transcribes real speech accurately, and that the one-second hold feels right. There is no
+microphone in the environment this was built in. Those three are the first things to try,
+and the constants worth turning are `HOLD_TO_TALK_MS` in `src/lib/voiceHold.ts` and the
+model in `src-tauri/src/speech.rs`.

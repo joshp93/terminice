@@ -116,7 +116,8 @@ mod tests {
 
     #[test]
     fn runs_in_the_directory_it_is_given() {
-        let output = execute("pwd".to_string(), Some("D:\\apps".to_string())).expect("command runs");
+        let output =
+            execute("pwd".to_string(), Some("D:\\apps".to_string())).expect("command runs");
         assert!(
             output.stdout.contains("apps"),
             "stdout was {:?}",
@@ -137,8 +138,19 @@ mod tests {
     fn separates_stdout_from_stderr() {
         let output =
             execute("echo to-out; echo to-err >&2".to_string(), None).expect("command runs");
-        assert!(output.stdout.contains("to-out"), "stdout was {:?}", output.stdout);
-        assert!(!output.stdout.contains("to-err"), "stderr leaked into stdout");
-        assert!(output.stderr.contains("to-err"), "stderr was {:?}", output.stderr);
+        assert!(
+            output.stdout.contains("to-out"),
+            "stdout was {:?}",
+            output.stdout
+        );
+        assert!(
+            !output.stdout.contains("to-err"),
+            "stderr leaked into stdout"
+        );
+        assert!(
+            output.stderr.contains("to-err"),
+            "stderr was {:?}",
+            output.stderr
+        );
     }
 }
