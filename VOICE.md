@@ -443,17 +443,24 @@ Two ways to satisfy the second, and the smaller one was used to verify this buil
 2. **`winget install --id LLVM.LLVM -e`** — the full toolchain, machine-wide, administrator.
    Needed if anything else on the machine ever wants clang.
 
-Whichever is used, a plain `cargo build` still needs `LIBCLANG_PATH` set and cmake on
-`PATH`, because `cargo` does not read either from this document. `cargo test` and
-`cargo build` were both run with:
+**Two** environment requirements come with this, and both were confirmed by building
+without them:
 
-```
-LIBCLANG_PATH = %APPDATA%\Python\Python313\site-packages\clang\native
-PATH          = <the BuildTools cmake directory>;%PATH%
-```
+- Without `LIBCLANG_PATH`, bindgen panics before anything else compiles: *"Unable to find
+  libclang: couldn't find any valid shared libraries matching: ['clang.dll',
+  'libclang.dll']"*. It searches `LIBCLANG_PATH` first and, on Windows, otherwise only
+  LLVM's own install directories — none of which is where a Python package puts it.
+- With that set and cmake still off `PATH`, the build gets as far as whisper.cpp and stops
+  with *"failed to execute command: program not found / is `cmake` not installed?"*. The
+  `cmake` crate runs whatever `CMAKE` names, which is the way out.
+
+Neither is Python, and neither is cargo. Both are supplied by `.cargo/config.toml`'s `[env]`
+table, alongside the SDK workaround already there, so a plain `cargo build` and `pnpm app:dev`
+work with no shell setup at all. Delete the `LIBCLANG_PATH` line only if LLVM is installed
+properly, because `C:\Program Files\LLVM` is one of the directories bindgen does find.
 
 **This is the one part of the feature that can break a build that has nothing to do with
-voice**, and it is worth knowing that before assuming a failure is a code failure.
+voice**, and it is worth knowing before assuming a failure is a code failure.
 
 ### Verified, and not
 

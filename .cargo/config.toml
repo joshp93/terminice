@@ -1,5 +1,8 @@
-# Machine-specific workaround. See "Windows toolchain" in README.md.
-#
+# Machine-specific workarounds, applied to every cargo invocation in this tree so
+# that a plain `cargo build` works without any shell setup. See "Windows
+# toolchain" in README.md.
+
+[env]
 # This machine's Windows SDK records ProductVersion as 10.0.26100 in the registry
 # while the library directory on disk is 10.0.26100.0. rustc computes its library
 # search path from that registry value, lands on a directory that does not exist,
@@ -7,7 +10,21 @@
 # not ship a copy of. Pointing LIB at the real directories fixes it with no
 # registry edit and no reinstall.
 #
-# Delete this file once the SDK registry value is corrected.
-
-[env]
+# Delete this line once the SDK registry value is corrected.
 LIB = "C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.26100.0\\um\\x64;C:\\Program Files (x86)\\Windows Kits\\10\\Lib\\10.0.26100.0\\ucrt\\x64"
+
+# whisper-rs-sys generates its bindings with bindgen, which loads libclang at
+# build time; without this it panics with "Unable to find libclang" before
+# anything else is compiled. bindgen searches LIBCLANG_PATH first, and on Windows
+# otherwise only looks in LLVM's own install directories -- none of which is
+# where libclang happens to live here.
+#
+# Swap this for `winget install --id LLVM.LLVM -e` and delete the line: an LLVM
+# install lands in C:\Program Files\LLVM, which bindgen does find on its own.
+LIBCLANG_PATH = "C:\\Users\\Joshu\\AppData\\Roaming\\Python\\Python313\\site-packages\\clang\\native"
+
+# cmake is needed to build whisper.cpp, and the cmake crate runs whatever `CMAKE`
+# names rather than looking for one. cmake is on this machine only inside Visual
+# Studio's BuildTools, which is on no PATH. Naming it outright is what keeps this
+# from being a shell-setup requirement.
+CMAKE = "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\Common7\\IDE\\CommonExtensions\\Microsoft\\CMake\\CMake\\bin\\cmake.exe"
