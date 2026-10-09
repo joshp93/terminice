@@ -40,7 +40,14 @@ const SOURCES: Record<FontFamilyKind, FontSource> = {
 /** One selectable row, and where it sits in the whole list. */
 type FontRow = { value: string; label: string; index: number };
 
-/** One section of the list, with the rows it holds. */
+/**
+ * One section of the list, with the rows it holds.
+ *
+ * Sections are identified by where they sit rather than by what they are
+ * called. The head section and an unlabelled group are both called nothing —
+ * the code list is one unlabelled group under an unlabelled head — and two
+ * sections sharing a name is not two sections being the same one.
+ */
 type FontSection = { label: string; rows: FontRow[] };
 
 /** Props for {@link FontFamilySelect}. */
@@ -188,8 +195,9 @@ export function FontFamilySelect({ kind, label, value, onChange }: FontFamilySel
 
         {open && (
           <div className="font-list" role="listbox" id={listId} aria-label={label} ref={listRef}>
-            {sections.map((section) => (
-              <div className="font-section" key={section.label}>
+            {sections.map((section, position) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: the sections come from one fixed list per picker and never reorder — only the rows inside them change — and two of them are allowed to be called nothing, so position is the only identity they have.
+              <div className="font-section" key={position}>
                 {section.label.length > 0 && (
                   <div className="font-section-title">{section.label}</div>
                 )}

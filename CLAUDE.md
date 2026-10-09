@@ -35,6 +35,16 @@ Commands are then answered with `routeInvoke("command_name", handler)`, and a Ch
 app created is driven with `sessionChannel().emit(event)`. Reach for a test double only
 where the code actually crosses into Tauri; `src/lib` is mostly pure and needs none.
 
+**`pool: "vmThreads"` in `vite.config.ts` is deliberate, and does not cost isolation.**
+There are sixty-odd test files and a jsdom environment is a couple of seconds each to
+build, which the default pool pays per file — it was most of the suite's wall clock, and
+Vitest says so after every run. This pool builds one environment per worker and reuses it
+for every file that worker runs, while each file still gets a fresh module registry, so
+the `vi.mock` at the top of every file and the module state behind it stay that file's own.
+Measured: 28s before, 11s after, and the suite passes in a shuffled order as well. Do not
+"simplify" it to `isolate: false`, which is the other thing Vitest suggests and is a
+genuinely different trade — that one shares module state between files.
+
 ## Architecture decisions — do not relitigate
 
 These were settled after research and are load-bearing. If you think one is wrong, raise

@@ -309,6 +309,23 @@ describe("SettingsMenu", () => {
     expect(options[0]?.style.fontFamily).toContain("MesloLGLDZ Nerd Font Mono");
   });
 
+  /// Both lists put an unlabelled section under an unlabelled head, so the two
+  /// used to be keyed alike and React complained about it on every render.
+  it("draws its sections without asking two of them to answer to one name", async () => {
+    const complained = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<SettingsMenu {...menuProps()} />);
+
+    await openOptions("Code font");
+    await userEvent.click(trigger("Code font"));
+    await openOptions("App font");
+
+    const aboutKeys = complained.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("same key"));
+
+    expect(aboutKeys).toEqual([]);
+  });
+
   it("shows which section a family came from", async () => {
     render(<SettingsMenu {...menuProps()} />);
 
