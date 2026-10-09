@@ -283,6 +283,7 @@ body {
 }
 
 .voice-download {
+  position: relative;
   flex: 1 1 auto;
   height: 6px;
   border-radius: 3px;
@@ -295,6 +296,16 @@ body {
   border-radius: 3px;
   background: var(--accent);
   transition: width 120ms linear;
+}
+
+/* Nothing to be a fraction of, so it sweeps — the same movement the compaction
+   bar uses when the CLI has given it no steps to report. */
+.voice-download.indeterminate .voice-download-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 34%;
+  animation: progress-slide 1.5s ease-in-out infinite;
 }
 
 .stepper {

@@ -22,7 +22,12 @@ export type Voice = {
   listening: boolean;
   /** Where the model is expected, and whether it is there. */
   status: VoiceStatus | null;
-  /** How much of the model has arrived, from 0 to 1, while a download runs. */
+  /** Whether the model is being fetched right now. */
+  downloading: boolean;
+  /**
+   * How much of the model has arrived, from 0 to 1, or null when the server has
+   * not said how large it is and there is nothing to be a fraction of.
+   */
   downloadProgress: number | null;
   /** The newest transcript, which replaces the one before it. */
   transcript: VoiceTranscript | null;
@@ -56,6 +61,7 @@ export type Voice = {
 export function useVoice(enabled: boolean): Voice {
   const [status, setStatus] = useState<VoiceStatus | null>(null);
   const [listening, setListening] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [transcript, setTranscript] = useState<VoiceTranscript | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -101,10 +107,12 @@ export function useVoice(enabled: boolean): Voice {
           setDownloadProgress(event.total > 0 ? event.received / event.total : null);
           return;
         case "modelReady":
+          setDownloading(false);
           setDownloadProgress(null);
           refresh();
           return;
         default:
+          setDownloading(false);
           setDownloadProgress(null);
           fail(event.message);
       }
@@ -137,15 +145,16 @@ export function useVoice(enabled: boolean): Voice {
   }, [fail]);
 
   const download = useCallback(() => {
-    if (downloadProgress !== null) return;
-    setDownloadProgress(0);
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadProgress(null);
     const events = new Channel<VoiceEvent>();
     events.onmessage = handle;
     void downloadVoiceModel(events).catch((problem: unknown) => {
-      setDownloadProgress(null);
+      setDownloading(false);
       fail(`Could not fetch the speech model: ${String(problem)}`);
     });
-  }, [downloadProgress, fail, handle]);
+  }, [downloading, fail, handle]);
 
   const subscribeToLevel = useCallback((listener: (level: number) => void) => {
     const listeners = listenersRef.current;
@@ -168,6 +177,7 @@ export function useVoice(enabled: boolean): Voice {
     ready: enabled && status?.modelPresent === true,
     listening,
     status,
+    downloading,
     downloadProgress,
     transcript,
     error,

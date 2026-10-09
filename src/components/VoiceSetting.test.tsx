@@ -89,7 +89,11 @@ describe("the speech model", () => {
   });
 
   it("shows how far a download has got", () => {
-    renderSetting({ status: { ...MODEL, modelPresent: false }, downloadProgress: 0.25 });
+    renderSetting({
+      status: { ...MODEL, modelPresent: false },
+      downloading: true,
+      downloadProgress: 0.25,
+    });
 
     expect(
       screen.getByRole("progressbar", { name: "Downloading the speech model" }),
@@ -106,5 +110,34 @@ describe("the speech model", () => {
     renderSetting();
 
     expect(screen.getByText(/runs on this machine/)).toBeInTheDocument();
+  });
+});
+
+describe("a download with no size to show", () => {
+  const fetching = (overrides: Parameters<typeof fakeVoice>[0] = {}) =>
+    renderSetting({ status: { ...MODEL, modelPresent: false }, downloading: true, ...overrides });
+
+  it("sweeps rather than claiming a fraction it does not have", () => {
+    fetching();
+
+    const bar = screen.getByRole("progressbar", { name: "Downloading the speech model" });
+    expect(bar).toHaveClass("indeterminate");
+    expect(bar).not.toHaveAttribute("aria-valuenow");
+  });
+
+  /// The button used to come back the moment a size-less progress arrived,
+  /// which offered to start a second download of the same model.
+  it("does not offer to start over while it is still running", () => {
+    fetching();
+
+    expect(screen.queryByRole("button", { name: "Download" })).toBeNull();
+  });
+
+  it("shows the fraction once there is one", () => {
+    fetching({ downloadProgress: 0.25 });
+
+    const bar = screen.getByRole("progressbar", { name: "Downloading the speech model" });
+    expect(bar).not.toHaveClass("indeterminate");
+    expect(bar).toHaveAttribute("aria-valuenow", "25");
   });
 });

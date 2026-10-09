@@ -221,10 +221,10 @@ fn fetch(on_event: &Channel<VoiceEvent>) -> Result<(), String> {
         .call()
         .map_err(|error| format!("could not reach the model: {error}"))?;
 
-    let total = response
-        .body_mut()
-        .content_length()
-        .unwrap_or(speech::MODEL_BYTES);
+    // Zero when the server did not say how large it is. Nothing is guessed in
+    // its place: a made-up total is a progress bar that lies, and 0 is a total
+    // the frontend already knows how to draw as "no idea how long this is".
+    let total = response.body_mut().content_length().unwrap_or(0);
 
     let mut report = |received: u64, total: u64| {
         let _ = on_event.send(VoiceEvent::ModelProgress { received, total });

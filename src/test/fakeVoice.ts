@@ -13,6 +13,7 @@ export function fakeVoice(overrides: Partial<Voice> = {}): Voice {
     ready: false,
     listening: false,
     status: null,
+    downloading: false,
     downloadProgress: null,
     transcript: null,
     error: null,

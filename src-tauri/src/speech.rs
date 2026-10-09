@@ -19,9 +19,6 @@ pub const MODEL_FILE: &str = "ggml-base.en.bin";
 pub const MODEL_URL: &str =
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
 
-/// How large the model is, as the download reports it back.
-pub const MODEL_BYTES: u64 = 147_951_465;
-
 /// A recogniser that turns one finished recording into text.
 pub trait SpeechEngine: Send {
     /// Transcribes a recording.

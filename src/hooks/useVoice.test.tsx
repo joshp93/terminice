@@ -299,3 +299,48 @@ describe("fetching the model", () => {
     expect(result.current.downloadProgress).toBeNull();
   });
 });
+
+describe("a download the server gave no size for", () => {
+  it("is still a download, so the button does not come back mid-flight", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.download());
+    act(() => voiceChannel().emit({ kind: "modelProgress", received: 4096, total: 0 }));
+
+    expect(result.current.downloading).toBe(true);
+    expect(result.current.downloadProgress).toBeNull();
+  });
+
+  it("cannot be started twice by pressing the button it should not be showing", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => result.current.download());
+    act(() => voiceChannel().emit({ kind: "modelProgress", received: 4096, total: 0 }));
+    act(() => result.current.download());
+
+    expect(invoke.mock.calls.filter(([name]) => name === "download_voice_model")).toHaveLength(1);
+  });
+
+  it("stops being a download once the model is there", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.download());
+    act(() => voiceChannel().emit({ kind: "modelProgress", received: 4096, total: 0 }));
+
+    act(() => voiceChannel().emit({ kind: "modelReady" }));
+
+    expect(result.current.downloading).toBe(false);
+  });
+
+  it("stops being a download when the download fails", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.download());
+
+    act(() => voiceChannel().emit({ kind: "error", message: "the network went away" }));
+
+    expect(result.current.downloading).toBe(false);
+  });
+});

@@ -32,6 +32,33 @@ export function VoiceSetting({ enabled, onEnabledChange, voice }: VoiceSettingPr
   const present = voice.status?.modelPresent === true;
   const progress = voice.downloadProgress;
 
+  /**
+   * The bar while the model is arriving.
+   *
+   * A server that did not say how large the model is leaves nothing for the bar
+   * to be a fraction of, so it sweeps instead. That is also what stops the
+   * Download button from coming back mid-download and offering to start a
+   * second one.
+   */
+  const downloadBar = () => {
+    const share = progress === null ? null : Math.round(progress * 100);
+    return (
+      <div
+        className={share === null ? "voice-download indeterminate" : "voice-download"}
+        role="progressbar"
+        aria-label="Downloading the speech model"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={share ?? undefined}
+      >
+        <div
+          className="voice-download-fill"
+          style={share === null ? undefined : { width: `${share}%` }}
+        />
+      </div>
+    );
+  };
+
   return (
     <>
       <SegmentedChoice
@@ -46,24 +73,13 @@ export function VoiceSetting({ enabled, onEnabledChange, voice }: VoiceSettingPr
       <div className="setting">
         <span className="setting-label">Speech model</span>
         <div className="voice-model">
-          {progress !== null && (
-            <div
-              className="voice-download"
-              role="progressbar"
-              aria-label="Downloading the speech model"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(progress * 100)}
-            >
-              <div className="voice-download-fill" style={{ width: `${progress * 100}%` }} />
-            </div>
-          )}
-          {progress === null && present && (
+          {voice.downloading && downloadBar()}
+          {!voice.downloading && present && (
             <span className="voice-model-state" title={voice.status?.modelPath}>
               {describeSize(voice.status?.modelBytes ?? 0)}
             </span>
           )}
-          {progress === null && !present && (
+          {!voice.downloading && !present && (
             <button type="button" className="voice-download-button" onClick={voice.download}>
               Download
             </button>
