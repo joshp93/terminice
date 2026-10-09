@@ -76,6 +76,15 @@ impl SpeechEngine for Whisper {
         params.set_no_context(true);
         params.set_single_segment(false);
 
+        // Only words, please. Whisper was trained on subtitles, so left alone it
+        // helpfully annotates what it hears: "(clears throat)", "[BLANK_AUDIO]",
+        // "♪". This drives the logits of those tokens to negative infinity, so
+        // they cannot be sampled at all — it is the difference between filtering
+        // the annotations out afterwards and never producing them. It is off by
+        // default, and the brackets and note symbols are what the list is mostly
+        // made of, which is why one switch is enough for both of those shapes.
+        params.set_suppress_nst(true);
+
         state.full(params, samples).map_err(describe)?;
 
         Ok(state

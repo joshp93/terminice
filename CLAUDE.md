@@ -763,3 +763,12 @@ it with the user rather than quietly changing it.
   on the first https URL with *"provider is Rustls but feature is not enabled: rustls"*.
   Everything that fetches goes through `voice::agent()`, which names
   `TlsProvider::NativeTls`, and a test fails if that line goes away.
+- **Whisper annotates unless it is told not to, and it is told not to.** It was trained on
+  subtitles, so left alone it answers with "(clears throat)", "[BLANK_AUDIO]" and "♪".
+  `suppress_nst` drives those tokens' logits to negative infinity so they cannot be sampled
+  at all, which is a different thing from filtering them out afterwards. It is **off by
+  default** — like ureq's TLS provider, a feature that exists is not a setting that is on —
+  and the suppressed list is mostly brackets and note symbols, which is why one switch
+  covers both of those shapes. It does not stop the model inventing an ordinary word for a
+  noise floor; `SPEECH_PEAK` in `resample.rs` is the gate for that, parked rather than wired
+  in, and its doc comment says why.

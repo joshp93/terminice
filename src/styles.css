@@ -1623,20 +1623,27 @@ body {
   caret-color: transparent;
 }
 
+/* The placeholder is an invitation to type, and nobody is typing: the bars are
+   standing where the first word will go, and a sentence of grey text behind
+   them reads as though the composer were still empty and waiting. */
+.composer-host.listening .cm-placeholder {
+  display: none;
+}
+
 .voice-caret {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  height: 1.05em;
+  gap: 2.5px;
+  height: 1.3em;
   margin: 0 1px;
   vertical-align: text-bottom;
 }
 
 .voice-caret i {
   display: block;
-  width: 2px;
+  width: 2.5px;
   height: 100%;
-  border-radius: 1px;
+  border-radius: 1.5px;
   background: var(--accent);
   transform: scaleY(calc(0.28 + 0.72 * var(--voice-level)));
   transition: transform 55ms linear;

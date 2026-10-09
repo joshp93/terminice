@@ -90,7 +90,49 @@ pub fn resample(samples: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
         .collect()
 }
 
-/// Whether a recording holds nothing but silence.
+/// The loudest a recording has to get before it is worth transcribing.
+///
+/// Measured against a room rather than against a voice: the noise floor of a
+/// quiet room peaks somewhere around 0.005 of full scale, and somebody speaking
+/// at a normal distance from a laptop peaks well above 0.05. The width of that
+/// gap is the only reason one number can tell them apart, and it is the number
+/// to move if speech is being ignored.
+///
+/// **Parked, not wired in.** Whisper will turn a quiet room into a word — it was
+/// trained always to produce something — and the token suppression in
+/// `speech.rs` cannot stop that, because the words it reaches for are ordinary
+/// ones. This is the gate that would. It is not in use because the case for it
+/// rests on two synthesised noise signals rather than on a real microphone, and
+/// a threshold tuned against those could silently ignore somebody speaking
+/// quietly, which is a worse failure than an occasional stray word. Try it as it
+/// is; wire this in if stray words actually turn up.
+#[allow(dead_code)]
+pub const SPEECH_PEAK: f32 = 0.03;
+
+/// How loud a recording has to be to be the microphone rather than the room.
+///
+/// This is not the same question as [`is_silent`]. A muted microphone gives
+/// nothing at all, which is worth saying out loud; a working one in a quiet
+/// room gives a noise floor, and Whisper will confidently transcribe that noise
+/// floor into a word — "you", "Shh." — because it was trained always to produce
+/// something. Nothing is the right answer to "nobody spoke", and the engine
+/// cannot tell, so this does.
+///
+/// # Arguments
+///
+/// * `samples` - A mono stream.
+///
+/// # Returns
+///
+/// True when the recording gets loud enough to be somebody talking.
+///
+/// Parked alongside [`SPEECH_PEAK`], which is where the reasoning is.
+#[allow(dead_code)]
+pub fn holds_speech(samples: &[f32]) -> bool {
+    peak_of(samples) >= SPEECH_PEAK
+}
+
+/// Whether a recording holds nothing at all.
 ///
 /// Windows hands back a stream of zeros, and no error at all, when desktop
 /// applications are not allowed the microphone. Without this the feature would
@@ -103,18 +145,34 @@ pub fn resample(samples: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
 ///
 /// # Returns
 ///
-/// True when there is no recording, or nothing in it above the quietest sound
-/// worth transcribing.
+/// True when there is no recording, or nothing whatever in it.
 pub fn is_silent(samples: &[f32]) -> bool {
-    if samples.is_empty() {
-        return true;
-    }
-
-    let peak = samples
-        .iter()
-        .fold(0.0_f32, |loudest, s| loudest.max(s.abs()));
-    peak < 0.0005
+    peak_of(samples) < 0.0005
 }
+
+/// The loudest sample in a recording.
+///
+/// # Arguments
+///
+/// * `samples` - A mono stream.
+///
+/// # Returns
+///
+/// The largest magnitude, or zero for an empty recording.
+fn peak_of(samples: &[f32]) -> f32 {
+    samples
+        .iter()
+        .fold(0.0_f32, |loudest, s| loudest.max(s.abs()))
+}
+
+/// How much the loudness is stretched before it is shown.
+///
+/// This is the dial for how far the bars travel: a bigger number means quieter
+/// speech moves them further, at the cost of loud speech sitting at the top of
+/// their range more of the time. It is the only thing that decides the bars'
+/// sensitivity — the drawing turns whatever comes out of here into a height and
+/// nothing more — so this is the number to turn, not the CSS.
+pub const LEVEL_GAIN: f32 = 15.6;
 
 /// The loudness of a block of samples, on a scale that suits a level meter.
 ///
@@ -135,12 +193,12 @@ pub fn level_of(samples: &[f32]) -> f32 {
     }
 
     let mean = samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32;
-    (mean.sqrt() * 12.0).min(1.0)
+    (mean.sqrt() * LEVEL_GAIN).min(1.0)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{is_silent, level_of, resample, to_mono, WHISPER_HZ};
+    use super::{holds_speech, is_silent, level_of, resample, to_mono, WHISPER_HZ};
 
     #[test]
     fn a_mono_stream_is_already_what_was_wanted() {
@@ -209,6 +267,38 @@ mod tests {
         assert!(!is_silent(&[0.0, 0.2, -0.3, 0.0]));
     }
 
+    /// A room is not silence — it is a noise floor, which is exactly what
+    /// Whisper turns into a word if it is handed one.
+    #[test]
+    fn a_quiet_room_is_audible_but_is_not_speech() {
+        let room: Vec<f32> = (0..16_000).map(|n| (n % 7) as f32 * 0.0007).collect();
+        assert!(
+            !is_silent(&room),
+            "the room was taken for a muted microphone"
+        );
+        assert!(!holds_speech(&room), "the room was taken for a voice");
+    }
+
+    #[test]
+    fn somebody_talking_is_speech() {
+        let voice: Vec<f32> = (0..16_000)
+            .map(|n| (n as f32 * 0.05).sin() * 0.08)
+            .collect();
+        assert!(holds_speech(&voice));
+    }
+
+    #[test]
+    fn one_loud_word_in_a_long_hold_is_speech() {
+        let samples = [vec![0.0004_f32; 32_000], vec![0.2_f32; 400]].concat();
+        assert!(holds_speech(&samples));
+    }
+
+    #[test]
+    fn nothing_at_all_is_not_speech() {
+        assert!(!holds_speech(&[]));
+        assert!(!holds_speech(&vec![0.0; 16_000]));
+    }
+
     #[test]
     fn the_level_of_silence_is_nothing() {
         assert_eq!(level_of(&[0.0; 64]), 0.0);
@@ -225,5 +315,23 @@ mod tests {
     #[test]
     fn the_level_stops_at_one() {
         assert_eq!(level_of(&[1.0; 64]), 1.0);
+    }
+
+    /// Quiet speech is most of what a microphone hears, so the quiet end of the
+    /// range is the end that has to move. Anything the gain is raised to has to
+    /// leave faint speech well clear of nothing.
+    #[test]
+    fn faint_speech_is_well_above_silence() {
+        let faint = level_of(&[0.01; 64]);
+        assert!(faint > 0.1, "a quiet voice read only {faint}");
+        assert!(faint < 1.0, "a quiet voice pinned the meter at {faint}");
+    }
+
+    #[test]
+    fn the_gain_is_what_decides_how_far_the_meter_travels() {
+        assert!(
+            level_of(&[0.01; 64]) > (0.01 * 12.0),
+            "the gain is back to where it was"
+        );
     }
 }
