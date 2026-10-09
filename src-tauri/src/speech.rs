@@ -108,8 +108,10 @@ impl SpeechEngine for Whisper {
 ///
 /// The engine, or why it could not be opened.
 pub fn open(path: &Path) -> Result<Box<dyn SpeechEngine>, String> {
-    let mut parameters = WhisperContextParameters::default();
-    parameters.use_gpu = false;
+    let parameters = WhisperContextParameters::<'_> {
+        use_gpu: false,
+        ..Default::default()
+    };
 
     let context = WhisperContext::new_with_params(path, parameters).map_err(|error| {
         format!(

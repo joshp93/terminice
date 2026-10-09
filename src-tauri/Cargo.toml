@@ -1,6 +1,6 @@
 [package]
 name = "terminice"
-version = "0.1.0"
+version = "1.0.0"
 description = "A chat client for Claude Code"
 authors = ["joshp93"]
 edition = "2021"
@@ -28,6 +28,17 @@ whisper-rs = "0.16"
 # The model download. Windows' own TLS rather than a bundled one, which keeps
 # the binary nearer the size the release profile is tuned for.
 ureq = { version = "3", default-features = false, features = ["native-tls"] }
+
+[lints.rust]
+# This crate contains no unsafe code. Forbidding it keeps that a property of
+# the build rather than something that has to be noticed in review.
+unsafe_code = "forbid"
+
+[lints.clippy]
+# Clippy's default set, written out so the level is the repository's decision
+# rather than the toolchain's. CI runs clippy with `-D warnings`, which is what
+# makes this table load-bearing.
+all = "warn"
 
 [profile.release]
 codegen-units = 1

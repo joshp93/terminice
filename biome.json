@@ -15,7 +15,11 @@
     "lineWidth": 100
   },
   "linter": {
-    "enabled": true
+    "enabled": true,
+    "domains": {
+      "react": "recommended",
+      "test": "recommended"
+    }
   },
   "javascript": {
     "formatter": {

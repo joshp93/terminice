@@ -1,12 +1,7 @@
 import type { ComposerStatus } from "../lib/createComposer";
 import type { ListKind } from "../lib/listMarkers";
 import type { StyleState } from "../lib/markdownSpans";
-import {
-  FORMATS,
-  type FormatId,
-  formatShortcutLabel,
-  quoteShortcutLabel,
-} from "../lib/richFormat";
+import { FORMATS, type FormatId, formatShortcutLabel, quoteShortcutLabel } from "../lib/richFormat";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {
@@ -112,16 +107,8 @@ export function FormatToolbar({
       </button>
       <button
         type="button"
-        className={
-          previewing
-            ? "format-button preview-toggle on"
-            : "format-button preview-toggle"
-        }
-        title={
-          previewing
-            ? "Return to editing (Esc)"
-            : "Preview the message as Markdown"
-        }
+        className={previewing ? "format-button preview-toggle on" : "format-button preview-toggle"}
+        title={previewing ? "Return to editing (Esc)" : "Preview the message as Markdown"}
         aria-pressed={previewing}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onTogglePreview}

@@ -257,6 +257,6 @@ where
     // a timer of its own, so a fixed size would only be a size the device might
     // refuse — turning a working microphone into one that will not open.
     device
-        .build_input_stream(config.clone(), on_data, on_error, None)
+        .build_input_stream(*config, on_data, on_error, None)
         .map_err(|error| format!("the microphone could not be opened: {error}"))
 }

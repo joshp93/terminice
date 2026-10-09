@@ -1,0 +1,91 @@
+name: Set up the build environment
+description: >-
+  Installs the system, Node and Rust dependencies a terminice build or test run
+  needs, and drops the machine-specific cargo config that only makes sense on
+  the author's own Windows machine.
+
+inputs:
+  rust-target:
+    description: An extra Rust target to install, for the macOS cross-builds.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # cmake and libclang are for whisper-rs, whose build script compiles
+    # whisper.cpp and runs bindgen. rpm is for the .rpm bundle that
+    # `targets: "all"` asks for. The webkit2gtk group is what Tauri links
+    # against on Linux, which means the tests need it every bit as much as the
+    # build does.
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libayatana-appindicator3-dev \
+          librsvg2-dev \
+          patchelf \
+          rpm \
+          cmake \
+          libclang-dev \
+          build-essential \
+          curl \
+          wget \
+          file \
+          libxdo-dev \
+          libssl-dev
+
+    # The same two build-time needs as Linux, neither of which the macOS image
+    # carries.
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install cmake llvm
+
+    # bindgen looks for libclang in LLVM's own install directories, and
+    # Homebrew's is not one of them. `brew --prefix` keeps the path correct on
+    # both Apple Silicon and Intel.
+    - name: Point bindgen at libclang
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+
+    # whisper-rs-sys declares rust-version 1.88 of its own. Stable is well past
+    # that, and taking stable rather than a pin keeps the toolchain in step with
+    # what the manifest already asks for.
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Add the cross-compilation target
+      if: inputs.rust-target != ''
+      shell: bash
+      run: rustup target add ${{ inputs.rust-target }}
+
+    - uses: pnpm/action-setup@v6
+      with:
+        version: 10
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: lts/*
+        cache: pnpm
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: src-tauri
+
+    # .cargo/config.toml pins the SDK, libclang and cmake paths belonging to one
+    # particular machine. None of them exist on a runner, and cargo reads that
+    # file from the repository root wherever it is invoked, so every job has to
+    # go without it.
+    - name: Drop the machine-specific cargo config
+      shell: bash
+      run: rm -f .cargo/config.toml
+
+    - name: Install frontend dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

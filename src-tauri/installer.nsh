@@ -1,7 +1,9 @@
 ; terminice — NSIS installer hooks.
 ;
-; Puts the install directory on PATH so `terminice` works from any terminal, and
-; takes it off again on uninstall.
+; Two jobs with nothing to do with each other: unticking the finish page's
+; optional checkboxes, at the bottom of this file, and putting the install
+; directory on PATH so `terminice` works from any terminal — taken off again on
+; uninstall.
 ;
 ; PATH is edited through PowerShell rather than in NSIS itself because NSIS caps
 ; a variable at 1024 characters by default and PATH is routinely longer than
@@ -77,3 +79,20 @@
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro TERMINICE_EDIT_PATH "-Remove"
 !macroend
+
+; Finish page defaults.
+;
+; Tauri renders "Create a desktop shortcut" and "Run terminice" as the finish
+; page's two checkboxes, and defines neither NOTCHECKED flag, so both arrive
+; ticked — the installer making two choices on the user's behalf that it was
+; never asked to make.
+;
+; MUI reads these flags while expanding MUI_PAGE_FINISH, which Tauri emits well
+; below the point it includes this file, so a !define here reaches them in
+; time. Both names are MUI's, not Tauri's, and there is no tauri.conf.json
+; setting for either.
+;
+; The Start Menu shortcut is not one of these two. Tauri creates it
+; unconditionally, and offers no checkbox to untick.
+!define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
+!define MUI_FINISHPAGE_RUN_NOTCHECKED

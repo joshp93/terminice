@@ -1,0 +1,109 @@
+name: release
+
+# Pushing a tag is what publishes. The tag has to match the version in
+# src-tauri/tauri.conf.json; the guard step below fails the build when it does
+# not, rather than shipping installers whose filenames disagree with the tag
+# they were published under.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # Runs once, not once per platform: the frontend suite is the same everywhere,
+  # and the Rust suite only needs a Unix to run on. `publish` will not start
+  # until this is green.
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+
+      # `tauri::generate_context!` reads tauri.conf.json while compiling and
+      # refuses to build when the configured frontendDist is missing, so the
+      # Rust tests need the frontend built first even though they never touch
+      # it.
+      - name: Build the frontend
+        run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # `pretest` runs `pnpm lint`, so Biome is covered here too.
+      - name: Frontend tests
+        run: pnpm test
+
+      # `-D warnings` is what makes the `[lints.clippy]` table in Cargo.toml
+      # load-bearing rather than advisory.
+      - name: Rust lints
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      # The bulk of the wall clock. 66 tests across the modules that do not
+      # need a window.
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+  publish:
+    name: ${{ matrix.label }}
+    needs: test
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            platform: ubuntu-22.04
+            args: ""
+            target: ""
+          - label: windows-x64
+            platform: windows-latest
+            args: ""
+            target: ""
+          - label: macos-arm64
+            platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            target: aarch64-apple-darwin
+          # Intel Macs. macos-13 is retired, so macos-15-intel replaces it —
+          # but check how that label bills before enabling it, since Intel
+          # macOS runners have historically been the larger, paid class.
+          # - label: macos-x64
+          #   platform: macos-15-intel
+          #   args: "--target x86_64-apple-darwin"
+          #   target: x86_64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup
+        with:
+          rust-target: ${{ matrix.target }}
+
+      - name: Check the tag matches the app version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match app version $version." >&2
+            exit 1
+          fi
+
+      # tauri-action runs `tauri build`, which runs beforeBuildCommand
+      # (`pnpm build`) for the frontend, then uploads every bundle it produced
+      # to the release for this tag. The release starts as a draft so it can be
+      # reviewed before anyone can download from it.
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "terminice ${{ github.ref_name }}"
+          releaseBody: "Installers for every platform are attached below."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

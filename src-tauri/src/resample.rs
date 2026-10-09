@@ -70,7 +70,7 @@ pub fn resample(samples: &[f32], from_hz: u32, to_hz: u32) -> Vec<f32> {
     let from = from_hz as usize;
     let to = to_hz as usize;
 
-    if from % to == 0 {
+    if from.is_multiple_of(to) {
         let factor = from / to;
         return samples
             .chunks_exact(factor)
