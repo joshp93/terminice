@@ -114,13 +114,30 @@ mod tests {
         assert_eq!(output.code, Some(3));
     }
 
+    /// Runs `pwd` in a scratch folder, so the working directory is one this
+    /// test controls on any machine.
     #[test]
     fn runs_in_the_directory_it_is_given() {
-        let output =
-            execute("pwd".to_string(), Some("D:\\apps".to_string())).expect("command runs");
+        let directory = std::env::temp_dir().join(format!(
+            "terminice-shell-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&directory).expect("a scratch folder");
+        let name = directory
+            .file_name()
+            .expect("the folder has a name")
+            .to_string_lossy()
+            .into_owned();
+
+        let output = execute(
+            "pwd".to_string(),
+            Some(directory.to_string_lossy().into_owned()),
+        )
+        .expect("command runs");
+
         assert!(
-            output.stdout.contains("apps"),
-            "stdout was {:?}",
+            output.stdout.contains(&name),
+            "expected {name:?} in the working directory, stdout was {:?}",
             output.stdout
         );
     }
