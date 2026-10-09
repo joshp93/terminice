@@ -1619,15 +1619,75 @@ body {
   --voice-level: 0;
 }
 
-.composer-host.listening .cm-content {
+/* The native caret is hidden for both of the shapes that stand in its place,
+   and so is the placeholder: it is an invitation to type, and nobody is typing.
+   A sentence of grey text behind the marks reads as though the composer were
+   still empty and waiting. */
+.composer-host.listening .cm-content,
+.composer-host.transcribing .cm-content {
   caret-color: transparent;
 }
 
-/* The placeholder is an invitation to type, and nobody is typing: the bars are
-   standing where the first word will go, and a sentence of grey text behind
-   them reads as though the composer were still empty and waiting. */
-.composer-host.listening .cm-placeholder {
+.composer-host.listening .cm-placeholder,
+.composer-host.transcribing .cm-placeholder {
   display: none;
+}
+
+/*
+ * Three lines standing where the words will land, while they are being worked
+ * out. They are a skeleton of the sentence rather than a spinner: the top line
+ * is the longest and each is shorter than the one above, which is the shape of
+ * a paragraph, and each breathes at its own pace — the pace is rolled when the
+ * marks are drawn, so no two waits look alike.
+ */
+.voice-transcribing {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  width: 1.15em;
+  height: 1.1em;
+  margin: 0 2px;
+  vertical-align: text-bottom;
+}
+
+.voice-transcribing i {
+  display: block;
+  height: 2px;
+  border-radius: 1.5px;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: transcribe-breathe 700ms ease-in-out infinite alternate;
+}
+
+.voice-transcribing i:nth-child(1) {
+  width: 100%;
+}
+
+.voice-transcribing i:nth-child(2) {
+  width: 68%;
+}
+
+.voice-transcribing i:nth-child(3) {
+  width: 42%;
+}
+
+@keyframes transcribe-breathe {
+  from {
+    transform: scaleX(0.45);
+  }
+
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* The lines still say the words are coming; they just stop moving to say it. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-transcribing i {
+    animation: none;
+    transform: none;
+  }
 }
 
 .voice-caret {

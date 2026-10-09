@@ -1206,3 +1206,54 @@ describe("dictation", () => {
     expect(container.querySelector(".voice-error")).toBeNull();
   });
 });
+
+describe("the caret while dictating", () => {
+  const upright = (container: HTMLElement) => container.querySelectorAll(".voice-caret i").length;
+  const lying = (container: HTMLElement) =>
+    container.querySelectorAll(".voice-transcribing i").length;
+
+  it("is the ordinary one until something is being dictated", () => {
+    const { container } = renderComposer();
+
+    expect(upright(container)).toBe(0);
+    expect(lying(container)).toBe(0);
+  });
+
+  it("becomes three bars once the microphone is open", () => {
+    const { container } = renderComposer({ voice: fakeVoice({ listening: true }) });
+
+    expect(upright(container)).toBe(3);
+  });
+
+  /// Holding the space bar in an empty composer takes the spaces back, which
+  /// used to bring the placeholder back with the words still to come.
+  it("hides what the composer says when it is empty", () => {
+    const { host } = renderComposer({ voice: fakeVoice({ listening: true }) });
+
+    expect(host).toHaveClass("listening");
+  });
+
+  it("becomes three lines once the words are being worked out", () => {
+    const { container, rerender, props } = renderComposer({
+      voice: fakeVoice({ listening: true }),
+    });
+
+    rerender(<Composer {...props} voice={fakeVoice({ transcribing: true })} />);
+
+    expect(upright(container)).toBe(0);
+    expect(lying(container)).toBe(3);
+  });
+
+  it("goes back to the ordinary one when the words have arrived", () => {
+    const { container, rerender, props } = renderComposer({
+      voice: fakeVoice({ transcribing: true }),
+    });
+
+    rerender(
+      <Composer {...props} voice={fakeVoice({ transcript: { text: "there we are", seq: 1 } })} />,
+    );
+
+    expect(lying(container)).toBe(0);
+    expect(text(container)).toBe("there we are");
+  });
+});

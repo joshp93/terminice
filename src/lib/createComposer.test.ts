@@ -10,6 +10,28 @@ import { HOLD_TO_TALK_MS } from "./voiceHold";
 /** Composers built by the current test, torn down when it ends. */
 const built: { handle: ComposerHandle; parent: HTMLElement }[] = [];
 
+/** How many upright bars the editor is drawing. */
+const bars = (parent: HTMLElement): number => parent.querySelectorAll(".voice-caret i").length;
+
+/** How many lying-down lines the editor is drawing. */
+const lines = (parent: HTMLElement): number =>
+  parent.querySelectorAll(".voice-transcribing i").length;
+
+/** Everything in the line that the shape is standing after. */
+const textBeforeBars = (parent: HTMLElement): string => {
+  const line = parent.querySelector(".cm-line");
+  if (!line) throw new Error("the line did not render");
+  const children = [...line.childNodes];
+  const at = children.findIndex(
+    (node) => node instanceof HTMLElement && node.classList.contains("voice-caret"),
+  );
+  if (at < 0) throw new Error("the bars are not in the line");
+  return children
+    .slice(0, at)
+    .map((node) => node.textContent ?? "")
+    .join("");
+};
+
 afterEach(() => {
   for (const { handle, parent } of built.splice(0)) {
     handle.destroy();
@@ -413,23 +435,6 @@ describe("holding the space bar", () => {
     vi.advanceTimersByTime(HOLD_TO_TALK_MS);
   };
 
-  const bars = (parent: HTMLElement): number => parent.querySelectorAll(".voice-caret i").length;
-
-  /** Everything in the line that the bars are standing after. */
-  const textBeforeBars = (parent: HTMLElement): string => {
-    const line = parent.querySelector(".cm-line");
-    if (!line) throw new Error("the line did not render");
-    const children = [...line.childNodes];
-    const at = children.findIndex(
-      (node) => node instanceof HTMLElement && node.classList.contains("voice-caret"),
-    );
-    if (at < 0) throw new Error("the bars are not in the line");
-    return children
-      .slice(0, at)
-      .map((node) => node.textContent ?? "")
-      .join("");
-  };
-
   const withTimers = (body: () => void): void => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
@@ -500,19 +505,23 @@ describe("holding the space bar", () => {
     });
   });
 
-  it("stands three bars where the caret was", () => {
+  /// The caret is drawn from whether the microphone is really open rather than
+  /// from the editor's idea of it, so a hold the backend refuses leaves nothing
+  /// standing at the caret.
+  it("draws no caret of its own", () => {
     withTimers(() => {
       const composer = makeComposer({ enabled: () => true });
-      expect(bars(composer.parent)).toBe(0);
 
       key(composer.parent, "keydown");
       holdForLongEnough();
 
-      expect(bars(composer.parent)).toBe(3);
+      expect(bars(composer.parent)).toBe(0);
+      expect(lines(composer.parent)).toBe(0);
+      expect(composer.start).toHaveBeenCalledTimes(1);
     });
   });
 
-  it("puts the bars away again when the key is released", () => {
+  it("lets the recording be transcribed when the key is released", () => {
     withTimers(() => {
       const composer = makeComposer({});
       key(composer.parent, "keydown");
@@ -520,7 +529,6 @@ describe("holding the space bar", () => {
 
       key(composer.parent, "keyup");
 
-      expect(bars(composer.parent)).toBe(0);
       expect(composer.end).toHaveBeenCalledTimes(1);
     });
   });
@@ -615,38 +623,86 @@ describe("holding the space bar", () => {
       content.dispatchEvent(new FocusEvent("blur"));
 
       expect(composer.end).toHaveBeenCalledTimes(1);
-      expect(bars(composer.parent)).toBe(0);
     });
   });
 
-  it("puts the bars away when the microphone never opened", () => {
+  /// The path reached when the backend refuses a hold the editor has already
+  /// acted on: the hold is forgotten, and the key release that follows does not
+  /// ask a second time for words that were never recorded.
+  it("ends a recording the microphone never opened, once", () => {
     withTimers(() => {
       const composer = makeComposer({});
       key(composer.parent, "keydown");
       holdForLongEnough();
-      expect(bars(composer.parent)).toBe(3);
 
       composer.handle.cancelVoice();
 
-      expect(bars(composer.parent)).toBe(0);
+      expect(composer.end).toHaveBeenCalledTimes(1);
+
+      key(composer.parent, "keyup");
+
       expect(composer.end).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe("the shape that stands in for the caret", () => {
+  it("is nothing at all to begin with", () => {
+    const composer = makeComposer();
+
+    expect(bars(composer.parent)).toBe(0);
+    expect(lines(composer.parent)).toBe(0);
+  });
+
+  it("is three upright bars while the microphone is open", () => {
+    const composer = makeComposer();
+
+    composer.handle.setVoiceCaret("listening");
+
+    expect(bars(composer.parent)).toBe(3);
+    expect(lines(composer.parent)).toBe(0);
+  });
+
+  it("is three lying-down lines while the words are being worked out", () => {
+    const composer = makeComposer();
+
+    composer.handle.setVoiceCaret("transcribing");
+
+    expect(lines(composer.parent)).toBe(3);
+    expect(bars(composer.parent)).toBe(0);
+  });
+
+  it("swaps one for the other rather than drawing both", () => {
+    const composer = makeComposer();
+    composer.handle.setVoiceCaret("listening");
+
+    composer.handle.setVoiceCaret("transcribing");
+
+    expect(bars(composer.parent)).toBe(0);
+    expect(lines(composer.parent)).toBe(3);
+  });
+
+  it("goes away again when it is told to", () => {
+    const composer = makeComposer();
+    composer.handle.setVoiceCaret("transcribing");
+
+    composer.handle.setVoiceCaret("off");
+
+    expect(lines(composer.parent)).toBe(0);
+    expect(bars(composer.parent)).toBe(0);
   });
 
   /// The bars stand in the line itself rather than floating over it, so where
   /// they sit in the line's children is where the caret is.
-  it("follows the caret while the microphone is open", () => {
-    withTimers(() => {
-      const composer = makeComposer({});
-      composer.handle.setText("one two", true);
-      key(composer.parent, "keydown");
-      holdForLongEnough();
+  it("stands where the caret is, and follows it", () => {
+    const composer = makeComposer();
+    composer.handle.setText("one two", true);
+    composer.handle.setVoiceCaret("listening");
 
-      expect(textBeforeBars(composer.parent)).toBe("one two");
+    expect(textBeforeBars(composer.parent)).toBe("one two");
 
-      composer.caretAt(3);
+    composer.caretAt(3);
 
-      expect(textBeforeBars(composer.parent)).toBe("one");
-    });
+    expect(textBeforeBars(composer.parent)).toBe("one");
   });
 });

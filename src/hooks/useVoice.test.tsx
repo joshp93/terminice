@@ -344,3 +344,87 @@ describe("a download the server gave no size for", () => {
     expect(result.current.downloading).toBe(false);
   });
 });
+
+describe("waiting for the words", () => {
+  it("starts once the microphone has been let go", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.listening).toBe(true));
+
+    act(() => result.current.stop());
+
+    expect(result.current.transcribing).toBe(true);
+    expect(result.current.listening).toBe(false);
+  });
+
+  it("starts from nothing, because nothing has been said yet", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    expect(result.current.transcribing).toBe(false);
+  });
+
+  it("ends when the words arrive", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.listening).toBe(true));
+    act(() => result.current.stop());
+
+    act(() => voiceChannel().emit({ kind: "transcript", text: "words at last" }));
+
+    expect(result.current.transcribing).toBe(false);
+    expect(result.current.transcript?.text).toBe("words at last");
+  });
+
+  /// The engine answers an empty recording with an empty transcript rather than
+  /// with silence, so that answer has to end the wait too — otherwise the
+  /// composer would say it was still working for ever.
+  it("ends when the answer is that nobody spoke", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.listening).toBe(true));
+    act(() => result.current.stop());
+
+    act(() => voiceChannel().emit({ kind: "transcript", text: "" }));
+
+    expect(result.current.transcribing).toBe(false);
+    expect(result.current.transcript).toBeNull();
+  });
+
+  it("ends when the transcription fails", async () => {
+    const { result } = renderHook(() => useVoice(true));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    act(() => result.current.start());
+    await waitFor(() => expect(result.current.listening).toBe(true));
+    act(() => result.current.stop());
+
+    act(() => voiceChannel().emit({ kind: "error", message: "the engine fell over" }));
+
+    expect(result.current.transcribing).toBe(false);
+  });
+
+  /// Every path through the backend answers, so this is only for the one that
+  /// should not exist: a dropped message must not leave the composer claiming to
+  /// be busy for the rest of the session.
+  it("gives up rather than waiting for ever", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const { result } = renderHook(() => useVoice(true));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => result.current.start());
+      act(() => result.current.stop());
+      expect(result.current.transcribing).toBe(true);
+
+      act(() => vi.advanceTimersByTime(60_000));
+
+      expect(result.current.transcribing).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

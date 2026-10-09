@@ -6,7 +6,7 @@
  * does not feel like waiting for something. This is the one dial for that
  * trade-off.
  */
-export const HOLD_TO_TALK_MS = 1000;
+export const HOLD_TO_TALK_MS = 500;
 
 /** A range of the composer's text. */
 export type TextRange = {

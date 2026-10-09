@@ -772,3 +772,23 @@ it with the user rather than quietly changing it.
   covers both of those shapes. It does not stop the model inventing an ordinary word for a
   noise floor; `SPEECH_PEAK` in `resample.rs` is the gate for that, parked rather than wired
   in, and its doc comment says why.
+- **The dictation caret has two shapes, and the recording's state picks which.** Three
+  upright bars while the microphone is open, three lying-down lines while the words are
+  being worked out, and nothing otherwise — one `StateField` holding the mode, deriving its
+  marks on every update so following the caret is not something that has to be remembered.
+  The mode comes from `useVoice` rather than from the editor's own idea of whether it is
+  listening: those are two answers to one question, and a hold the backend refuses would
+  leave a caret behind with the editor's version. The waiting lines are the one part of
+  dictation with nothing to show for it — the microphone is shut, the text has not arrived —
+  and they breathe at paces rolled when they are drawn, so no two waits look alike.
+- **A composer effect that draws on the editor has to be declared after the one that builds
+  it.** React runs effects in the order they are written, so the caret effect sat above the
+  `createComposer` call and ran while `handleRef` was still null: a composer that mounted
+  while a recording was already running drew nothing at all, and never would, because its
+  dependencies had already settled. Found by a test that rendered with `listening` already
+  true; a test that starts from idle and switches would have missed it.
+- **Waiting for words ends on an empty transcript too.** The backend always answers —
+  nothing recorded is an error, an empty recording is an empty transcript — so the wait ends
+  on any answer rather than only on words. The frontend used to drop empty transcripts on
+  the floor without saying anything, which would have left the composer claiming to be busy
+  for the rest of the session. A 20-second guard is there for the answer that never comes.

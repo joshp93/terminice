@@ -42,7 +42,7 @@ describe("holdCleanupRange", () => {
 });
 
 describe("HOLD_TO_TALK_MS", () => {
-  it("gives the reader a second before the microphone opens", () => {
-    expect(HOLD_TO_TALK_MS).toBe(1000);
+  it("gives the reader half a second before the microphone opens", () => {
+    expect(HOLD_TO_TALK_MS).toBe(500);
   });
 });

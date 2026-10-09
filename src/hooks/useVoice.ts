@@ -20,6 +20,13 @@ export type Voice = {
   ready: boolean;
   /** Whether a recording is running. */
   listening: boolean;
+  /**
+   * Whether a finished recording is still being turned into words.
+   *
+   * It is the gap between letting go and the text arriving, which is the one
+   * part of dictation with nothing to show for it.
+   */
+  transcribing: boolean;
   /** Where the model is expected, and whether it is there. */
   status: VoiceStatus | null;
   /** Whether the model is being fetched right now. */
@@ -61,6 +68,7 @@ export type Voice = {
 export function useVoice(enabled: boolean): Voice {
   const [status, setStatus] = useState<VoiceStatus | null>(null);
   const [listening, setListening] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [transcript, setTranscript] = useState<VoiceTranscript | null>(null);
@@ -99,6 +107,10 @@ export function useVoice(enabled: boolean): Voice {
           for (const listener of listenersRef.current) listener(event.level);
           return;
         case "transcript":
+          // The engine always answers, and "nobody spoke" is one of its
+          // answers: an empty one ends the wait without putting anything in the
+          // composer.
+          setTranscribing(false);
           if (event.text.trim().length === 0) return;
           seqRef.current += 1;
           setTranscript({ text: event.text, seq: seqRef.current });
@@ -112,6 +124,7 @@ export function useVoice(enabled: boolean): Voice {
           refresh();
           return;
         default:
+          setTranscribing(false);
           setDownloading(false);
           setDownloadProgress(null);
           fail(event.message);
@@ -139,10 +152,25 @@ export function useVoice(enabled: boolean): Voice {
     if (!listeningRef.current) return;
     listeningRef.current = false;
     setListening(false);
+    setTranscribing(true);
     void stopVoiceRecording().catch((problem: unknown) =>
       fail(`Could not finish transcribing: ${String(problem)}`),
     );
   }, [fail]);
+
+  /**
+   * Gives up waiting for words that are never going to arrive.
+   *
+   * Every path through the backend answers — nothing recorded is an error and
+   * an empty recording is an empty transcript — so this is only for the one
+   * that should not exist. Without it a dropped message would leave the
+   * composer saying it was still working for the rest of the session.
+   */
+  useEffect(() => {
+    if (!transcribing) return;
+    const timer = setTimeout(() => setTranscribing(false), 20_000);
+    return () => clearTimeout(timer);
+  }, [transcribing]);
 
   const download = useCallback(() => {
     if (downloading) return;
@@ -176,6 +204,7 @@ export function useVoice(enabled: boolean): Voice {
   return {
     ready: enabled && status?.modelPresent === true,
     listening,
+    transcribing,
     status,
     downloading,
     downloadProgress,

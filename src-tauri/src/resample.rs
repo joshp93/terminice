@@ -172,7 +172,7 @@ fn peak_of(samples: &[f32]) -> f32 {
 /// their range more of the time. It is the only thing that decides the bars'
 /// sensitivity — the drawing turns whatever comes out of here into a height and
 /// nothing more — so this is the number to turn, not the CSS.
-pub const LEVEL_GAIN: f32 = 15.6;
+pub const LEVEL_GAIN: f32 = 31.2;
 
 /// The loudness of a block of samples, on a scale that suits a level meter.
 ///
@@ -198,7 +198,7 @@ pub fn level_of(samples: &[f32]) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{holds_speech, is_silent, level_of, resample, to_mono, WHISPER_HZ};
+    use super::{holds_speech, is_silent, level_of, resample, to_mono, LEVEL_GAIN, WHISPER_HZ};
 
     #[test]
     fn a_mono_stream_is_already_what_was_wanted() {
@@ -327,11 +327,17 @@ mod tests {
         assert!(faint < 1.0, "a quiet voice pinned the meter at {faint}");
     }
 
+    /// The gain is a tuning dial and its value is nobody's business but the
+    /// reader's; what has to hold is that the meter is the loudness times it,
+    /// and that it stops at the top rather than running past it.
     #[test]
-    fn the_gain_is_what_decides_how_far_the_meter_travels() {
+    fn the_meter_is_the_loudness_times_the_gain() {
+        let level = level_of(&[0.01; 64]);
         assert!(
-            level_of(&[0.01; 64]) > (0.01 * 12.0),
-            "the gain is back to where it was"
+            (level - 0.01 * LEVEL_GAIN).abs() < 1e-5,
+            "a steady 0.01 read {level}, not {}",
+            0.01 * LEVEL_GAIN
         );
+        assert_eq!(level_of(&[1.0; 64]), 1.0);
     }
 }

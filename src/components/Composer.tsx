@@ -729,16 +729,6 @@ export function Composer({
   }, [voice.transcript]);
 
   /**
-   * Takes the bars down when the microphone never opened.
-   *
-   * The editor puts them up the moment it recognises a hold, which is before
-   * the backend has had a chance to refuse; this is how a refusal reaches it.
-   */
-  useEffect(() => {
-    if (!voice.listening) handleRef.current?.cancelVoice();
-  }, [voice.listening]);
-
-  /**
    * Puts the keyboard in the composer from anywhere in the window.
    *
    * Everything else can be reached by tabbing, but the box a message is typed
@@ -782,6 +772,25 @@ export function Composer({
       setStatus(INITIAL_STATUS);
     };
   }, [handleStatusChange, submit]);
+
+  /**
+   * Draws the caret the recording is standing in for, and takes it away again.
+   *
+   * One source of truth for all three states: the microphone is open, its words
+   * are being worked out, or neither. Drawing them from the editor's own idea of
+   * whether it is listening would give one question two answers, and a hold the
+   * backend refused would leave a caret behind.
+   *
+   * Declared after the editor is built, because effects run in the order they
+   * are written and this one has nothing to draw on until there is an editor —
+   * a composer that arrives while a recording is already running would
+   * otherwise never draw anything at all.
+   */
+  useEffect(() => {
+    const mode = voice.listening ? "listening" : voice.transcribing ? "transcribing" : "off";
+    handleRef.current?.setVoiceCaret(mode);
+    if (mode === "off") handleRef.current?.cancelVoice();
+  }, [voice.listening, voice.transcribing]);
 
   return (
     <footer className="composer">
@@ -853,6 +862,7 @@ export function Composer({
               fastMode ? "fast" : "",
               previewing ? "previewing" : "",
               voice.listening ? "listening" : "",
+              voice.transcribing ? "transcribing" : "",
             ]
               .filter(Boolean)
               .join(" ")}

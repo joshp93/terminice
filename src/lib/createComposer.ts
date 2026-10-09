@@ -60,7 +60,7 @@ import {
 } from "./richFormat";
 import { planSelectionToggle } from "./styleEdits";
 import { findUrls, urlAt } from "./urls";
-import { setVoiceCaret, voiceCaret } from "./voiceCaret";
+import { setVoiceCaret, type VoiceCaretMode, voiceCaret } from "./voiceCaret";
 import { holdCleanupRange } from "./voiceHold";
 
 /** Everything the toolbar needs to render the composer's current state. */
@@ -97,10 +97,9 @@ export type ComposerHandle = {
   toggleList: (kind: ListKind) => void;
   toggleQuote: () => void;
   toggleCodeBlock: () => void;
-  /**
-   * Ends dictation with no key release to report it, for when the microphone
-   * could not be opened at all.
-   */
+  /** Draws the dictation caret, or takes it away. */
+  setVoiceCaret: (mode: VoiceCaretMode) => void;
+  /** Ends dictation with no key release to report it. */
   cancelVoice: () => void;
   destroy: () => void;
 };
@@ -692,6 +691,10 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
   /**
    * Opens the microphone, taking back the spaces the hold typed.
    *
+   * The caret is left to whoever is driving the recording: it is the same state
+   * that says whether the microphone is really open, and drawing it from here as
+   * well would give one question two answers.
+   *
    * @param view - The editor.
    */
   const startListening = (view: EditorView): void => {
@@ -708,20 +711,16 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     }
 
     listening = true;
-    view.dispatch({ effects: setVoiceCaret.of(true) });
     report(view);
     options.voice?.onStart();
   };
 
   /**
-   * Puts the bars away and lets the recording be transcribed.
-   *
-   * @param view - The editor.
+   * Lets the recording be transcribed.
    */
-  const stopListening = (view: EditorView): void => {
+  const stopListening = (): void => {
     if (!listening) return;
     listening = false;
-    view.dispatch({ effects: setVoiceCaret.of(false) });
     options.voice?.onEnd();
   };
 
@@ -747,16 +746,16 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       return false;
     },
 
-    keyup: (event, view) => {
+    keyup: (event) => {
       if (event.key !== " ") return false;
-      if (listening) stopListening(view);
+      if (listening) stopListening();
       else clearHold();
       return false;
     },
 
-    blur: (_event, view) => {
+    blur: () => {
       clearHold();
-      stopListening(view);
+      stopListening();
       return false;
     },
   });
@@ -932,9 +931,12 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     toggleList: (kind) => toggleList(view, kind),
     toggleQuote: () => toggleQuote(view),
     toggleCodeBlock: () => toggleCodeBlock(view),
+    setVoiceCaret: (mode) => {
+      view.dispatch({ effects: setVoiceCaret.of(mode) });
+    },
     cancelVoice: () => {
       clearHold();
-      stopListening(view);
+      stopListening();
     },
     destroy: () => view.destroy(),
   };
