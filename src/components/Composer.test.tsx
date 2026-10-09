@@ -3,7 +3,13 @@ import { invoke, routeInvoke } from "@test/tauriMock";
 
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { RunningGroup } from "../lib/runningTools";
@@ -11,7 +17,8 @@ import type { SlashMenuHost } from "../lib/slashMenu";
 import { Composer, type ComposerProps } from "./Composer";
 
 /** The hint the composer is given unless a test is asking about the hint. */
-const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
+const PLACEHOLDER =
+  "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
 
 function supportLayoutMeasurement(): void {
   Element.prototype.scrollIntoView = () => undefined;
@@ -44,7 +51,9 @@ function createMenuHost(overrides: Partial<SlashMenuHost> = {}): SlashMenuHost {
 
 function paste(element: Element, text: string): void {
   const event = new Event("paste", { bubbles: true, cancelable: true });
-  Object.defineProperty(event, "clipboardData", { value: { getData: () => text } });
+  Object.defineProperty(event, "clipboardData", {
+    value: { getData: () => text },
+  });
   fireEvent(element, event);
 }
 
@@ -79,9 +88,11 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
   const view = render(<Composer {...props} />);
 
   const content = view.container.querySelector(".cm-content");
-  if (!(content instanceof HTMLElement)) throw new Error("the composer did not mount");
+  if (!(content instanceof HTMLElement))
+    throw new Error("the composer did not mount");
   const host = view.container.querySelector(".composer-host");
-  if (!(host instanceof HTMLElement)) throw new Error("the composer host is missing");
+  if (!(host instanceof HTMLElement))
+    throw new Error("the composer host is missing");
 
   return {
     onSend,
@@ -101,13 +112,15 @@ function text(container: HTMLElement): string {
   return [...container.querySelectorAll(".cm-line")]
     .map((line) => {
       const copy = line.cloneNode(true) as HTMLElement;
-      for (const placeholder of copy.querySelectorAll(".cm-placeholder")) placeholder.remove();
+      for (const placeholder of copy.querySelectorAll(".cm-placeholder"))
+        placeholder.remove();
       return copy.textContent ?? "";
     })
     .join("\n");
 }
 
-const lineCount = (container: HTMLElement): number => container.querySelectorAll(".cm-line").length;
+const lineCount = (container: HTMLElement): number =>
+  container.querySelectorAll(".cm-line").length;
 
 describe("the ! shell prefix", () => {
   it("runs the line locally instead of sending it to Claude", () => {
@@ -214,7 +227,9 @@ describe("Enter", () => {
   });
 
   it("inserts a newline when the setting says Enter does not send", () => {
-    const { content, container, onSend } = renderComposer({ submitsOnEnter: () => false });
+    const { content, container, onSend } = renderComposer({
+      submitsOnEnter: () => false,
+    });
     paste(content, "one");
 
     fireEvent.keyDown(content, { key: "Enter" });
@@ -300,7 +315,9 @@ describe("the message history kept on disk", () => {
   /** Renders a composer belonging to a session, and lets its load settle. */
   async function renderForSession(session: string) {
     const view = renderComposer({ sessionId: session });
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("load_user_history", { session }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("load_user_history", { session }),
+    );
     await act(async () => undefined);
     return view;
   }
@@ -367,7 +384,9 @@ describe("the message history kept on disk", () => {
     paste(content, "first");
     fireEvent.keyDown(content, { key: "Enter" });
 
-    expect(await screen.findByText(/Could not save your message history/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Could not save your message history/),
+    ).toBeInTheDocument();
     expect(await screen.findByText(/access is denied/)).toBeInTheDocument();
   });
 
@@ -397,13 +416,18 @@ describe("the message history kept on disk", () => {
     });
     renderComposer({ sessionId: SESSION });
 
-    expect(await screen.findByText(/Could not read your message history/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Could not read your message history/),
+    ).toBeInTheDocument();
     expect(await screen.findByText(/no such folder/)).toBeInTheDocument();
   });
 
   it("does not carry one session's messages into the next", async () => {
-    routeHistory((args) => (args.session === SESSION ? ["from the first"] : []));
-    const { content, container, props, rerender } = await renderForSession(SESSION);
+    routeHistory((args) =>
+      args.session === SESSION ? ["from the first"] : [],
+    );
+    const { content, container, props, rerender } =
+      await renderForSession(SESSION);
     fireEvent.keyDown(content, { key: "ArrowUp" });
     expect(text(container)).toBe("from the first");
 
@@ -432,7 +456,8 @@ describe("a menu entry with a submenu", () => {
       live: false,
     },
   ];
-  const withSessions = () => renderComposer({ menu: createMenuHost({ sessions }) });
+  const withSessions = () =>
+    renderComposer({ menu: createMenuHost({ sessions }) });
 
   /** Opens `/resume` from a partly typed command. */
   const openResume = (content: HTMLElement): void => {
@@ -453,8 +478,12 @@ describe("a menu entry with a submenu", () => {
 
     openResume(content);
 
-    expect(screen.getByRole("option", { name: /Fix the parser/ })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /Add the tests/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Fix the parser/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Add the tests/ }),
+    ).toBeInTheDocument();
   });
 
   it("filters those rows by what is typed after the command", () => {
@@ -464,7 +493,9 @@ describe("a menu entry with a submenu", () => {
     paste(content, "tests");
 
     expect(screen.queryByRole("option", { name: /Fix the parser/ })).toBeNull();
-    expect(screen.getByRole("option", { name: /Add the tests/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Add the tests/ }),
+    ).toBeInTheDocument();
   });
 
   it("puts the composer back when the submenu is backed out of", () => {
@@ -474,7 +505,9 @@ describe("a menu entry with a submenu", () => {
     fireEvent.keyDown(content, { key: "Escape" });
 
     expect(text(container)).toBe("/resume");
-    expect(screen.getByRole("option", { name: /^\/resume/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /^\/resume/ }),
+    ).toBeInTheDocument();
   });
 
   it("leaves the composer alone for a row that is not a command", () => {
@@ -493,7 +526,9 @@ describe("a menu entry with a submenu", () => {
     fireEvent.keyDown(content, { key: "Tab" });
 
     expect(text(container)).toBe("/resume ");
-    expect(screen.getByRole("option", { name: /Fix the parser/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /Fix the parser/ }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -566,7 +601,11 @@ describe("F6", () => {
   it("keeps the key to itself rather than letting the window act on it", () => {
     renderComposer();
 
-    const event = new KeyboardEvent("keydown", { key: "F6", bubbles: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", {
+      key: "F6",
+      bubbles: true,
+      cancelable: true,
+    });
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(true);
@@ -575,7 +614,11 @@ describe("F6", () => {
   it("leaves every other key to the composer", () => {
     renderComposer();
 
-    const event = new KeyboardEvent("keydown", { key: "F5", bubbles: true, cancelable: true });
+    const event = new KeyboardEvent("keydown", {
+      key: "F5",
+      bubbles: true,
+      cancelable: true,
+    });
     document.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(false);
@@ -693,7 +736,9 @@ describe("the file menu", () => {
 
     paste(content, "@App");
 
-    await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("src/App.tsx")).toBeInTheDocument(),
+    );
     expect(onSuggestFiles).toHaveBeenCalledWith("App");
   });
 
@@ -721,7 +766,9 @@ describe("the file menu", () => {
     const onSuggestFiles = suggest(["src/App.tsx"]);
     const { content, container, onSend } = renderComposer({ onSuggestFiles });
     paste(content, "@App");
-    await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByText("src/App.tsx")).toBeInTheDocument(),
+    );
 
     fireEvent.keyDown(content, { key: "Enter" });
 
@@ -733,8 +780,11 @@ describe("the file menu", () => {
     const onSuggestFiles = suggest(["src/App.tsx"]);
     const { content, container } = renderComposer({ onSuggestFiles });
     paste(content, "see @App for it");
-    for (let step = 0; step < 7; step += 1) fireEvent.keyDown(content, { key: "ArrowLeft" });
-    await waitFor(() => expect(screen.getByText("src/App.tsx")).toBeInTheDocument());
+    for (let step = 0; step < 7; step += 1)
+      fireEvent.keyDown(content, { key: "ArrowLeft" });
+    await waitFor(() =>
+      expect(screen.getByText("src/App.tsx")).toBeInTheDocument(),
+    );
 
     fireEvent.keyDown(content, { key: "Enter" });
 
@@ -761,15 +811,17 @@ describe("the formatting toolbar", () => {
     fireEvent.keyDown(content, { key: "e", ctrlKey: true });
     fireEvent.keyDown(content, { key: "x", ctrlKey: true, shiftKey: true });
 
-    expect(screen.getByRole("button", { name: "Italic" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Italic" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Inline code" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(screen.getByRole("button", { name: "Strikethrough" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: "Strikethrough" }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("arms a style from its toolbar button", () => {
@@ -777,7 +829,10 @@ describe("the formatting toolbar", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Bold" }));
 
-    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("turns a line into a bulleted list from the toolbar", () => {
@@ -806,7 +861,9 @@ describe("the quote button", () => {
     const { container } = renderComposer();
 
     const buttons = [
-      ...container.querySelectorAll(".format-toolbar .format-button:not(.preview-toggle)"),
+      ...container.querySelectorAll(
+        ".format-toolbar .format-button:not(.preview-toggle)",
+      ),
     ];
 
     expect(buttons.at(-1)).toHaveAccessibleName("Quote");
@@ -854,7 +911,9 @@ describe("the quote button", () => {
   });
 
   it("carries the quote on with Enter when Enter makes new lines", () => {
-    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    const { content, container } = renderComposer({
+      submitsOnEnter: () => false,
+    });
     paste(content, "> quoted");
 
     fireEvent.keyDown(content, { key: "Enter" });
@@ -863,7 +922,9 @@ describe("the quote button", () => {
   });
 
   it("carries a list inside the quote on as a list", () => {
-    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    const { content, container } = renderComposer({
+      submitsOnEnter: () => false,
+    });
     paste(content, "> - item");
 
     fireEvent.keyDown(content, { key: "Enter" });
@@ -872,7 +933,9 @@ describe("the quote button", () => {
   });
 
   it("ends the list on an empty item and keeps the quote going", () => {
-    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    const { content, container } = renderComposer({
+      submitsOnEnter: () => false,
+    });
     paste(content, "> - item\n> - ");
 
     fireEvent.keyDown(content, { key: "Enter" });
@@ -881,7 +944,9 @@ describe("the quote button", () => {
   });
 
   it("lets the quote go when Enter is pressed on an empty quoted line", () => {
-    const { content, container } = renderComposer({ submitsOnEnter: () => false });
+    const { content, container } = renderComposer({
+      submitsOnEnter: () => false,
+    });
     paste(content, "> quoted\n> ");
 
     fireEvent.keyDown(content, { key: "Enter" });
@@ -1016,13 +1081,16 @@ describe("the running tracker", () => {
 });
 
 describe("the Markdown preview", () => {
-  const preview = () => screen.getByRole("button", { name: "Preview markdown" });
-  const backToEdit = () => screen.getByRole("button", { name: "Edit markdown" });
+  const preview = () =>
+    screen.getByRole("button", { name: "Preview markdown" });
+  const backToEdit = () => screen.getByRole("button", { name: "Edit" });
 
   it("sits at the far end of the toolbar, away from the editing buttons", () => {
     const { container } = renderComposer();
 
-    const buttons = [...container.querySelectorAll(".format-toolbar .format-button")];
+    const buttons = [
+      ...container.querySelectorAll(".format-toolbar .format-button"),
+    ];
 
     expect(buttons.at(-1)).toHaveClass("preview-toggle");
   });
@@ -1056,7 +1124,9 @@ describe("the Markdown preview", () => {
 
     await user.click(preview());
 
-    expect(screen.getByText("There is nothing to preview yet.")).toBeInTheDocument();
+    expect(
+      screen.getByText("There is nothing to preview yet."),
+    ).toBeInTheDocument();
   });
 
   it("takes the keyboard as it opens, so Escape has somewhere to land", async () => {
@@ -1076,7 +1146,9 @@ describe("the Markdown preview", () => {
     await user.click(backToEdit());
 
     expect(container.querySelector(".composer-preview")).toBeNull();
-    expect(container.querySelector(".composer-host")).not.toHaveClass("previewing");
+    expect(container.querySelector(".composer-host")).not.toHaveClass(
+      "previewing",
+    );
     expect(container.querySelector(".formatted")).toBeNull();
   });
 
@@ -1088,7 +1160,9 @@ describe("the Markdown preview", () => {
     await user.keyboard("{Escape}");
 
     expect(container.querySelector(".composer-preview")).toBeNull();
-    expect(container.querySelector(".composer-host")).not.toHaveClass("previewing");
+    expect(container.querySelector(".composer-host")).not.toHaveClass(
+      "previewing",
+    );
   });
 
   it("keeps what was typed, and the caret in it, across the round trip", async () => {
@@ -1173,7 +1247,12 @@ describe("dictation", () => {
     const { container, rerender, props } = renderComposer();
     paste(container.querySelector(".cm-content") as Element, "hello ");
 
-    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "world", seq: 1 } })} />);
+    rerender(
+      <Composer
+        {...props}
+        voice={fakeVoice({ transcript: { text: "world", seq: 1 } })}
+      />,
+    );
 
     expect(text(container)).toBe("hello world");
   });
@@ -1191,9 +1270,19 @@ describe("dictation", () => {
 
   it("puts a second thing that is said in after the first", () => {
     const { container, rerender, props } = renderComposer();
-    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "one", seq: 1 } })} />);
+    rerender(
+      <Composer
+        {...props}
+        voice={fakeVoice({ transcript: { text: "one", seq: 1 } })}
+      />,
+    );
 
-    rerender(<Composer {...props} voice={fakeVoice({ transcript: { text: "two", seq: 2 } })} />);
+    rerender(
+      <Composer
+        {...props}
+        voice={fakeVoice({ transcript: { text: "two", seq: 2 } })}
+      />,
+    );
 
     expect(text(container)).toBe("onetwo");
   });
@@ -1201,7 +1290,9 @@ describe("dictation", () => {
   it("says so when dictation fails, in one line under the composer", () => {
     renderComposer({ voice: fakeVoice({ error: "the microphone is muted" }) });
 
-    expect(screen.getByText("the microphone is muted")).toHaveClass("voice-error");
+    expect(screen.getByText("the microphone is muted")).toHaveClass(
+      "voice-error",
+    );
   });
 
   it("says nothing when dictation has nothing to report", () => {
@@ -1212,7 +1303,8 @@ describe("dictation", () => {
 });
 
 describe("the caret while dictating", () => {
-  const upright = (container: HTMLElement) => container.querySelectorAll(".voice-caret i").length;
+  const upright = (container: HTMLElement) =>
+    container.querySelectorAll(".voice-caret i").length;
   const lying = (container: HTMLElement) =>
     container.querySelectorAll(".voice-transcribing i").length;
 
@@ -1224,7 +1316,9 @@ describe("the caret while dictating", () => {
   });
 
   it("becomes three bars once the microphone is open", () => {
-    const { container } = renderComposer({ voice: fakeVoice({ listening: true }) });
+    const { container } = renderComposer({
+      voice: fakeVoice({ listening: true }),
+    });
 
     expect(upright(container)).toBe(3);
   });
@@ -1254,7 +1348,10 @@ describe("the caret while dictating", () => {
     });
 
     rerender(
-      <Composer {...props} voice={fakeVoice({ transcript: { text: "there we are", seq: 1 } })} />,
+      <Composer
+        {...props}
+        voice={fakeVoice({ transcript: { text: "there we are", seq: 1 } })}
+      />,
     );
 
     expect(lying(container)).toBe(0);
