@@ -13,11 +13,15 @@ inputs:
 runs:
   using: composite
   steps:
+    # Three of these exist for crates the stock Tauri list does not cover.
     # cmake and libclang are for whisper-rs, whose build script compiles
-    # whisper.cpp and runs bindgen. rpm is for the .rpm bundle that
-    # `targets: "all"` asks for. The webkit2gtk group is what Tauri links
-    # against on Linux, which means the tests need it every bit as much as the
-    # build does.
+    # whisper.cpp and runs bindgen. libasound2-dev is for cpal, which reaches
+    # for ALSA to open the microphone, and libdbus-1-dev is for tao, which
+    # reaches for D-Bus through libdbus-sys. All of them fail their build
+    # scripts before terminice itself is ever reached. rpm is for the .rpm
+    # bundle that `targets: "all"` asks for. The webkit2gtk group is what Tauri
+    # links against on Linux, which means the tests need it every bit as much
+    # as the build does.
     - name: Install Linux dependencies
       if: runner.os == 'Linux'
       shell: bash
@@ -31,6 +35,8 @@ runs:
           rpm \
           cmake \
           libclang-dev \
+          libasound2-dev \
+          libdbus-1-dev \
           build-essential \
           curl \
           wget \
