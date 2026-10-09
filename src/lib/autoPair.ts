@@ -21,8 +21,6 @@ const OPENERS: Record<string, string> = {
  */
 const CLOSERS = new Set([")", "]", "}", "`", '"']);
 
-const WORD = /[\p{L}\p{N}_]/u;
-
 /** Characters whose pairing Markdown will not accept around whitespace. */
 const TRIMMED = new Set(["*", "_"]);
 
@@ -37,16 +35,32 @@ export function pairNeedsTrim(open: string): boolean {
 }
 
 /**
+ * Whether the caret is sitting against a character rather than against a space.
+ *
+ * @param neighbour - The character on one side of the caret, or an empty string
+ *   at the very start or end of the composer.
+ * @returns True when there is a character there.
+ */
+function againstCharacter(neighbour: string): boolean {
+  return neighbour.length > 0 && !/\s/.test(neighbour);
+}
+
+/**
  * Decides what typing a character should do.
  *
  * A selection is wrapped in the pair. Otherwise the partner is inserted and the
  * caret placed between, or, when the character is already there, the caret
  * steps over it.
  *
- * No pair is opened while the caret sits against a word character, so typing
- * `(` in front of an existing word inserts the bracket alone. Asterisks and
- * underscores go further and only pair mid-word, so starting a bullet with `*`
- * still works.
+ * No pair is opened against a character, on either side. Typing `(` in front of
+ * an existing word inserts the bracket alone, and typing `` ` `` at the end of
+ * one closes a span by hand rather than leaving a second backtick behind. A
+ * partner is only ever added where the caret sits against whitespace or the
+ * edge of the composer, which is where a pair can be seen to be wanted.
+ *
+ * The emphasis characters never bring a partner at all: an asterisk is read as
+ * content rather than as the start of a pair, so `partOfAName` stays as typed
+ * whether it is a bullet, an italic or a literal.
  *
  * @param input - The typed character, its neighbours, and whether text is selected.
  * @returns What to do, or null to insert the character plainly.
@@ -63,8 +77,8 @@ export function planAutoPair(input: {
     const closer = OPENERS[char];
     if (hasSelection) return { kind: "surround", open: char, close: closer };
     if (after === closer) return { kind: "skip", caretOffset: 1 };
-    if (WORD.test(after)) return null;
-    if ((char === "*" || char === "_") && !WORD.test(before)) return null;
+    if (againstCharacter(before) || againstCharacter(after)) return null;
+    if (TRIMMED.has(char)) return null;
     return { kind: "insert", text: char + closer, caretOffset: 1 };
   }
 

@@ -766,6 +766,21 @@ describe("the queued mark", () => {
     expect(queued(apply(waiting, { type: "result" }))).toEqual([false, false]);
   });
 
+  /// A compaction is a turn in its own right: the CLI takes whatever was sent
+  /// while it ran as soon as it finishes, so the label must not outlive it.
+  it("comes off when a compaction ends, because that turn has finished", () => {
+    const compacting: ChatState = {
+      ...withUserMessage(createChatState(), "second", true),
+      busy: true,
+      compacting: true,
+    };
+
+    const state = apply(compacting, { type: "system", subtype: "compact_boundary" });
+
+    expect(queued(state)).toEqual([false]);
+    expect(state.compacting).toBe(false);
+  });
+
   it("survives everything that is not the end of a turn", () => {
     const waiting = withUserMessage(createChatState(), "second", true);
     const streamed = apply(waiting, {

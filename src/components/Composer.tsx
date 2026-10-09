@@ -6,6 +6,7 @@ import { recallStepFor } from "../lib/historyRecall";
 import type { ListKind } from "../lib/listMarkers";
 import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
+import type { RunningGroup } from "../lib/runningTools";
 import {
   buildRootEntries,
   commandNameOf,
@@ -14,11 +15,13 @@ import {
   type SlashMenuHost,
   textAfterCommand,
 } from "../lib/slashMenu";
+import { turnLabel } from "../lib/turnStatus";
 import { loadUserHistory, saveUserHistory } from "../lib/userHistory";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
-import { ProgressBar } from "./ProgressBar";
+import { RunningTracker } from "./RunningTracker";
 import { SlashMenu } from "./SlashMenu";
+import { WorkingIndicator } from "./WorkingIndicator";
 
 /** Props for {@link Composer}. */
 export type ComposerProps = {
@@ -29,10 +32,12 @@ export type ComposerProps = {
   menu: SlashMenuHost;
   /** Whether a turn is running, which shows the stop button. */
   running: boolean;
-  /** Whether the CLI is summarising the conversation. */
-  compacting: boolean;
-  /** Tokens in context before compaction began, when that is known. */
-  contextTokens: number | null;
+  /** Reasoning tokens spent on the running turn, for the status line. */
+  thinkingTokens: number;
+  /** What the session is waiting on, for the tracker below the composer. */
+  trackers: RunningGroup[];
+  /** Jumps the transcript to one of those entries. */
+  onReveal: (id: string) => void;
   onStop: () => void;
   /** Cycles the permission mode; bound to Shift+Tab. */
   onCycleMode: () => void;
@@ -98,11 +103,12 @@ function shellCommandIn(text: string): string | null {
 }
 
 /**
- * Renders the composer, its formatting toolbar and the slash menu.
+ * Renders the strip along the bottom of the window: what the turn is doing,
+ * the formatting toolbar, the composer and the slash menu, and what the
+ * session is still waiting on.
  *
- * Markers left open are closed before the message is sent. Escape clears what
- * has been typed before it stops a running turn, so a stray keypress cannot
- * cancel work by accident.
+ * Escape clears what has been typed before it stops a running turn, so a stray
+ * keypress cannot cancel work by accident.
  *
  * @param props - The send behaviour, the menu host, and the turn controls.
  * @returns The rendered composer.
@@ -112,8 +118,9 @@ export function Composer({
   onSend,
   menu,
   running,
-  compacting,
-  contextTokens,
+  thinkingTokens,
+  trackers,
+  onReveal,
   onStop,
   onCycleMode,
   onRunShell,
@@ -679,6 +686,7 @@ export function Composer({
 
   return (
     <footer className="composer">
+      {running && <WorkingIndicator label={turnLabel(thinkingTokens)} />}
       <FormatToolbar
         status={status}
         onToggleFormat={toggleFormat}
@@ -713,15 +721,6 @@ export function Composer({
           </span>
         )}
         <div className="composer-field">
-          {compacting && (
-            <ProgressBar
-              label={
-                contextTokens === null
-                  ? "Compacting…"
-                  : `Compacting ${contextTokens.toLocaleString()} tokens…`
-              }
-            />
-          )}
           {showSuggestion && suggestion !== null && (
             <div className="suggestion-chip">
               <button type="button" className="suggestion-text" onClick={acceptSuggestion}>
@@ -771,6 +770,7 @@ export function Composer({
           Send
         </button>
       </div>
+      <RunningTracker groups={trackers} onReveal={onReveal} />
       {historyError !== null && (
         // Kept to one line: it reports something the reader can do nothing
         // about, so it must not be allowed to push the composer around.

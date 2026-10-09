@@ -143,6 +143,40 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  /// The tracker and the transcript are two halves of one workspace, so this
+  /// covers the wiring that joins them rather than either half on its own.
+  it("jumps from a running shell in the tracker to its card in the transcript", async () => {
+    render(<App />);
+
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+    sessionChannel<ClaudeEvent>().emit({
+      kind: "line",
+      line: JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "pnpm test" } },
+          ],
+        },
+      }),
+    });
+
+    const tool = await screen.findByRole("button", { name: /^Bash/ });
+    expect(tool).toHaveAttribute("aria-expanded", "false");
+
+    await userEvent.click(screen.getByRole("button", { name: "1 shell running" }));
+
+    expect(screen.getByRole("button", { name: /^Bash/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("offers no tracker at all while the session is idle", async () => {
+    render(<App />);
+
+    await screen.findByText("CLAUDE");
+
+    expect(screen.queryByText(/running$/)).toBeNull();
+  });
+
   it("saves a theme change made from the header", async () => {
     const saved: Settings[] = [];
     routeInvoke("save_settings", (args) => {

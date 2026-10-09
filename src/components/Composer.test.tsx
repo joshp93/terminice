@@ -3,7 +3,9 @@ import { invoke, routeInvoke } from "@test/tauriMock";
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { RunningGroup } from "../lib/runningTools";
 import type { SlashMenuHost } from "../lib/slashMenu";
 import { Composer, type ComposerProps } from "./Composer";
 
@@ -53,8 +55,8 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     submitsOnEnter: () => true,
     menu: createMenuHost(),
     running: false,
-    compacting: false,
-    contextTokens: null,
+    thinkingTokens: 0,
+    trackers: [],
     suggestion: null,
     fastMode: false,
     fastModeTitle: "",
@@ -62,6 +64,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     onSend,
     onRunShell,
     onCycleMode,
+    onReveal: vi.fn(),
     onStop,
     onSuggestFiles,
     ...overrides,
@@ -904,5 +907,102 @@ describe("the Send button", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(onSend).not.toHaveBeenCalled();
+  });
+});
+
+describe("the status above the composer", () => {
+  it("says the turn is working while one is running", () => {
+    renderComposer({ running: true });
+
+    expect(screen.getByText("Working…")).toBeInTheDocument();
+  });
+
+  it("counts the reasoning tokens as they are spent", () => {
+    renderComposer({ running: true, thinkingTokens: 2400 });
+
+    expect(screen.getByText("Thinking… 2,400 tokens")).toBeInTheDocument();
+  });
+
+  it("says nothing once the turn has ended", () => {
+    renderComposer();
+
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
+  /// The whole point of the second indicator is that it can be seen without
+  /// scrolling to the end of the transcript, so it has to be inside the strip
+  /// that never scrolls, and above the controls rather than below them.
+  it("stands above the format buttons and the composer itself", () => {
+    const { container } = renderComposer({ running: true });
+    const footer = container.querySelector(".composer");
+    const order = [...(footer?.children ?? [])].map((child) => child.className);
+
+    expect(order[0]).toContain("working");
+    expect(order[1]).toContain("format-toolbar");
+    expect(order[2]).toContain("composer-row");
+  });
+
+  it("keeps the turn's spinner turning, which the transcript does not show", () => {
+    const { container } = renderComposer({ running: true });
+    expect(container.querySelector(".working-mark")).not.toBeNull();
+  });
+});
+
+describe("the running tracker", () => {
+  const agents: RunningGroup = {
+    kind: "agent",
+    label: "2 agents running",
+    items: [
+      { id: "a1", label: "Agent one" },
+      { id: "a2", label: "Agent two" },
+    ],
+  };
+
+  it("sits below the composer row", () => {
+    const { container } = renderComposer({ trackers: [agents] });
+    const footer = container.querySelector(".composer");
+    const order = [...(footer?.children ?? [])].map((child) => child.className);
+
+    expect(order.at(-1)).toContain("trackers");
+  });
+
+  it("counts what is running", () => {
+    renderComposer({ trackers: [agents] });
+    expect(screen.getByText("2 agents running")).toBeInTheDocument();
+  });
+
+  it("shows nothing while the session is idle", () => {
+    const { container } = renderComposer();
+    expect(container.querySelector(".trackers")).toBeNull();
+  });
+
+  it("asks for the entry that was picked", async () => {
+    const user = userEvent.setup();
+    const onReveal = vi.fn();
+    renderComposer({ trackers: [agents], onReveal });
+
+    await user.click(screen.getByRole("button", { name: /2 agents running/ }));
+    await user.click(screen.getByRole("button", { name: "Agent two" }));
+
+    expect(onReveal).toHaveBeenCalledWith("a2");
+  });
+
+  it("goes straight to a group that has only one thing in it", async () => {
+    const user = userEvent.setup();
+    const onReveal = vi.fn();
+    renderComposer({
+      trackers: [
+        {
+          kind: "shell",
+          label: "1 shell running",
+          items: [{ id: "s1", label: "Bash · pnpm test" }],
+        },
+      ],
+      onReveal,
+    });
+
+    await user.click(screen.getByRole("button", { name: /1 shell running/ }));
+
+    expect(onReveal).toHaveBeenCalledWith("s1");
   });
 });

@@ -50,31 +50,53 @@ describe("planAutoPair insertion", () => {
     expect(plan("`", "x", "`")).toEqual({ kind: "skip", caretOffset: 1 });
   });
 
-  it("pairs an asterisk typed after a word", () => {
-    expect(plan("*", "a", " ")).toEqual({ kind: "insert", text: "**", caretOffset: 1 });
-  });
-
-  it("pairs an underscore typed after a word", () => {
-    expect(plan("_", "a", " ")).toEqual({ kind: "insert", text: "__", caretOffset: 1 });
+  it("pairs against whitespace, where a pair can be seen to be wanted", () => {
+    expect(plan("(", " ", "")).toEqual({ kind: "insert", text: "()", caretOffset: 1 });
+    expect(plan("`", " ", "")).toEqual({ kind: "insert", text: "``", caretOffset: 1 });
   });
 });
 
 describe("planAutoPair refusal", () => {
-  it("leaves the character alone when a word follows it", () => {
+  it("leaves the character alone when a character follows it", () => {
     expect(plan("(", "", "a")).toBeNull();
     expect(plan("`", "", "z")).toBeNull();
+    expect(plan("(", "", ",")).toBeNull();
   });
 
-  it("does not open emphasis against whitespace, so a bullet still starts", () => {
+  it("leaves the character alone when a character precedes it", () => {
+    expect(plan("(", "d", "")).toBeNull();
+    expect(plan("[", "e", "")).toBeNull();
+    expect(plan("{", "}", "")).toBeNull();
+    expect(plan('"', "x", "")).toBeNull();
+  });
+
+  /// Closing a span by hand means typing the character that closes it, so the
+  /// second backtick of `` `code` `` must not bring one of its own.
+  it("does not double up a character typed at the end of a word", () => {
+    expect(plan("`", "d", "")).toBeNull();
+  });
+
+  it("leaves a character alone between two characters", () => {
+    expect(plan("(", "a", "b")).toBeNull();
+  });
+
+  it("never pairs the emphasis characters, so a bullet still starts", () => {
     expect(plan("*", "", "")).toBeNull();
     expect(plan("*", "\n", "")).toBeNull();
     expect(plan("_", "", "")).toBeNull();
     expect(plan("_", " ", "")).toBeNull();
   });
 
-  it("treats a digit before the caret as a word character", () => {
-    expect(plan("*", "1", "")).toEqual({ kind: "insert", text: "**", caretOffset: 1 });
-    expect(plan("_", "1", "")).toEqual({ kind: "insert", text: "__", caretOffset: 1 });
+  it("leaves an emphasis character alone at the end of a word", () => {
+    expect(plan("*", "e", "")).toBeNull();
+    expect(plan("_", "e", "")).toBeNull();
+    expect(plan("*", "1", "")).toBeNull();
+    expect(plan("_", "1", "")).toBeNull();
+  });
+
+  it("leaves an emphasis character alone in the middle of a word", () => {
+    expect(plan("*", "a", "b")).toBeNull();
+    expect(plan("_", "a", "b")).toBeNull();
   });
 
   it("returns null for a character that starts no pair", () => {

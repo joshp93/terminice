@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ChatEntry, type ChatState, createChatState } from "../types";
@@ -7,6 +7,8 @@ import { ChatPane } from "./ChatPane";
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
+
+const userEntry = (id: string): ChatEntry => ({ id, role: "user", text: `said ${id}` });
 
 const toolEntry = (id: string, name: string): ChatEntry => ({
   id,
@@ -127,9 +129,143 @@ describe("ChatPane", () => {
     expect(screen.queryByText("Working…")).toBeNull();
   });
 
-  it("leaves the compaction bar to the composer rather than the transcript", () => {
+  it("shows the compaction bar in the transcript while a compaction runs", () => {
     render(<ChatPane state={stateWith({ compacting: true, busy: true })} />);
+    expect(screen.getByRole("progressbar")).toHaveAccessibleName("Compacting…");
+  });
+
+  it("names the size being summarised when the context reading is known", () => {
+    render(
+      <ChatPane
+        state={stateWith({
+          compacting: true,
+          busy: true,
+          contextUsage: {
+            categories: [],
+            totalTokens: 24000,
+            maxTokens: 200000,
+            percentage: 12,
+            model: "claude-sonnet-5-5",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByRole("progressbar")).toHaveAccessibleName("Compacting 24,000 tokens…");
+  });
+
+  it("stands the compaction bar where the summary will be written", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: [userEntry("u1")], compacting: true, busy: true })} />,
+    );
+    const rows = Array.from(container.querySelectorAll(".transcript-row, .progress"));
+    expect(rows.map((row) => row.className)).toEqual(["transcript-row", "progress"]);
+  });
+
+  it("shows the working indicator rather than the bar once the compaction is over", () => {
+    render(<ChatPane state={stateWith({ busy: true })} />);
     expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.getByText("Working…")).toBeInTheDocument();
+  });
+});
+
+describe("jumping to an entry", () => {
+  const rowFor = (container: HTMLElement, id: string): HTMLElement => {
+    const row = container.querySelector(`.transcript-row[data-entry-id="${id}"]`);
+    if (!(row instanceof HTMLElement)) throw new Error(`no row for ${id}`);
+    return row;
+  };
+
+  const reveal = (id: string, seq = 1) => ({ id, seq });
+
+  it("opens the card it was asked for", () => {
+    render(
+      <ChatPane state={stateWith({ entries: [toolEntry("t1", "Bash")] })} reveal={reveal("t1")} />,
+    );
+    expect(summaryFor("Bash")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("brings it to the middle of the pane", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: [toolEntry("t1", "Bash")] })} reveal={reveal("t1")} />,
+    );
+
+    expect(scroll).toHaveBeenCalledWith({ block: "center" });
+    expect(scroll.mock.instances[0]).toBe(rowFor(container, "t1"));
+  });
+
+  it("lights it up", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: [toolEntry("t1", "Bash")] })} reveal={reveal("t1")} />,
+    );
+    expect(rowFor(container, "t1")).toHaveClass("flash");
+  });
+
+  it("stops lighting it once the flash has been seen", () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(
+        <ChatPane
+          state={stateWith({ entries: [toolEntry("t1", "Bash")] })}
+          reveal={reveal("t1")}
+        />,
+      );
+      expect(rowFor(container, "t1")).toHaveClass("flash");
+
+      act(() => vi.advanceTimersByTime(5000));
+
+      expect(rowFor(container, "t1")).not.toHaveClass("flash");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves every other row alone", () => {
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: [toolEntry("t1", "Bash"), toolEntry("t2", "Read")] })}
+        reveal={reveal("t1")}
+      />,
+    );
+    expect(rowFor(container, "t2")).not.toHaveClass("flash");
+    expect(summaryFor("Read")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opens a shell card too", () => {
+    const shell: ChatEntry = {
+      id: "s1",
+      role: "shell",
+      command: "ls",
+      stdout: "a\nb\nc\nd\ne",
+      stderr: "",
+      code: 0,
+      running: false,
+    };
+    render(<ChatPane state={stateWith({ entries: [shell] })} reveal={reveal("s1")} />);
+
+    expect(screen.getByRole("button", { name: /^!ls/ })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("asks again for the same entry when the request is repeated", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(
+      <ChatPane
+        state={stateWith({ entries: [toolEntry("t1", "Bash")] })}
+        reveal={reveal("t1", 1)}
+      />,
+    );
+    scroll.mockClear();
+
+    rerender(
+      <ChatPane
+        state={stateWith({ entries: [toolEntry("t1", "Bash")] })}
+        reveal={reveal("t1", 2)}
+      />,
+    );
+
+    expect(scroll).toHaveBeenCalledWith({ block: "center" });
   });
 });
 
@@ -239,8 +375,6 @@ describe("following the newest content", () => {
 
   const atTheBottom = (element: HTMLElement): void =>
     reportScroll(element, { top: 600, height: 1000, viewport: 400 });
-
-  const userEntry = (id: string): ChatEntry => ({ id, role: "user", text: `said ${id}` });
 
   afterEach(() => {
     vi.restoreAllMocks();

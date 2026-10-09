@@ -16,7 +16,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { Tree } from "@lezer/common";
+import type { SyntaxNodeRef, Tree } from "@lezer/common";
 import { pairNeedsTrim, planAutoPair } from "./autoPair";
 import {
   INDENT_UNIT,
@@ -175,6 +175,69 @@ const urlMarks = ViewPlugin.fromClass(
 
     update(update: ViewUpdate) {
       if (update.docChanged) this.decorations = urlDecorations(update.view);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+/** Marks the text of a code span or a code block, but not its markers. */
+const codeMark = Decoration.mark({ class: "cm-code" });
+
+/**
+ * Finds the code inside one inline span.
+ *
+ * A span keeps its body as plain text between two `CodeMark` children rather
+ * than as a node of its own, so the markers are what say where the code starts
+ * and stops.
+ *
+ * @param node - The span's node, and the offsets it covers.
+ * @returns The body's range, or null when the span holds nothing.
+ */
+function spanBody(node: SyntaxNodeRef): { from: number; to: number } | null {
+  const marks = node.node.getChildren("CodeMark");
+  const from = marks.length > 0 ? marks[0].to : node.from;
+  const to = marks.length > 0 ? marks[marks.length - 1].from : node.to;
+  return to > from ? { from, to } : null;
+}
+
+/**
+ * Marks the body of every code span and code block.
+ *
+ * The composer is drawn in a monospace family to begin with, so code has
+ * nothing to set it apart from the prose around it; the tint is what makes it
+ * visible as code while it is being written. Only the body is marked, so the
+ * backticks and the fence keep the dim look of every other marker.
+ *
+ * @param view - The editor to inspect.
+ * @returns A decoration over each piece of code in the document.
+ */
+function codeDecorations(view: EditorView): DecorationSet {
+  const ranges: Range<Decoration>[] = [];
+  const tree = ensureSyntaxTree(view.state, view.state.doc.length, 200) ?? syntaxTree(view.state);
+  tree.iterate({
+    enter: (node) => {
+      if (node.name === "CodeText") {
+        ranges.push(codeMark.range(node.from, node.to));
+        return;
+      }
+      if (node.name !== "InlineCode") return;
+      const body = spanBody(node);
+      if (body) ranges.push(codeMark.range(body.from, body.to));
+    },
+  });
+  return Decoration.set(ranges);
+}
+
+const codeTint = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = codeDecorations(view);
+    }
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = codeDecorations(update.view);
     }
   },
   { decorations: (plugin) => plugin.decorations },
@@ -692,6 +755,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         trackStatus,
         shellPrefix,
         urlMarks,
+        codeTint,
         openLink,
         keymap.of([...defaultKeymap, ...historyKeymap]),
         editorTheme,

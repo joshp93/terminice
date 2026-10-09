@@ -560,6 +560,10 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
  * The CLI reports this as a boundary carrying token counts rather than as a
  * series of progress steps, so this is where the only real figures come from —
  * and it is what the bar is waiting on to disappear.
+ *
+ * A compaction is a turn of its own, so it is also where anything sent while it
+ * ran stops being queued: the CLI takes those messages next, and a message that
+ * is being answered must not still be labelled as waiting.
  */
 function applyCompactBoundary(state: ChatState, message: Json): ChatState {
   const metadata = asRecord(message.compact_metadata);
@@ -572,7 +576,7 @@ function applyCompactBoundary(state: ChatState, message: Json): ChatState {
     busy: false,
     compacting: false,
     entries: [
-      ...state.entries,
+      ...withSettledQueue(state.entries),
       {
         id: nextId("notice"),
         role: "notice",
@@ -679,6 +683,10 @@ function applyResultEvent(state: ChatState, message: Json, interrupted: boolean)
 
 /**
  * Takes the queued mark off every message waiting to be picked up.
+ *
+ * Called wherever a turn ends, whether that is an ordinary turn or a
+ * compaction, because that is what tells the CLI to take what was sent while it
+ * was busy.
  *
  * @param entries - The transcript entries.
  * @returns The entries, with nothing left marked as queued.

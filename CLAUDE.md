@@ -610,3 +610,57 @@ it with the user rather than quietly changing it.
   a text box the first Escape belongs to the box and only blurs it; the card closes on the
   next one. The pane's own Escape is swallowed there, so do not move the card's handler
   ahead of it.
+- **A pair is never opened against a character.** `planAutoPair` refuses on either side, so
+  `foo` + `(` inserts the bracket alone and `partOfAName` + `` ` `` closes a span by hand
+  instead of leaving a second backtick behind. The old rule only looked at the character
+  *after* the caret and was word-character based; `againstCharacter` is what the whole
+  function is built on now, and it is what stops the doubled characters. The emphasis
+  characters go further and never bring a partner at all — an asterisk is content, whether
+  it starts a bullet or sits in the middle of a word — while still wrapping a selection and
+  still stepping over one that is already there. Order matters in that function: the step
+  over an existing partner is checked before the refusals, or `*|*` would stop closing.
+- **The composer tints code; the transcript does not.** Both draw code in the monospace
+  stack, so in the composer there was nothing at all to tell a code span from the prose
+  around it. `codeTint` in `createComposer.ts` marks it with `.cm-code`. An inline span's
+  body is *bare text between two `CodeMark` children* — there is no `CodeText` node inside
+  `InlineCode`, whatever the highlight tags in `@codemirror/lang-markdown` suggest — so
+  `spanBody` reads the markers to find the body and everything else uses `CodeText`.
+  Verified by dumping a real tree; do not "simplify" it back to a single node name.
+- **A queued mark comes off when the turn it was waiting for ends, and a compaction is a
+  turn.** `applyResultEvent` was the only place clearing it, which left a message sent
+  during `/compact` labelled "Queued" long after the CLI had taken it. `applyCompactBoundary`
+  now clears it too, through the same `withSettledQueue`. There is still no per-message
+  acknowledgement to read; these two turn ends are the whole of the signal.
+- **The turn's status is shown twice, on purpose.** `turnLabel` names what the running turn
+  is doing, and it appears both at the end of the transcript and at the top of the bottom
+  bar, so the answer to "is it still working?" does not require scrolling. The transcript's
+  copy stands down while text is streaming, because the text is its own progress; the
+  bottom bar's does not, because a bar that vanished whenever the agent was talking would
+  be missing exactly when the reader looks at it. Both read the label from the same
+  function, so the token count cannot drift apart between them.
+- **The compaction bar belongs to the transcript.** It stands where the summary it is
+  producing will be written, which is what makes a compaction read as a step of the
+  conversation rather than as a state the composer is in; when the boundary arrives the bar
+  is replaced by the `Compacted: …` notice in the same place. Messages sent while it runs
+  are queued behind it exactly as they are behind any other turn.
+- **What is running is tracked below the composer, not inside it.** `runningGroups` groups
+  the top level of the transcript into agents, shells and other tools, and a tool that runs
+  a shell (`Bash`, `BashOutput`, `KillShell`) is counted as a shell, because that is what
+  the reader is waiting for. Only the top level: a subagent's own calls are inside it, and
+  the agent is the thing that is running. A chip with one thing behind it goes straight
+  there; a chip with several opens a list, because a menu offering a single choice is a
+  click for nothing.
+- **A jump is an event, not a state, and the transcript owns what it does.** `App` routes
+  the tracker's click into a `RevealTarget` — an id plus a count, because setting the same
+  id twice would change nothing — and the pane opens that entry's card, scrolls it to the
+  middle and lights it for a moment. Rows carry `data-entry-id` rather than a map of element
+  references, since a subagent's entries are rendered inside its card and never become rows.
+  The pane does *not* clear `following` when it jumps: the scroll it causes fires the same
+  `onScroll` everything else uses, which is what keeps a jump to the newest entry from
+  stopping the following and a jump to an old one from pretending to be at the bottom.
+- **Sending a message goes to the end at once, not on the next frame.** The follow effect
+  coalesces a turn's thousands of scrolls into one, and deliberately reads `followingRef`
+  inside the frame callback so that a message sent in the same commit still counts. The
+  direct scroll on send is separate from that and stays: it is the one case where the reader
+  has just said what they want to watch, so there is no reason to make them wait a frame to
+  see it.

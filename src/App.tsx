@@ -1,12 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChatPane } from "./components/ChatPane";
+import { ChatPane, type RevealTarget } from "./components/ChatPane";
 import { Composer } from "./components/Composer";
 import { DialogCard } from "./components/DialogCard";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
 import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
 import { monoFontStack, uiFontStack } from "./lib/fonts";
+import { runningGroups } from "./lib/runningTools";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { SlashMenuHost } from "./lib/slashMenu";
 import { createDefaultSettings, type Settings } from "./types";
@@ -44,6 +45,19 @@ export function App() {
   ]);
 
   const chat = useClaudeChat(cwd);
+  const [reveal, setReveal] = useState<RevealTarget | null>(null);
+
+  /**
+   * Asks the transcript to bring one entry into view.
+   *
+   * The count is what makes a second request for the same entry a second
+   * request, rather than a state that was already set and so changes nothing.
+   */
+  const revealEntry = useCallback((id: string) => {
+    setReveal((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
+  }, []);
+
+  const trackers = useMemo(() => runningGroups(chat.state), [chat.state]);
 
   const updateSettings = useCallback((next: Settings) => {
     setSettings(next);
@@ -128,7 +142,7 @@ export function App() {
         </div>
       </header>
       <main className="workspace">
-        <ChatPane state={chat.state} />
+        <ChatPane state={chat.state} reveal={reveal} />
       </main>
       <div
         className={chat.prompt ? "composer-slot hidden" : "composer-slot"}
@@ -139,8 +153,9 @@ export function App() {
           onSend={chat.send}
           menu={menu}
           running={chat.state.busy}
-          compacting={chat.state.compacting}
-          contextTokens={chat.state.contextUsage?.totalTokens ?? null}
+          thinkingTokens={chat.state.thinkingTokens}
+          trackers={trackers}
+          onReveal={revealEntry}
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}
           onRunShell={chat.runShell}

@@ -52,6 +52,7 @@ export const TranscriptItem = memo(function TranscriptItem({ entry }: Transcript
     case "shell":
       return (
         <ShellCard
+          id={entry.id}
           command={entry.command}
           stdout={entry.stdout}
           stderr={entry.stderr}

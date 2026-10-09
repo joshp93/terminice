@@ -195,6 +195,40 @@ describe("pressing a style with the caret inside that style", () => {
   });
 });
 
+describe("the code tint", () => {
+  /** The text the editor has marked as code, in document order. */
+  const tinted = (parent: HTMLElement): string[] =>
+    [...parent.querySelectorAll(".cm-code")].map((node) => node.textContent ?? "");
+
+  it("marks the body of a code span, and not its backticks", () => {
+    const composer = makeComposer();
+    composer.handle.setText("run `pnpm test` now");
+
+    expect(tinted(composer.parent)).toEqual(["pnpm test"]);
+  });
+
+  it("marks the body of a fenced block, and not its fence", () => {
+    const composer = makeComposer();
+    composer.handle.setText("```ts\nconst a = 1;\n```");
+
+    expect(tinted(composer.parent)).toEqual(["const a = 1;"]);
+  });
+
+  it("marks an indented block as well", () => {
+    const composer = makeComposer();
+    composer.handle.setText("text\n\n    indented code\n");
+
+    expect(tinted(composer.parent)).toEqual(["indented code"]);
+  });
+
+  it("leaves prose alone", () => {
+    const composer = makeComposer();
+    composer.handle.setText("nothing here is code");
+
+    expect(tinted(composer.parent)).toEqual([]);
+  });
+});
+
 describe("the quote shortcut", () => {
   /** Presses Ctrl+`>` on the editor, as the keymap sees it. */
   const press = (parent: HTMLElement): void => {
