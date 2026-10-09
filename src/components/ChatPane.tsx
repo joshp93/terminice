@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { compactLabel, turnLabel } from "../lib/turnStatus";
+import { type UserMessagePlacement, userMessageStep } from "../lib/userMessageStep";
 import type { ChatState } from "../types";
 import { EmptyChat } from "./EmptyChat";
 import { type Expansion, ExpansionProvider } from "./ExpansionContext";
@@ -77,6 +78,9 @@ const FOLLOW_THRESHOLD_PX = 32;
  * this moment is a line of the transcript; what the session is waiting on is
  * the tracker below the composer, and the two are deliberately not the same
  * thing.
+ *
+ * Ctrl and an arrow walks the keyboard through the user's own messages, which
+ * is the one thing in a long transcript that is hard to find by scrolling.
  *
  * @param props - The chat state, and the entry the tracker has asked to see.
  * @returns The rendered chat pane.
@@ -157,24 +161,74 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [setFollowingNow]);
 
-  // A reveal is a deliberate move to one entry, so it opens that entry's card,
-  // brings it to the middle of the pane and lights it. Whether the pane goes on
-  // following the end afterwards is left to the scroll that this causes, which
-  // is what keeps a jump to the newest entry from stopping the following. The
-  // open default is read through a ref, so that expanding everything does not
-  // count as a request to see the entry the tracker last asked for.
-  useEffect(() => {
-    if (!reveal) return;
+  /**
+   * Brings one entry to the middle of the pane and lights it.
+   *
+   * A reveal is a deliberate move to an entry, so it opens that entry's card as
+   * well. Whether the pane goes on following the end afterwards is left to the
+   * scroll this causes, which is what keeps a jump to the newest entry from
+   * stopping the following. The open default is read through a ref, so that
+   * expanding everything does not count as a request to see anything.
+   *
+   * @param id - The entry to show.
+   */
+  const revealNow = useCallback((id: string) => {
     const open = defaultOpenRef.current;
     setExceptions((current) => {
       const next = new Set(current);
-      if (open) next.delete(reveal.id);
-      else next.add(reveal.id);
+      if (open) next.delete(id);
+      else next.add(id);
       return next;
     });
-    setFlash(reveal);
-    rowFor(scrollerRef.current, reveal.id)?.scrollIntoView({ block: "center" });
-  }, [reveal]);
+    setFlash((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
+    rowFor(scrollerRef.current, id)?.scrollIntoView({ block: "center" });
+  }, []);
+
+  useEffect(() => {
+    if (reveal) revealNow(reveal.id);
+  }, [reveal, revealNow]);
+
+  /** Where each of the user's messages sits relative to the visible transcript. */
+  const userPlacements = useCallback((): UserMessagePlacement[] => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return [];
+    const viewport = scroller.getBoundingClientRect();
+    return state.entries.flatMap((entry) => {
+      if (entry.role !== "user") return [];
+      const row = rowFor(scroller, entry.id);
+      if (!row) return [];
+      const rect = row.getBoundingClientRect();
+      return [{ id: entry.id, top: rect.top - viewport.top, bottom: rect.bottom - viewport.top }];
+    });
+  }, [state.entries]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      const direction = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+      if (direction === 0) return;
+
+      const scroller = scrollerRef.current;
+      if (!scroller) return;
+      const id = userMessageStep({
+        placements: userPlacements(),
+        viewportHeight: scroller.clientHeight,
+        direction,
+      });
+      if (id === null) return;
+
+      // Taken before the composer sees it: a bare arrow belongs to whatever has
+      // the keyboard, but this one is a move through the transcript from
+      // anywhere in the window, and the composer has its own uses for the arrow
+      // keys that this must not also trip.
+      event.preventDefault();
+      event.stopPropagation();
+      revealNow(id);
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [userPlacements, revealNow]);
 
   useEffect(() => {
     if (flash === null) return;

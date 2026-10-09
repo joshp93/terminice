@@ -164,6 +164,10 @@ push-to-talk, though it will not separate speech from keyboard clatter or music.
 
 **`cpal` for capture, `sherpa-onnx` for recognition, behind a trait.**
 
+> **Superseded in part — see §9.** Asked on 2026-10-09 whether it has to work offline
+> answered "no", with hold-to-talk and no third party. That drops one of the five criteria
+> below and removes the streaming requirement, which is enough to change the engine.
+
 It is the only option that is simultaneously offline, cross-platform, natively streaming,
 permissively licensed, and actively maintained — and its maintainers ship a
 streaming-microphone example built on `cpal`, which removes most of the integration risk.
@@ -263,3 +267,113 @@ Suggested shape, mirroring how `claude.rs` is organised:
 - The `voice_activity_detector` licence text.
 
 Each of these is a single test, not a blocker.
+
+---
+
+## 9. Revisited 2026-10-09 — what changes if it need not work offline
+
+Three constraints were relaxed, and one was added:
+
+| | Before | Now |
+|---|---|---|
+| Works with no network | Required | **Not required** — online is fine |
+| Nothing leaves the machine | Preferred (privacy) | **Required** — no third party, explicitly |
+| Live partial transcript | Open question | **Not required** — hold-to-talk only |
+| Binary size | Tuned for it (`opt-level = "s"`, `strip`) | Several MB is fine |
+
+**"Online only" and "no third party" together still mean local inference.** They are not in
+conflict, but they are easy to conflate: relaxing "offline" does not open the door to a
+cloud recogniser, because a cloud recogniser *is* the third party. It does mean the model
+can be fetched on first use rather than bundled, and that the feature may be unavailable
+without a network as long as it says so.
+
+### What that does to the five criteria
+
+§5 chose sherpa-onnx because it was the only engine that was *simultaneously* offline,
+cross-platform, natively streaming, permissively licensed and actively maintained. Two of
+those five no longer bind:
+
+- **Offline** — dropped. Whisper, sherpa-onnx and Vosk are all local anyway, so this
+  criterion was doing no work beyond excluding cloud, which "no third party" excludes
+  harder.
+- **Natively streaming** — dropped, and this is the one that matters. Streaming was the
+  whole reason to prefer a streaming engine: it is what produces words while you speak.
+  Hold-to-talk gives the utterance a beginning and an end, so the transcript is only
+  needed once, and a batch engine is not merely adequate but a *better fit* — the whole
+  clip is available to the decoder, including its end, which is exactly what makes Whisper
+  as accurate as it is.
+
+The three that remain — local, permissive, maintained, cross-platform — are met by both
+whisper.cpp and sherpa-onnx.
+
+### Revised recommendation: `cpal` + `whisper-rs`, behind the same trait
+
+`whisper-rs` 0.16.0 (Unlicense) is the Rust binding for whisper.cpp. Under hold-to-talk it
+is the better fit than sherpa-onnx, on four counts:
+
+1. **Accuracy.** Best available, and the batch model is the reason. `small.en` or
+   `base.en` is well beyond anything streaming at the same model size.
+2. **Punctuation and casing come free.** Whisper emits a punctuated, capitalised sentence.
+   Streaming zipformer output is unpunctuated lowercase unless a second punctuation model
+   is added — which is a second model, a second dependency, and its own latency.
+3. **No streaming state machine.** One call per utterance. The `feed()`/endpoint/VAD
+   machinery in §4 and §6 collapses to "buffer while held, decode on release".
+4. **The traps shrink.** VAD was needed to find where an utterance ends (§4); the key-up
+   is that answer, so the Silero/`voice_activity_detector` licence problem stops being
+   relevant for the core path. A plain RMS threshold is enough to warn "nothing was
+   captured" — and it is still worth having, because of the all-zeros failure in §7.
+
+**What it costs that sherpa-onnx does not:**
+
+- **Latency after release, not before.** Nothing appears until you let go, and then the
+  whole clip is decoded. For a five-second utterance with `base.en` on CPU, expect roughly
+  0.5–2 s. That is fine for prompts and bad for anything that wants to feel live. If that
+  wait turns out to be the thing that makes the feature feel wrong, streaming is the fix
+  and sherpa-onnx is still the answer.
+- **A bigger model file.** `tiny.en` ≈ 75 MB, `base.en` ≈ 142 MB, `small.en` ≈ 466 MB,
+  against 100–300 MB for a streaming English zipformer. Size was declared acceptable.
+- **A CPU spike per utterance** rather than a steady trickle, which matters if a turn is
+  running at the same time.
+- whisper.cpp is C++ FFI, like every other option here — see §4's note. `whisper-rs` adds
+  a build step (`cmake`) and links ggml.
+
+**sherpa-onnx is not wasted if Whisper is chosen.** It also runs Whisper models through
+onnxruntime, so it is the one dependency that keeps both doors open: swapping between a
+Whisper model and a streaming zipformer would be a model path and a constructor, not a
+second engine. If the streaming door is genuinely closed, `whisper-rs` is the more direct
+route and the smaller dependency.
+
+**Whisper's 30-second window is not a problem for hold-to-talk, but it is a bound.** The
+encoder is fed a 30 s mel frame regardless, so a two-word utterance costs about as much as
+a sentence. `--length`/`--step` chunking is what whisper.cpp's own real-time demo uses and
+is not needed here. A clip longer than 30 s would need splitting; capping the hold at 30 s
+is simpler and honest.
+
+### The Windows-native option gets better, with one caveat
+
+§5 closed with `Windows.Media.SpeechRecognition` as the cheap first win: on-device, free,
+no model download, no C++ linking, and it produces partial hypotheses. Hold-to-talk makes
+it *more* attractive, not less — and "online only" was never what blocked it.
+
+**The caveat is the exact one that matters here.** `SpeechRecognizer` is documented to use
+the on-device recogniser, but Windows also has an *Online speech recognition* setting
+(Settings → Privacy & security → Speech) and it is **Unverified** whether a
+`SpeechRecognizer` with a dictation grammar can reach the cloud when that setting is on.
+If it can, audio leaves the machine and the "no third party" constraint is broken by a
+user-level Windows setting that the app cannot see. That has to be tested before this
+route is chosen, and the test is: turn the setting on, disable the network, and see
+whether recognition still works. It is a single test, but it is the deciding one for this
+option rather than a footnote.
+
+### Unchanged
+
+- **`cpal` for capture.** Nothing about the new constraints touches it, and
+  `whisper-rs`'s own examples and every crate in the ecosystem feed it from cpal.
+- **The trait.** See §5. Which engine is behind it is now a live choice rather than a
+  settled one, which is the whole reason for the abstraction.
+- **Everything in §7.** The all-zeros microphone failure is caught by a silence check
+  rather than by VAD now, and the rest is untouched.
+- **The composer integration in §6**, minus the interim path: one `replaceRange` at the
+  end of the utterance instead of a stream of them. The caret capture and the
+  `input_diverged` abandonment are still worth copying — they matter more with one insert
+  than with many, because there is no chance to correct a misplaced one.

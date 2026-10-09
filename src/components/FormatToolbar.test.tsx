@@ -25,6 +25,8 @@ const toolbarProps = (overrides: Partial<FormatToolbarProps> = {}): FormatToolba
   onToggleList: vi.fn(),
   onToggleQuote: vi.fn(),
   onToggleCodeBlock: vi.fn(),
+  previewing: false,
+  onTogglePreview: vi.fn(),
   ...overrides,
 });
 

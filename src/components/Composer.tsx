@@ -19,6 +19,7 @@ import { turnLabel } from "../lib/turnStatus";
 import { loadUserHistory, saveUserHistory } from "../lib/userHistory";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
+import { MarkdownPreview } from "./MarkdownPreview";
 import { RunningTracker } from "./RunningTracker";
 import { SlashMenu } from "./SlashMenu";
 import { WorkingIndicator } from "./WorkingIndicator";
@@ -131,6 +132,7 @@ export function Composer({
   sessionId,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const rowRef = useRef<HTMLDivElement | null>(null);
   const sendButtonRef = useRef<HTMLButtonElement | null>(null);
   const handleRef = useRef<ComposerHandle | null>(null);
@@ -161,6 +163,12 @@ export function Composer({
   const [dismissedSuggestion, setDismissedSuggestion] = useState<string | null>(null);
   const [files, setFiles] = useState<string[]>([]);
   const [fileHighlight, setFileHighlight] = useState(0);
+  /** Whether the message is being read as Markdown rather than written. */
+  const [previewing, setPreviewing] = useState(false);
+  /** How tall the editor was, which is where the preview stands. */
+  const [editorHeight, setEditorHeight] = useState(0);
+  /** True while the preview is being put away and the editor is coming back. */
+  const returningRef = useRef(false);
 
   menuRef.current = menu;
   sendRef.current = onSend;
@@ -448,6 +456,41 @@ export function Composer({
     handleRef.current?.focus();
   }, []);
 
+  /**
+   * Swaps the editor for the preview, at the height the editor was.
+   *
+   * The height is taken as the editor is put away rather than as the preview
+   * comes back, because by then there is nothing left to measure.
+   */
+  const showPreview = useCallback(() => {
+    const host = hostRef.current;
+    setEditorHeight(host ? host.getBoundingClientRect().height : 0);
+    setPreviewing(true);
+  }, []);
+
+  const hidePreview = useCallback(() => {
+    returningRef.current = true;
+    setPreviewing(false);
+  }, []);
+
+  /**
+   * Moves the keyboard between the editor and the preview as they swap.
+   *
+   * Neither focus can be taken where the swap is asked for: the editor is
+   * still hidden at that moment, and a hidden box cannot be given the caret.
+   * Waiting for the render that puts it back is what makes "return to edit"
+   * actually return the caret to the text.
+   */
+  useEffect(() => {
+    if (previewing) {
+      previewRef.current?.focus();
+      return;
+    }
+    if (!returningRef.current) return;
+    returningRef.current = false;
+    handleRef.current?.focus();
+  }, [previewing]);
+
   const toggleFormat = useCallback((id: FormatId) => handleRef.current?.toggleFormat(id), []);
   const toggleList = useCallback((kind: ListKind) => handleRef.current?.toggleList(kind), []);
   const toggleQuote = useCallback(() => handleRef.current?.toggleQuote(), []);
@@ -693,6 +736,8 @@ export function Composer({
         onToggleList={toggleList}
         onToggleQuote={toggleQuote}
         onToggleCodeBlock={toggleCodeBlock}
+        previewing={previewing}
+        onTogglePreview={previewing ? hidePreview : showPreview}
       />
       <div className="composer-row" ref={rowRef}>
         {menuOpen && (
@@ -721,7 +766,15 @@ export function Composer({
           </span>
         )}
         <div className="composer-field">
-          {showSuggestion && suggestion !== null && (
+          {previewing && (
+            <MarkdownPreview
+              ref={previewRef}
+              text={status.text}
+              minHeight={editorHeight}
+              onEscape={hidePreview}
+            />
+          )}
+          {showSuggestion && !previewing && suggestion !== null && (
             <div className="suggestion-chip">
               <button type="button" className="suggestion-text" onClick={acceptSuggestion}>
                 {suggestion}
@@ -742,6 +795,7 @@ export function Composer({
               running ? "busy" : "",
               isShell ? "shell" : "",
               fastMode ? "fast" : "",
+              previewing ? "previewing" : "",
             ]
               .filter(Boolean)
               .join(" ")}

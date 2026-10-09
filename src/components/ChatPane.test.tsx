@@ -468,3 +468,166 @@ describe("following the newest content", () => {
     expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
   });
 });
+
+describe("walking through the user's own messages", () => {
+  const VIEW = 400;
+  const ROW = 40;
+
+  /** A stand-in rectangle, since jsdom has no layout of its own. */
+  const rect = (top: number, bottom: number): DOMRect =>
+    ({
+      top,
+      bottom,
+      height: bottom - top,
+      left: 0,
+      right: 0,
+      width: 0,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  /**
+   * Says where each row is, which jsdom cannot work out for itself.
+   *
+   * The top of the transcript is the zero every other measurement is taken
+   * against, so a row at a negative top has scrolled out of sight above it.
+   */
+  function place(container: HTMLElement, tops: number[]): void {
+    const scroller = container.querySelector(".transcript") as HTMLElement;
+    Object.defineProperty(scroller, "clientHeight", { value: VIEW, configurable: true });
+    scroller.getBoundingClientRect = () => rect(0, VIEW);
+
+    const rows = [...container.querySelectorAll<HTMLElement>(".transcript-row")];
+    rows.forEach((row, index) => {
+      const top = tops[index] ?? 0;
+      row.getBoundingClientRect = () => rect(top, top + ROW);
+    });
+  }
+
+  const pressCtrlArrow = (key: "ArrowUp" | "ArrowDown"): KeyboardEvent => {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  const flashOn = (container: HTMLElement): string | null =>
+    container.querySelector(".transcript-row.flash")?.getAttribute("data-entry-id") ?? null;
+
+  const said = (...ids: string[]): ChatEntry[] => ids.map(userEntry);
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("goes up to the nearest message that has scrolled out of sight", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: said("u1", "u2", "u3") })} />,
+    );
+    place(container, [-500, -100, 120]);
+
+    pressCtrlArrow("ArrowUp");
+
+    expect(flashOn(container)).toBe("u2");
+  });
+
+  it("goes down to the nearest message that is entirely below the view", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: said("u1", "u2", "u3") })} />,
+    );
+    place(container, [10, 460, 700]);
+
+    pressCtrlArrow("ArrowDown");
+
+    expect(flashOn(container)).toBe("u2");
+  });
+
+  it("brings the message it lands on into the middle of the pane", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [-500]);
+
+    pressCtrlArrow("ArrowUp");
+
+    expect(scroll).toHaveBeenCalledWith({ block: "center" });
+  });
+
+  it("leaves out everything that is not the user's own message", () => {
+    const { container } = render(
+      <ChatPane
+        state={stateWith({
+          entries: [toolEntry("t1", "Bash"), ...said("u1"), toolEntry("t2", "Read"), ...said("u2")],
+        })}
+      />,
+    );
+    place(container, [-500, -100, -80, 120]);
+
+    pressCtrlArrow("ArrowUp");
+
+    expect(flashOn(container)).toBe("u1");
+  });
+
+  it("stays put when there is nothing that way", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [10]);
+
+    const event = pressCtrlArrow("ArrowUp");
+
+    expect(flashOn(container)).toBeNull();
+    expect(scroll).not.toHaveBeenCalledWith({ block: "center" });
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("takes the keypress, so the composer never also answers it", () => {
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [-500]);
+
+    const event = pressCtrlArrow("ArrowUp");
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves a bare arrow to whatever has the keyboard", () => {
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [-500]);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowUp",
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+
+    expect(flashOn(container)).toBeNull();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("takes Command on a Mac as well as Control", () => {
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [-500]);
+
+    const event = new KeyboardEvent("keydown", {
+      key: "ArrowUp",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+
+    expect(flashOn(container)).toBe("u1");
+  });
+});

@@ -46,6 +46,24 @@ function againstCharacter(neighbour: string): boolean {
 }
 
 /**
+ * Whether deleting at the caret should take the pair on both sides of it.
+ *
+ * A partner that was added on the spot is only there because something might
+ * be typed between the two, so a backspace with nothing between them takes the
+ * pair away rather than leaving a stray bracket behind. The emphasis
+ * characters are exempt: they never bring a partner of their own, and the two
+ * asterisks of `**bold**` are the opening marker rather than an empty pair.
+ *
+ * @param before - The character before the caret, or an empty string.
+ * @param after - The character after the caret, or an empty string.
+ * @returns True when both should go.
+ */
+export function backspaceRemovesPair(before: string, after: string): boolean {
+  const closer = OPENERS[before];
+  return closer !== undefined && closer === after && !TRIMMED.has(before);
+}
+
+/**
  * Decides what typing a character should do.
  *
  * A selection is wrapped in the pair. Otherwise the partner is inserted and the

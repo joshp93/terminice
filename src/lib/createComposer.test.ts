@@ -195,6 +195,89 @@ describe("pressing a style with the caret inside that style", () => {
   });
 });
 
+describe("deleting half of a pair", () => {
+  /** Presses Backspace on the editor, as the keymap sees it. */
+  const pressBackspace = (parent: HTMLElement): void => {
+    const content = parent.querySelector(".cm-content");
+    if (!(content instanceof HTMLElement)) throw new Error("the editor did not mount");
+    content.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true }),
+    );
+  };
+
+  /** Types a pair, leaving the caret between the two characters. */
+  const paired = (text: string, offset: number) => {
+    const composer = makeComposer();
+    composer.handle.setText(text);
+    composer.caretAt(offset);
+    return composer;
+  };
+
+  it("takes both characters of an empty pair away", () => {
+    const composer = paired("()", 1);
+
+    pressBackspace(composer.parent);
+
+    expect(composer.handle.getText()).toBe("");
+  });
+
+  it("does the same for every pairing character", () => {
+    for (const [text, offset] of [
+      ["[]", 1],
+      ["{}", 1],
+      ["``", 1],
+      ['""', 1],
+    ] as const) {
+      const composer = paired(text, offset);
+      pressBackspace(composer.parent);
+      expect(composer.handle.getText()).toBe("");
+    }
+  });
+
+  it("takes away only the pair the caret is inside", () => {
+    const composer = paired("a()b", 2);
+
+    pressBackspace(composer.parent);
+
+    expect(composer.handle.getText()).toBe("ab");
+  });
+
+  it("leaves the caret where the pair used to be", () => {
+    const composer = paired("ab()cd", 3);
+    pressBackspace(composer.parent);
+
+    composer.handle.insertText("X");
+
+    expect(composer.handle.getText()).toBe("abXcd");
+  });
+
+  /// `**bold**` with the caret between the leading asterisks is the opening
+  /// marker of a style rather than an empty pair.
+  it("leaves the emphasis markers of a style alone", () => {
+    const composer = paired("**bold**", 1);
+
+    pressBackspace(composer.parent);
+
+    expect(composer.handle.getText()).toBe("*bold**");
+  });
+
+  it("leaves a mismatched pair alone", () => {
+    const composer = paired("(]", 1);
+
+    pressBackspace(composer.parent);
+
+    expect(composer.handle.getText()).toBe("]");
+  });
+
+  it("leaves the pair alone once something is between the two", () => {
+    const composer = paired("(a)", 1);
+
+    pressBackspace(composer.parent);
+
+    expect(composer.handle.getText()).toBe("a)");
+  });
+});
+
 describe("the code tint", () => {
   /** The text the editor has marked as code, in document order. */
   const tinted = (parent: HTMLElement): string[] =>

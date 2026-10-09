@@ -664,3 +664,34 @@ it with the user rather than quietly changing it.
   direct scroll on send is separate from that and stays: it is the one case where the reader
   has just said what they want to watch, so there is no reason to make them wait a frame to
   see it.
+- **Ctrl and an arrow walks the user's own messages, and nothing remembers where it got
+  to.** The pane asks where every user message sits relative to the visible transcript and
+  takes the nearest one fully past the top (or past the bottom), which needs no cursor:
+  landing centres the message, which puts it inside the view, so the next press carries on
+  past it and scrolling away by hand needs no reset either. A message counts as "above"
+  only once its *bottom* has gone past the top, so a message taller than the pane does not
+  become its own answer. The listener is on the document in the capture phase and stops
+  propagation, because the composer has its own uses for a bare arrow — history recall and
+  the slash menu — that Ctrl+Arrow must not also trip.
+- **The preview swaps the editor rather than replacing it.** `.composer-host` stays mounted
+  and is hidden with a class, so the text, the caret, the selection and the undo history
+  all survive the round trip; the preview is drawn in the same field, at least as tall as
+  the editor was and no taller than the editor could have been. The height is measured as
+  the editor is put away, because afterwards there is nothing left to measure. **The focus
+  cannot be moved where the swap is asked for**: `hidePreview` sets the state, and at that
+  instant the editor is still `display: none`, where `focus()` does nothing. Both moves are
+  made in an effect keyed on `previewing` instead, which runs after the render that puts
+  the right box on screen. jsdom cannot catch this — it has no CSS, so a hidden box still
+  takes focus — which is exactly why it is written down.
+- **Escape is handled by the preview, not by the document.** The handler is on the preview
+  box (`role`-less `section` with an `aria-label`, which is also what makes a scrollable
+  region announce itself) and the composer takes the keyboard to that box as it opens, so
+  an Escape meant for a dialog that has taken the focus cannot reach it. Biome's
+  `noStaticElementInteractions` and `useSemanticElements` are what pushed this from a
+  `<footer onKeyDown>` to a labelled `<section>`; do not move it back to the document.
+- **Backspace inside an empty pair takes both characters.** `backspaceRemovesPair` is
+  structural — it asks whether the caret sits between an opener and its closer — because a
+  partner added on the spot is only there for something to be typed between the two, and
+  nothing else can be tracked once anything has been typed. The emphasis characters are
+  exempt and must stay exempt: `**bold**` with the caret between the leading asterisks is
+  the opening marker of a style, and deleting both there would break the Markdown.

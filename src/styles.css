@@ -987,9 +987,8 @@ body {
 .stop {
   position: absolute;
   right: 7px;
-  /* Anchored to the field's bottom rather than its middle: the progress bar
-     sits above the textbox, so centring would leave the button stranded
-     between the two when compaction starts. */
+  /* Anchored to the field's bottom rather than its middle, which is where it
+     belongs whether the field is holding the editor or the preview of it. */
   bottom: 8px;
   width: 28px;
   height: 28px;
@@ -1447,6 +1446,16 @@ body {
   color: var(--accent);
 }
 
+/*
+ * The preview changes what is being looked at rather than the text, so it sits
+ * at the far end of the row, away from the buttons that write markers.
+ */
+.preview-toggle {
+  margin-left: auto;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
 .glyph-bold {
   font-weight: 700;
 }
@@ -1481,6 +1490,41 @@ body {
 .composer-host.shell:focus-within {
   border-color: var(--shell-accent);
   box-shadow: 0 0 0 1px var(--shell-accent);
+}
+
+/* The editor stands aside rather than unmounting while the preview is up, so
+   what was typed, where the caret was and what can be undone all survive the
+   round trip. */
+.composer-host.previewing {
+  display: none;
+}
+
+/*
+ * The preview stands exactly where the editor was, at least as tall as it was
+ * and no taller than it could have been, so swapping between the two moves
+ * nothing else on screen. Beyond that it scrolls, which is what keeps a long
+ * message from pushing the transcript off the top.
+ */
+.composer-preview {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  min-height: var(--composer-line);
+  max-height: 220px;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.composer-preview:focus-visible {
+  border-color: var(--accent-border);
+  outline: none;
+}
+
+.preview-empty {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.857em;
+  font-style: italic;
 }
 
 .cm-shell-prefix {

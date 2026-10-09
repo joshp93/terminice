@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pairNeedsTrim, planAutoPair } from "./autoPair";
+import { backspaceRemovesPair, pairNeedsTrim, planAutoPair } from "./autoPair";
 
 const plan = (char: string, before = "", after = "", hasSelection = false) =>
   planAutoPair({ char, before, after, hasSelection });
@@ -117,5 +117,40 @@ describe("planAutoPair closing characters", () => {
   it("does nothing for a closing character with no twin", () => {
     expect(plan(")", "x", "y")).toBeNull();
     expect(plan("]", "", "")).toBeNull();
+  });
+});
+
+describe("backspaceRemovesPair", () => {
+  it("takes both sides of an empty pair", () => {
+    expect(backspaceRemovesPair("(", ")")).toBe(true);
+    expect(backspaceRemovesPair("[", "]")).toBe(true);
+    expect(backspaceRemovesPair("{", "}")).toBe(true);
+    expect(backspaceRemovesPair("`", "`")).toBe(true);
+    expect(backspaceRemovesPair('"', '"')).toBe(true);
+  });
+
+  /// `**bold**` with the caret between the two asterisks is the opening marker
+  /// of a style, not an empty pair, and deleting it would break the Markdown.
+  it("leaves the emphasis characters alone", () => {
+    expect(backspaceRemovesPair("*", "*")).toBe(false);
+    expect(backspaceRemovesPair("_", "_")).toBe(false);
+  });
+
+  it("leaves a mismatched pair alone", () => {
+    expect(backspaceRemovesPair("(", "]")).toBe(false);
+    expect(backspaceRemovesPair("[", ")")).toBe(false);
+    expect(backspaceRemovesPair("`", '"')).toBe(false);
+  });
+
+  it("leaves an unpaired character alone", () => {
+    expect(backspaceRemovesPair("a", "b")).toBe(false);
+    expect(backspaceRemovesPair("(", "x")).toBe(false);
+    expect(backspaceRemovesPair("x", ")")).toBe(false);
+  });
+
+  it("leaves the ends of the composer alone", () => {
+    expect(backspaceRemovesPair("", ")")).toBe(false);
+    expect(backspaceRemovesPair("(", "")).toBe(false);
+    expect(backspaceRemovesPair("", "")).toBe(false);
   });
 });

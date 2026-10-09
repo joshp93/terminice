@@ -17,7 +17,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import type { SyntaxNodeRef, Tree } from "@lezer/common";
-import { pairNeedsTrim, planAutoPair } from "./autoPair";
+import { backspaceRemovesPair, pairNeedsTrim, planAutoPair } from "./autoPair";
 import {
   INDENT_UNIT,
   type LineEdit,
@@ -614,11 +614,34 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     return true;
   };
 
+  /**
+   * Deletes an empty pair the caret sits inside, both characters at once.
+   *
+   * @param view - The editor.
+   * @param cursor - Where the caret is.
+   * @returns True when a pair was taken away.
+   */
+  const removePairAroundCaret = (view: EditorView, cursor: number): boolean => {
+    const doc = view.state.doc;
+    const before = cursor > 0 ? doc.sliceString(cursor - 1, cursor) : "";
+    const after = cursor < doc.length ? doc.sliceString(cursor, cursor + 1) : "";
+    if (!backspaceRemovesPair(before, after)) return false;
+
+    view.dispatch({
+      changes: { from: cursor - 1, to: cursor + 1, insert: "" },
+      selection: { anchor: cursor - 1 },
+    });
+    report(view);
+    return true;
+  };
+
   const handleBackspace = (view: EditorView): boolean => {
     const range = view.state.selection.main;
     if (range.from !== range.to) return false;
 
     const cursor = range.head;
+    if (removePairAroundCaret(view, cursor)) return true;
+
     const line = view.state.doc.lineAt(cursor);
     const parsed = parseListLine(line.text);
     if (!parsed) return false;

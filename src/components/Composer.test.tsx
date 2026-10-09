@@ -796,10 +796,12 @@ describe("the formatting toolbar", () => {
 describe("the quote button", () => {
   const quote = () => screen.getByRole("button", { name: "Quote" });
 
-  it("comes last in the toolbar, after the lists", () => {
+  it("comes last of the buttons that write markers, after the lists", () => {
     const { container } = renderComposer();
 
-    const buttons = [...container.querySelectorAll(".format-toolbar .format-button")];
+    const buttons = [
+      ...container.querySelectorAll(".format-toolbar .format-button:not(.preview-toggle)"),
+    ];
 
     expect(buttons.at(-1)).toHaveAccessibleName("Quote");
   });
@@ -1004,5 +1006,126 @@ describe("the running tracker", () => {
     await user.click(screen.getByRole("button", { name: /1 shell running/ }));
 
     expect(onReveal).toHaveBeenCalledWith("s1");
+  });
+});
+
+describe("the Markdown preview", () => {
+  const preview = () => screen.getByRole("button", { name: "Preview" });
+  const backToEdit = () => screen.getByRole("button", { name: "Edit" });
+
+  it("sits at the far end of the toolbar, away from the editing buttons", () => {
+    const { container } = renderComposer();
+
+    const buttons = [...container.querySelectorAll(".format-toolbar .format-button")];
+
+    expect(buttons.at(-1)).toHaveClass("preview-toggle");
+  });
+
+  it("stands in for the editor rather than beside it", async () => {
+    const user = userEvent.setup();
+    const { container } = renderComposer();
+    expect(container.querySelector(".composer-preview")).toBeNull();
+
+    await user.click(preview());
+
+    expect(container.querySelector(".composer-preview")).not.toBeNull();
+    expect(container.querySelector(".composer-host")).toHaveClass("previewing");
+  });
+
+  it("renders what has been typed as Markdown", async () => {
+    const user = userEvent.setup();
+    const { container, content } = renderComposer();
+    paste(content, "# Heading\n\nsome **bold** words");
+
+    await user.click(preview());
+
+    const shown = container.querySelector(".composer-preview") as HTMLElement;
+    expect(shown.querySelector("h1")?.textContent).toBe("Heading");
+    expect(shown.querySelector("strong")?.textContent).toBe("bold");
+  });
+
+  it("says so when there is nothing to preview", async () => {
+    const user = userEvent.setup();
+    renderComposer();
+
+    await user.click(preview());
+
+    expect(screen.getByText("There is nothing to preview yet.")).toBeInTheDocument();
+  });
+
+  it("takes the keyboard as it opens, so Escape has somewhere to land", async () => {
+    const user = userEvent.setup();
+    const { container } = renderComposer();
+
+    await user.click(preview());
+
+    expect(container.querySelector(".composer-preview")).toHaveFocus();
+  });
+
+  it("goes back to the editor when the same button is pressed again", async () => {
+    const user = userEvent.setup();
+    const { container } = renderComposer();
+    await user.click(preview());
+
+    await user.click(backToEdit());
+
+    expect(container.querySelector(".composer-preview")).toBeNull();
+    expect(container.querySelector(".composer-host")).not.toHaveClass("previewing");
+    expect(container.querySelector(".formatted")).toBeNull();
+  });
+
+  it("goes back to the editor on Escape", async () => {
+    const user = userEvent.setup();
+    const { container } = renderComposer();
+    await user.click(preview());
+
+    await user.keyboard("{Escape}");
+
+    expect(container.querySelector(".composer-preview")).toBeNull();
+    expect(container.querySelector(".composer-host")).not.toHaveClass("previewing");
+  });
+
+  it("keeps what was typed, and the caret in it, across the round trip", async () => {
+    const user = userEvent.setup();
+    const { content } = renderComposer();
+    paste(content, "half a thought");
+
+    await user.click(preview());
+    await user.click(backToEdit());
+
+    expect(text(content)).toBe("half a thought");
+    expect(content).toHaveFocus();
+  });
+
+  it("still sends what the preview was showing", async () => {
+    const user = userEvent.setup();
+    const { content, onSend } = renderComposer();
+    paste(content, "**bold** answer");
+    await user.click(preview());
+
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onSend).toHaveBeenCalledWith("**bold** answer");
+  });
+
+  it("keeps the turn's stop button reachable while reading", async () => {
+    const user = userEvent.setup();
+    renderComposer({ running: true });
+
+    await user.click(preview());
+
+    expect(screen.getByRole("button", { name: "Stop" })).toBeInTheDocument();
+  });
+
+  /// The label is the way back, and a pressed button that still said "Preview"
+  /// would read as an offer to preview what is already on screen.
+  it("names the way back once it is showing", async () => {
+    const user = userEvent.setup();
+    renderComposer();
+
+    await user.click(preview());
+
+    expect(backToEdit()).toHaveAttribute("aria-pressed", "true");
+    expect(backToEdit()).toHaveAttribute("title", "Return to edit (Esc)");
   });
 });

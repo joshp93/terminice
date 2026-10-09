@@ -10,6 +10,9 @@ export type FormatToolbarProps = {
   onToggleList: (kind: ListKind) => void;
   onToggleQuote: () => void;
   onToggleCodeBlock: () => void;
+  /** Whether the composer is showing the preview instead of the editor. */
+  previewing: boolean;
+  onTogglePreview: () => void;
 };
 
 const LISTS: readonly { kind: ListKind; label: string; glyph: string }[] = [
@@ -28,6 +31,9 @@ function stateClass(state: StyleState): string {
  * selection carries its style. Pointer presses are cancelled so the editor
  * keeps focus.
  *
+ * The preview sits apart from the rest, at the far end of the row: everything
+ * else changes the text, and this changes what is being looked at.
+ *
  * @param props - The composer status and the toggle handlers.
  * @returns The rendered toolbar.
  */
@@ -37,6 +43,8 @@ export function FormatToolbar({
   onToggleList,
   onToggleQuote,
   onToggleCodeBlock,
+  previewing,
+  onTogglePreview,
 }: FormatToolbarProps) {
   return (
     <div className="format-toolbar">
@@ -96,6 +104,16 @@ export function FormatToolbar({
         onClick={onToggleQuote}
       >
         {">"}
+      </button>
+      <button
+        type="button"
+        className={previewing ? "format-button preview-toggle on" : "format-button preview-toggle"}
+        title={previewing ? "Return to edit (Esc)" : "Preview as Markdown"}
+        aria-pressed={previewing}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onTogglePreview}
+      >
+        {previewing ? "Edit" : "Preview"}
       </button>
     </div>
   );
