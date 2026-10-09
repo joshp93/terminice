@@ -6,7 +6,7 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { EditorState, Prec, type Range } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Range } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -97,6 +97,8 @@ export type ComposerHandle = {
   toggleList: (kind: ListKind) => void;
   toggleQuote: () => void;
   toggleCodeBlock: () => void;
+  /** Replaces the hint shown while the composer is empty. */
+  setPlaceholder: (text: string) => void;
   /** Draws the dictation caret, or takes it away. */
   setVoiceCaret: (mode: VoiceCaretMode) => void;
   /** Ends dictation with no key release to report it. */
@@ -107,6 +109,7 @@ export type ComposerHandle = {
 /** Options accepted by {@link createComposer}. */
 export type ComposerOptions = {
   parent: HTMLElement;
+  /** The hint shown while the composer is empty. */
   placeholder: string;
   onSubmit: () => void;
   /** Whether a bare Enter sends. Evaluated on each keypress. */
@@ -314,6 +317,11 @@ function mapPosition(position: number, from: number, to: number, insertLength: n
  */
 export function createComposer(options: ComposerOptions): ComposerHandle {
   let inline: InlineState = createInlineState();
+
+  // The placeholder is built into the editor once, so a hint that changes with
+  // the settings has to be swapped rather than handed a reader: the plugin
+  // keeps the widget it was constructed with until its extension is replaced.
+  const placeholderSlot = new Compartment();
 
   const treeAt = (view: EditorView) =>
     ensureSyntaxTree(view.state, view.state.doc.length, 200) ?? syntaxTree(view.state);
@@ -877,7 +885,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ spellcheck: "true" }),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        placeholder(options.placeholder),
+        placeholderSlot.of(placeholder(options.placeholder)),
         shortcuts,
         handleTypedCharacter,
         trackStatus,
@@ -931,6 +939,9 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     toggleList: (kind) => toggleList(view, kind),
     toggleQuote: () => toggleQuote(view),
     toggleCodeBlock: () => toggleCodeBlock(view),
+    setPlaceholder: (text) => {
+      view.dispatch({ effects: placeholderSlot.reconfigure(placeholder(text)) });
+    },
     setVoiceCaret: (mode) => {
       view.dispatch({ effects: setVoiceCaret.of(mode) });
     },

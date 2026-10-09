@@ -35,6 +35,9 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **`@` file mentions** — two characters after an `@` open a menu of matching files, built
   from the CLI's own index rather than a directory walk of our own, so it agrees with what
   Claude Code's terminal offers.
+- **Dictation** — hold the space bar for half a second and speak. The spaces the hold typed
+  are taken back and the words land where the caret was, punctuated and capitalised. The
+  engine is Whisper, running on this machine: nothing is sent anywhere.
 - **Fast mode** — while it is serving, the composer turns orange and carries a flame. See
   below for why it is normally off.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
@@ -98,6 +101,7 @@ nobody to ask, so anything that would prompt is silently **denied** rather than 
 | **Node.js 20+** and **pnpm** | Frontend build |
 | **Rust** (stable) | `rustup` — installs per-user, no admin needed |
 | **MSVC C++ Build Tools** | **Required on Windows.** Rust's default host triple is `x86_64-pc-windows-msvc`, which needs `link.exe` |
+| **CMake and LLVM** | **Only to build from source.** The speech engine compiles whisper.cpp and generates its bindings with bindgen, which loads libclang |
 | **WebView2 runtime** | Preinstalled on Windows 11 |
 | **Claude Code CLI** | Required — this app drives it |
 
@@ -107,6 +111,24 @@ winget install --id Microsoft.VisualStudio.2022.BuildTools `
 ```
 
 Then `rustup component add rustfmt` if you want `cargo fmt`.
+
+### Building the speech engine needs cmake and libclang
+
+`whisper-rs-sys` builds whisper.cpp through the `cmake` crate and generates its bindings
+with `bindgen`, which loads **libclang** at build time. Neither is on `PATH` by default:
+cmake ships inside Visual Studio's BuildTools, and there is usually no LLVM install at all.
+
+Either of these satisfies it:
+
+- `python -m pip install --user libclang` — 26 MB, user-scoped, no administrator, removed
+  again with `pip uninstall libclang`. It lands in
+  `%APPDATA%\Python\Python3xx\site-packages\clang\native`.
+- `winget install --id LLVM.LLVM -e` — the full toolchain, machine-wide, administrator.
+
+`.cargo/config.toml` names both `LIBCLANG_PATH` and `CMAKE` so a plain `cargo build` works
+with no shell setup. Delete the `LIBCLANG_PATH` line only if LLVM is installed properly,
+since `C:\Program Files\LLVM` is one of the directories bindgen finds on its own. This is
+the one part of the build that can fail for a reason that has nothing to do with the code.
 
 ### Windows toolchain note
 
@@ -163,6 +185,7 @@ ignored, so a hand-edited file cannot stop the app from starting.
 |---|---|---|---|
 | `enterBehaviour` | `send` \| `newline` | `send` | What Enter does in the composer |
 | `theme` | `dark` \| `light` | `dark` | Colour scheme |
+| `voiceEnabled` | `true` \| `false` | `false` | Whether holding the space bar dictates |
 
 | Variable | Effect |
 |---|---|
@@ -186,6 +209,13 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `Ctrl+I` | Italic |
 | `Ctrl+E` | Inline code |
 | `Ctrl+Shift+X` | Strikethrough |
+| `Ctrl+>` | Quote |
+| `Hold Space` | Dictates, while dictation is switched on |
+| `F6` | Puts the keyboard in the composer, from anywhere |
+| `Ctrl+↑` / `Ctrl+↓` | Jumps to the previous or next message you sent |
+
+(The same list is in the app, under **Settings → Keyboard shortcuts**, written for whichever
+platform it is running on.)
 
 (`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch, so indenting moved to
 `Ctrl+]` — and while Enter is set to send, Tab leaves the composer rather than inserting
@@ -304,6 +334,43 @@ is no control request for running a command either; `bash`, `run_bash`, `execute
 The `!` prefix is handled by the terminal UI itself, so doing it here means doing it
 ourselves.
 
+## Dictation
+
+Hold the **space bar** for half a second and the composer starts listening; let go, and what
+you said is put in where the caret was. A shorter tap is an ordinary space with no round trip
+in the way of it: the first press is let through and the spaces it repeats are taken back
+when the hold is recognised. Only the spaces *that press* typed are taken back — a space typed
+deliberately before the hold is left alone, or the dictated words would run into the word
+before them.
+
+The caret says which part of it you are in: three upright bars while the microphone is open,
+moving with your voice; three lines lying down while the words are being worked out; nothing
+at all otherwise. A break in the speech collapses the bars, which falls out of the level
+going to nothing rather than being a rule of its own.
+
+**Nothing leaves the machine.** The engine is `whisper.cpp`, compiled into the app and run on
+this processor, and the model is the only thing fetched: 142 MB of `ggml-base.en.bin` into
+`~/.config/terminice/`, downloaded by the Rust side rather than the webview, from Hugging
+Face, when you press the button in the settings. It is written to a `.part` file and renamed
+only once it is whole. The `.en` means English-only; the `SpeechEngine` trait it sits behind
+is what makes a second model or a second engine a small change.
+
+Two things that decision rules out. The webview's own `SpeechRecognition` is not used: in
+Chromium it is a thin client to a remote Google service, which is exactly the third party
+this is here to avoid. And a streaming recogniser is not used, because a batch one is the
+better fit — hold-to-talk gives the utterance a beginning and an end, so the whole clip is
+available to the decoder, including the end, which is what makes Whisper as accurate as it
+is and what gives punctuated, capitalised text for nothing.
+
+It is **off by default**, because it changes what the space bar does.
+
+Two platform traps come with a microphone. On Windows, with *Settings → Privacy & security →
+Microphone → Let desktop apps access your microphone* off, a recording is a stream of
+**zeros and no error at all** — the app says so rather than silently returning nothing. On
+macOS the bundle's `Info.plist` needs `NSMicrophoneUsageDescription`; on Linux, a running
+PipeWire or PulseAudio holds the ALSA `default` device, so cpal needs its
+`pipewire`/`pulseaudio` features there.
+
 ## Known limitations
 
 - **Fast mode is off unless your organisation allows it.** `/fast` refuses in a session
@@ -365,23 +432,36 @@ ourselves.
 - **Every invocation is a new instance.** Nothing wraps the binary, so `terminice` in a
   second terminal opens a second window rather than handing the directory to the running
   one. That is deliberate.
+- **MCP servers cannot ask for input.** An `elicitation` request has no card, so it is
+  refused with the reason rather than left hanging — a control request the CLI is blocked on
+  has to be answered one way or the other.
 - **Images are not supported.** The CLI's stream-json takes text; image input needs the
   Agent SDK rather than the CLI.
-- **Subagents are not rendered separately.** Their text arrives on the same stream as the
-  main agent's.
+- **Dictation is unproven on a real voice.** Everything around it is tested, but it was
+  built on a machine with no microphone, so capture, accuracy and how half a second feels
+  are all untried. `HOLD_TO_TALK_MS` in `src/lib/voiceHold.ts` is the number to turn, and
+  the model is chosen in `src-tauri/src/speech.rs`.
+- **Remote and cloud sessions are not supported.** `remote_control_available` is `false`
+  on the machine this was written against, so nothing was built for them.
 
 ## Roadmap
 
-[ROADMAP.md](ROADMAP.md) planned five features; four are now built — expand-all, subagent
-output, `@` file mentions and fast mode. What is left there is **transcript
-virtualisation**, which the document argues against building until someone measures a long
-session's render time, since the wasteful re-rendering has already been fixed.
+**Transcript virtualisation** is the one thing planned and deliberately not built. The
+wasteful half was fixed: `patchState` skips the write when a reducer hands back the state it
+was given, and the pane memoises its rows, which over a captured stream of 1,282 events took
+row renders from 1,282 to 3. What is left is node count alone, and nobody has measured
+whether that is a problem — so the honest position is to measure a long session's render
+time before building anything. If it does turn out to be needed it is not a drop-in:
+auto-scroll, find-in-page and anchoring all break under a window, and these entries have
+variable, user-controlled heights.
 
-Beyond those:
+Beyond that:
 
 1. **CLI launcher** — a shim on `PATH` that hands the working directory to a running
-   instance over a socket.
+   instance over a socket, so every invocation is not a new window.
 2. **Conversation branching** — edit an earlier turn and re-run from there.
+3. **Dictation beyond English** — the `SpeechEngine` trait exists for it, and nothing else
+   would have to change.
 
 ## Layout
 

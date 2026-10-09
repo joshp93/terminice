@@ -108,12 +108,12 @@ export function FormatToolbar({
       <button
         type="button"
         className={previewing ? "format-button preview-toggle on" : "format-button preview-toggle"}
-        title={previewing ? "Return to edit (Esc)" : "Preview as Markdown"}
+        title={previewing ? "Return to editing (Esc)" : "Preview the message as Markdown"}
         aria-pressed={previewing}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onTogglePreview}
       >
-        {previewing ? "Edit" : "Preview"}
+        {previewing ? "Edit markdown" : "Preview markdown"}
       </button>
     </div>
   );

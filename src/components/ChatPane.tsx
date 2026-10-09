@@ -91,6 +91,16 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
   const frameRef = useRef<number | null>(null);
   /** Whether the newest content is being followed. Read by the frame callback. */
   const followingRef = useRef(true);
+  /**
+   * Where the pane's own scroll last left the transcript.
+   *
+   * A scroll is reported a frame after it is made, and by then the content
+   * beneath it may have grown — a tool card laying itself out, a result
+   * arriving, the composer taking a row for itself. The distance measured at
+   * that point is the growth, not the reader, and reading it as the reader
+   * leaving is what made the pane give up following in the middle of a turn.
+   */
+  const settledRef = useRef<number | null>(null);
   const [following, setFollowing] = useState(true);
   const [defaultOpen, setDefaultOpen] = useState(false);
   const [exceptions, setExceptions] = useState<ReadonlySet<string>>(new Set());
@@ -108,7 +118,22 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
   }, []);
 
   /**
+   * Puts the newest content at the bottom of the view.
+   *
+   * Where it lands is remembered, because the scroll event this causes arrives
+   * later and has to be told apart from a scroll the reader made.
+   */
+  const scrollToEnd = useCallback(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+    settledRef.current = scrollerRef.current?.scrollTop ?? null;
+  }, []);
+
+  /**
    * Notes whether the reader has left the bottom of the transcript.
+   *
+   * A scroll the pane made itself is not the reader going anywhere, however far
+   * from the bottom it measures by the time it is reported: the content grew
+   * underneath it, and the answer is to keep up rather than to stop.
    *
    * Only a change is written to state, so the transcript re-renders when the
    * button comes and goes rather than on every scroll event.
@@ -117,11 +142,17 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+
+    if (followingRef.current && scroller.scrollTop === settledRef.current) {
+      if (distance > FOLLOW_THRESHOLD_PX) scrollToEnd();
+      return;
+    }
+
     const next = distance <= FOLLOW_THRESHOLD_PX;
     if (next === followingRef.current) return;
     followingRef.current = next;
     setFollowing(next);
-  }, []);
+  }, [scrollToEnd]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the transcript and the streaming text are what this effect follows, not what it reads.
   useEffect(() => {
@@ -131,9 +162,42 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
       // Decided here rather than when the frame was asked for, because a
       // message that resumes the following is applied in the same commit.
       if (!followingRef.current) return;
-      endRef.current?.scrollIntoView({ block: "end" });
+      scrollToEnd();
     });
   }, [state.entries, state.streaming]);
+
+  /**
+   * Keeps the bottom in view when the transcript changes size under it.
+   *
+   * A card that lays itself out once its contents have been measured, or the
+   * composer taking a row for itself, moves the bottom of the transcript
+   * without any entry changing — so nothing re-renders, no scroll is asked for,
+   * and the pane silently falls behind. Watching the sizes is what catches
+   * that, and the rows are re-watched as they come and go so a card can be
+   * watched for the moment it grows.
+   */
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (!scroller || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      if (!followingRef.current) return;
+      scrollToEnd();
+    });
+
+    const watchRows = (): void => {
+      observer.observe(scroller);
+      for (const row of Array.from(scroller.children)) observer.observe(row);
+    };
+    watchRows();
+
+    const arrivals = new MutationObserver(watchRows);
+    arrivals.observe(scroller, { childList: true });
+    return () => {
+      arrivals.disconnect();
+      observer.disconnect();
+    };
+  }, [scrollToEnd]);
 
   useEffect(
     () => () => {
@@ -153,13 +217,13 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
     if (lastEntry?.role !== "user" || sentRef.current === lastEntry.id) return;
     sentRef.current = lastEntry.id;
     setFollowingNow(true);
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [lastEntry, setFollowingNow]);
+    scrollToEnd();
+  }, [lastEntry, scrollToEnd, setFollowingNow]);
 
   const jumpToEnd = useCallback(() => {
     setFollowingNow(true);
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [setFollowingNow]);
+    scrollToEnd();
+  }, [scrollToEnd, setFollowingNow]);
 
   /**
    * Brings one entry to the middle of the pane and lights it.

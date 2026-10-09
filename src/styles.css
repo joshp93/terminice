@@ -253,6 +253,126 @@ body {
   color: var(--text-dim);
 }
 
+/* Opens the shortcut list. A row rather than a control, because the panel it
+   sits in is otherwise all settings, and this sets none of them. */
+.settings-open {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-open:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* The shortcut list, which is a modal: it is long enough to read rather than
+   glance at, and the keys it names should not be live under the reader's hands
+   while they are reading them. */
+.shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.shortcuts-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-raised);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 40%);
+  outline: none;
+}
+
+.shortcuts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcuts-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.shortcuts-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.shortcuts-close:hover,
+.shortcuts-close:focus-visible {
+  color: var(--text);
+  border-color: var(--accent-border);
+}
+
+.shortcuts-groups {
+  overflow-y: auto;
+  padding: 4px 16px 16px;
+}
+
+.shortcuts-group-title {
+  margin: 14px 0 6px;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Two columns, so every key sits in one lane and every description starts in
+   the same place: a list of keys is scanned, and a ragged left edge is what
+   makes scanning slow. */
+.shortcuts-list {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  align-items: baseline;
+}
+
+.shortcuts-keys {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.shortcuts-what {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 /* The model's state, or the button that fetches it. */
 .voice-model {
   display: flex;

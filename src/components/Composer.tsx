@@ -56,11 +56,11 @@ export type ComposerProps = {
   onSuggestFiles: (query: string) => Promise<string[]>;
   /** The session whose history the arrow keys recall, or null before there is one. */
   sessionId: string | null;
+  /** The hint shown while the composer is empty, which follows the settings. */
+  placeholder: string;
   /** The microphone, the speech engine and the model behind hold-to-talk. */
   voice: Voice;
 };
-
-const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
 
 const INITIAL_STATUS: ComposerStatus = {
   formats: new Map(),
@@ -134,6 +134,7 @@ export function Composer({
   fastModeTitle,
   onSuggestFiles,
   sessionId,
+  placeholder,
   voice,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -159,6 +160,8 @@ export function Composer({
   const sessionRef = useRef(sessionId);
   /** The voice session, read by the editor's own handlers between renders. */
   const voiceRef = useRef(voice);
+  /** The hint the editor was built with, before any settings change replaced it. */
+  const placeholderRef = useRef(placeholder);
   /** The last transcript put into the composer, so each one lands exactly once. */
   const transcriptRef = useRef(0);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -750,7 +753,10 @@ export function Composer({
     if (!host) return;
     const handle = createComposer({
       parent: host,
-      placeholder: PLACEHOLDER,
+      // Read through a ref like the voice state beside it: the editor is built
+      // once, and a setting that changes the hint swaps the hint rather than
+      // tearing the editor down and taking what has been typed with it.
+      placeholder: placeholderRef.current,
       onSubmit: () => submit(),
       submitsOnEnter: () => submitsRef.current(),
       onStatusChange: handleStatusChange,
@@ -772,6 +778,16 @@ export function Composer({
       setStatus(INITIAL_STATUS);
     };
   }, [handleStatusChange, submit]);
+
+  /**
+   * Keeps the empty composer's hint in step with the settings behind it.
+   *
+   * Declared after the editor is built, because effects run in the order they
+   * are written and this one has nothing to tell until there is an editor.
+   */
+  useEffect(() => {
+    handleRef.current?.setPlaceholder(placeholder);
+  }, [placeholder]);
 
   /**
    * Draws the caret the recording is standing in for, and takes it away again.

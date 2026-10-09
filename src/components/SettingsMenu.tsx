@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Voice } from "../hooks/useVoice";
 import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "../lib/fontSize";
 import type { Settings } from "../types";
@@ -6,6 +6,7 @@ import { CogIcon } from "./CogIcon";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { FontSizeStepper } from "./FontSizeStepper";
 import { SegmentedChoice } from "./SegmentedChoice";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 import { VoiceSetting } from "./VoiceSetting";
 
 /** Props for {@link SettingsMenu}. */
@@ -30,6 +31,25 @@ export type SettingsMenuProps = {
 export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: SettingsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  /**
+   * Shows the shortcut list, and puts the panel away behind it.
+   *
+   * The panel closes because its own keyboard handling is registered while it
+   * is open, and a focus trap inside a focus trap fights itself.
+   */
+  const showShortcuts = useCallback(() => {
+    setShortcutsOpen(true);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  /** Puts the shortcut list away, and the keyboard back on the cog. */
+  const hideShortcuts = useCallback(() => {
+    setShortcutsOpen(false);
+    triggerRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -78,6 +98,7 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
       <button
         type="button"
         className={open ? "settings-trigger active" : "settings-trigger"}
+        ref={triggerRef}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-label="Settings"
@@ -141,9 +162,13 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
             onEnabledChange={(voiceEnabled) => onChange({ ...settings, voiceEnabled })}
             voice={voice}
           />
+          <button type="button" className="settings-open" onClick={showShortcuts}>
+            Keyboard shortcuts
+          </button>
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>
       )}
+      {shortcutsOpen && <ShortcutsDialog onClose={hideShortcuts} />}
     </div>
   );
 }

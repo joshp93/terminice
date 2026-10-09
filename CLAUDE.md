@@ -80,7 +80,11 @@ it with the user rather than quietly changing it.
    `interrupt`, `mcp_status` and `get_usage` drive the session. Do not compute locally what
    the CLI already reports — the header percentage is the CLI's own `percentage`, not a
    ratio we derived, because the two disagree (the real window is smaller than
-   `modelUsage.contextWindow`).
+   `modelUsage.contextWindow`). The host-initiated subtypes the CLI accepts are a closed
+   list — `initialize`, `file_suggestions`, `read_file`, `get_workspace_diff`,
+   `get_context_usage`, `get_usage`, `mcp_status` — and anything else answers with a typed
+   `{"subtype":"error","error":"Unsupported control request subtype: …"}` rather than
+   hanging, so probing one is safe. `read_file` and `get_workspace_diff` are unused so far.
 
 6. **A control request must always be answered.** The CLI blocks indefinitely on one, with
    no deadline, so a request we cannot render has to be refused explicitly
@@ -732,11 +736,11 @@ it with the user rather than quietly changing it.
   and sends the event. Sending over the IPC channel from inside the callback would put a
   round trip in the path of every buffer, which is how audio starts to crackle. The sample
   buffer is taken with `try_lock`, never `lock`, for the same reason.
-- **`BufferSize::Default`, against VOICE.md §7.** That note asks for `Fixed(1024)` because
-  the system default is "poor for a responsive level meter" — but this meter is polled on a
-  timer rather than driven by the buffer's arrival, so a fixed size buys nothing here and
-  costs something real: a size the device refuses turns a working microphone into one that
-  will not open. The reasoning is in the function, not just here.
+- **`BufferSize::Default` for the microphone, not `Fixed(1024)`.** A fixed size is usually
+  asked for because the system default is poor for a responsive level meter — but this meter
+  is polled on a timer rather than driven by each buffer's arrival, so a fixed size buys
+  nothing here and costs something real: a size the device refuses turns a working microphone
+  into one that will not open. The reasoning is in the function, not just here.
 - **A recording of silence is a failure, not an empty transcript.** Windows hands back a
   stream of zeros and no error at all when desktop applications are not allowed the
   microphone, so `is_silent` catches it and the message names the setting to go and look
@@ -752,9 +756,15 @@ it with the user rather than quietly changing it.
 - **Building this crate needs cmake and libclang, and neither is obvious.** `whisper-rs-sys`
   compiles whisper.cpp through the `cmake` crate and generates its bindings with bindgen,
   which loads libclang at build time. On this machine cmake exists inside Visual Studio's
-  BuildTools and is therefore **not on `PATH`**, and there is no LLVM install at all. The
+  BuildTools and is therefore **not on `PATH`**, and there is no LLVM install at all. Two
+  ways to satisfy the second: `python -m pip install --user libclang`, which is 26 MB,
+  user-scoped and lands under `%APPDATA%\Python\…\clang\native`, or
+  `winget install --id LLVM.LLVM -e`, which is the full toolchain and needs administrator.
+  Either way `.cargo/config.toml` has to name `LIBCLANG_PATH` and `CMAKE`, because a
+  `panic` from bindgen and a *"is `cmake` not installed?"* error are what a bare shell
+  produces otherwise. Without `LIBCLANG_PATH` it fails before anything else compiles. The
   dependency is also why `rust-version` reads 1.88 and why `panic = "abort"` now sits in
-  front of C++ FFI. See VOICE.md §10 for the two ways to satisfy it.
+  front of C++ FFI.
 - **Enabling a TLS feature in `ureq` is not the same as choosing it.** The voice download
   takes `ureq` with default features off and `native-tls` on, so that Windows' own schannel
   is used rather than a TLS stack bundled into the binary. That is only half the job: ureq's
@@ -792,3 +802,35 @@ it with the user rather than quietly changing it.
   on any answer rather than only on words. The frontend used to drop empty transcripts on
   the floor without saying anything, which would have left the composer claiming to be busy
   for the rest of the session. A 20-second guard is there for the answer that never comes.
+- **A scroll the pane made itself is reported after the content beneath it has grown.** The
+  follow loop measured `scrollHeight - scrollTop - clientHeight` and read any distance as the
+  reader having scrolled away, but the scroll event for the pane's *own* scroll arrives a
+  frame later — by which time a tool card has laid itself out or a result has landed — so the
+  distance it measured was the growth. The pane then gave up following mid-turn and offered a
+  "Jump to end" nobody had asked for. `settledRef` holds the position the last scroll landed
+  on, and a scroll event reporting exactly that is the pane's own: while following it scrolls
+  again rather than stopping, and it is only compared *while* following, so a reader who
+  scrolls back down to the bottom still resumes. `scrollToEnd` is the one place that scrolls
+  and records, so the marker cannot fall out of step with the position.
+- **The transcript is watched for size changes, because growth after the paint is invisible
+  to React.** A card written to the transcript and only then laid out — which is what the
+  pane falling behind looks like — changes no entry, so nothing re-renders and no scroll is
+  asked for. A `ResizeObserver` on the scroller and on each row catches it, with a
+  `MutationObserver` re-watching rows as they arrive, and it scrolls to the end only while
+  following. The scroller is watched as well as its contents: the composer taking a row for
+  itself shrinks the viewport and moves the bottom just as surely. jsdom has no layout, so
+  the tests drive a stubbed `ResizeObserver` by hand — and their `scrollIntoView` stub moves
+  the position the way a browser does, or the pane's own scroll would be indistinguishable
+  from a reader who never moved.
+- **CodeMirror's placeholder is built once, so a hint that changes has to be swapped.**
+  `placeholder()` keeps the widget it was constructed with until its extension is replaced,
+  so `createComposer` holds it in a `Compartment` and `setPlaceholder` reconfigures it. The
+  hint names the keys, and those keys are settings — Enter can be made to break the line, the
+  space bar can be made to dictate — so it is built from the settings in `App` and handed to
+  the composer, which applies it in an effect *after* the one that builds the editor.
+- **The shortcut list is data, and the modal is only a view of it.** `shortcutGroups()` in
+  `src/lib/shortcuts.ts` is the list; `ShortcutsDialog` renders it and knows nothing about
+  any particular key. Labels are written for the platform by `modifierShortcut`, the same
+  helper the formatting toolbar uses, so a `Mod-…` binding is never described as Control on a
+  Mac. The README repeats the list for people who are not in the app yet, which makes that
+  table the second place to change when a shortcut does.

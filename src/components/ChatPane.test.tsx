@@ -29,6 +29,27 @@ const stateWith = (overrides: Partial<ChatState>): ChatState => ({
 
 const summaryFor = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) });
 
+/**
+ * Stands in for the browser's own scrolling, which jsdom does not do.
+ *
+ * A stub that only records the call would leave the transcript's position
+ * where it was, so the pane's own scroll would look exactly like the reader
+ * never having moved. This one carries the position to the bottom the way a
+ * browser would, which is what the pane then has to be able to tell apart
+ * from a scroll the reader made.
+ *
+ * @returns The spy, for asserting that a scroll was or was not asked for.
+ */
+function stubScrolling(): ReturnType<typeof vi.fn> {
+  const scroll = vi.fn(function (this: Element, options?: ScrollIntoViewOptions) {
+    if (options?.block !== "end") return;
+    const scroller = this.closest(".transcript") as HTMLElement | null;
+    if (scroller) scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
+  });
+  Element.prototype.scrollIntoView = scroll as unknown as Element["scrollIntoView"];
+  return scroll;
+}
+
 describe("ChatPane", () => {
   it("shows the placeholder before anything has been said", () => {
     const { container } = render(<ChatPane state={stateWith({})} />);
@@ -185,8 +206,7 @@ describe("jumping to an entry", () => {
   });
 
   it("brings it to the middle of the pane", () => {
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
     const { container } = render(
       <ChatPane state={stateWith({ entries: [toolEntry("t1", "Bash")] })} reveal={reveal("t1")} />,
     );
@@ -248,8 +268,7 @@ describe("jumping to an entry", () => {
   });
 
   it("asks again for the same entry when the request is repeated", () => {
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
     const { rerender } = render(
       <ChatPane
         state={stateWith({ entries: [toolEntry("t1", "Bash")] })}
@@ -300,8 +319,7 @@ describe("following the newest content", () => {
 
   it("measures the transcript once for a burst of streamed text, not once per token", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
     rerender(<ChatPane state={stateWith({ streaming: "ab" })} />);
@@ -318,8 +336,7 @@ describe("following the newest content", () => {
 
   it("scrolls again once the next frame comes round", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
     frames.runAll();
@@ -332,8 +349,7 @@ describe("following the newest content", () => {
 
   it("cancels a frame it no longer needs when it unmounts", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { unmount } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
     expect(frames.count()).toBe(1);
@@ -370,20 +386,22 @@ describe("following the newest content", () => {
     fireEvent.scroll(element);
   }
 
+  /// Part-way up a transcript taller than the view, which is what a reader
+  /// scrolling back through one looks like.
   const away = (element: HTMLElement): void =>
-    reportScroll(element, { top: 0, height: 1000, viewport: 400 });
+    reportScroll(element, { top: 100, height: 1000, viewport: 400 });
 
   const atTheBottom = (element: HTMLElement): void =>
     reportScroll(element, { top: 600, height: 1000, viewport: 400 });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("leaves the view alone once the reader has scrolled away", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { container, rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
     away(transcriptOf(container));
@@ -407,8 +425,7 @@ describe("following the newest content", () => {
   it("goes back to the end when the button is used", async () => {
     const user = userEvent.setup();
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
     away(transcriptOf(container));
@@ -423,8 +440,7 @@ describe("following the newest content", () => {
 
   it("follows again once the reader comes back to the bottom", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { container, rerender } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
     away(transcriptOf(container));
@@ -443,8 +459,7 @@ describe("following the newest content", () => {
   /// reader stranded above a reply they cannot see.
   it("follows again when a message is sent", () => {
     const frames = captureFrames();
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
 
     const { container, rerender } = render(
       <ChatPane state={stateWith({ entries: [userEntry("u1")] })} />,
@@ -466,6 +481,115 @@ describe("following the newest content", () => {
     away(transcriptOf(container));
 
     expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
+  });
+
+  /**
+   * Watches the transcript's size, which jsdom cannot do for itself.
+   *
+   * @returns A way to report a change in size, and the elements being watched.
+   */
+  function captureResizes(): { fire: () => void; targets: () => Element[] } {
+    const callbacks: ResizeObserverCallback[] = [];
+    const targets = new Set<Element>();
+
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          callbacks.push(callback);
+        }
+        observe(target: Element): void {
+          targets.add(target);
+        }
+        unobserve(target: Element): void {
+          targets.delete(target);
+        }
+        disconnect(): void {
+          targets.clear();
+        }
+      },
+    );
+
+    return {
+      fire: () => {
+        for (const callback of callbacks) callback([], {} as ResizeObserver);
+      },
+      targets: () => [...targets],
+    };
+  }
+
+  /// The scroll the pane makes is reported a frame later, by which time the
+  /// content underneath it has often grown. Measuring that growth and calling it
+  /// the reader leaving is what stopped the following mid-turn.
+  it("keeps up with a scroll of its own that is reported after the content grew", () => {
+    const frames = captureFrames();
+    const scroll = stubScrolling();
+
+    const { container } = render(<ChatPane state={stateWith({ streaming: "a" })} />);
+    const transcript = transcriptOf(container);
+    atTheBottom(transcript);
+    frames.runAll();
+    scroll.mockClear();
+
+    reportScroll(transcript, { top: 600, height: 1600, viewport: 400 });
+
+    expect(screen.queryByRole("button", { name: "Jump to end" })).toBeNull();
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+  });
+
+  it("still leaves the view alone when the reader scrolls up from where it left them", () => {
+    const frames = captureFrames();
+    const scroll = stubScrolling();
+
+    const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+    const transcript = transcriptOf(container);
+    atTheBottom(transcript);
+    frames.runAll();
+    scroll.mockClear();
+
+    away(transcript);
+
+    expect(screen.getByRole("button", { name: "Jump to end" })).toBeInTheDocument();
+  });
+
+  it("keeps up when the transcript changes size with nothing to re-render", () => {
+    const frames = captureFrames();
+    const resizes = captureResizes();
+    const scroll = stubScrolling();
+
+    render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+    frames.runAll();
+    scroll.mockClear();
+
+    resizes.fire();
+
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+  });
+
+  it("watches the transcript and the rows in it, so a card growing is seen", () => {
+    captureFrames();
+    const resizes = captureResizes();
+    Element.prototype.scrollIntoView = vi.fn();
+
+    const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+
+    expect(resizes.targets()).toContain(transcriptOf(container));
+    expect(resizes.targets()).toContain(container.querySelector(".transcript-row"));
+  });
+
+  it("leaves a transcript the reader has scrolled away from alone as it grows", () => {
+    const frames = captureFrames();
+    const resizes = captureResizes();
+    const scroll = stubScrolling();
+
+    const { container } = render(<ChatPane state={stateWith({ entries: [userEntry("u1")] })} />);
+    away(transcriptOf(container));
+    frames.runAll();
+    scroll.mockClear();
+
+    resizes.fire();
+
+    expect(scroll).not.toHaveBeenCalled();
   });
 });
 
@@ -550,8 +674,7 @@ describe("walking through the user's own messages", () => {
   });
 
   it("brings the message it lands on into the middle of the pane", () => {
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
     const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
     place(container, [-500]);
 
@@ -576,8 +699,7 @@ describe("walking through the user's own messages", () => {
   });
 
   it("stays put when there is nothing that way", () => {
-    const scroll = vi.fn();
-    Element.prototype.scrollIntoView = scroll;
+    const scroll = stubScrolling();
     const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
     place(container, [10]);
 

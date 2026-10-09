@@ -419,3 +419,43 @@ describe("SettingsMenu", () => {
     expect(options.map((option) => option.textContent)).toContain("A Family That Is Not Installed");
   });
 });
+
+describe("the shortcut list", () => {
+  const openShortcuts = () =>
+    userEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+
+  it("opens it from the settings panel", async () => {
+    render(<SettingsMenu {...menuProps()} />);
+
+    await openShortcuts();
+
+    expect(screen.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+  });
+
+  it("puts the settings panel away behind it, rather than stacking two dialogs", async () => {
+    const onOpenChange = vi.fn();
+    render(<SettingsMenu {...menuProps({ onOpenChange })} />);
+
+    await openShortcuts();
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("hands the keyboard back to the cog when it closes", async () => {
+    render(<SettingsMenu {...menuProps()} />);
+    await openShortcuts();
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
+  });
+
+  it("is not opened by the settings panel closing on its own", async () => {
+    render(<SettingsMenu {...menuProps()} />);
+
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Keyboard shortcuts" })).toBeNull();
+  });
+});

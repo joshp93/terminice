@@ -10,6 +10,9 @@ import type { RunningGroup } from "../lib/runningTools";
 import type { SlashMenuHost } from "../lib/slashMenu";
 import { Composer, type ComposerProps } from "./Composer";
 
+/** The hint the composer is given unless a test is asking about the hint. */
+const PLACEHOLDER = "Message Claude — / for commands, Enter sends, Shift+Enter for a new line";
+
 function supportLayoutMeasurement(): void {
   Element.prototype.scrollIntoView = () => undefined;
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
@@ -62,6 +65,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     fastMode: false,
     fastModeTitle: "",
     sessionId: null,
+    placeholder: PLACEHOLDER,
     onSend,
     onRunShell,
     onCycleMode,
@@ -1012,8 +1016,8 @@ describe("the running tracker", () => {
 });
 
 describe("the Markdown preview", () => {
-  const preview = () => screen.getByRole("button", { name: "Preview" });
-  const backToEdit = () => screen.getByRole("button", { name: "Edit" });
+  const preview = () => screen.getByRole("button", { name: "Preview markdown" });
+  const backToEdit = () => screen.getByRole("button", { name: "Edit markdown" });
 
   it("sits at the far end of the toolbar, away from the editing buttons", () => {
     const { container } = renderComposer();
@@ -1128,7 +1132,7 @@ describe("the Markdown preview", () => {
     await user.click(preview());
 
     expect(backToEdit()).toHaveAttribute("aria-pressed", "true");
-    expect(backToEdit()).toHaveAttribute("title", "Return to edit (Esc)");
+    expect(backToEdit()).toHaveAttribute("title", "Return to editing (Esc)");
   });
 });
 
@@ -1255,5 +1259,51 @@ describe("the caret while dictating", () => {
 
     expect(lying(container)).toBe(0);
     expect(text(container)).toBe("there we are");
+  });
+});
+
+describe("the empty composer's hint", () => {
+  const hint = (container: HTMLElement): string =>
+    container.querySelector(".cm-placeholder")?.textContent ?? "";
+
+  it("shows what the composer was given", () => {
+    const { container } = renderComposer();
+
+    expect(hint(container)).toBe(PLACEHOLDER);
+  });
+
+  /// The hint names the keys, and those keys can be changed from the settings,
+  /// so a hint that did not follow would be describing a composer that is gone.
+  it("follows the settings rather than staying as the editor was built", () => {
+    const { container, props, rerender } = renderComposer();
+
+    rerender(
+      <Composer
+        {...props}
+        placeholder="Message Claude — / for commands, Enter for a new line, Ctrl+Enter sends"
+      />,
+    );
+
+    expect(hint(container)).toContain("Enter for a new line");
+  });
+
+  it("keeps what has been typed when the hint changes", () => {
+    const { content, props, rerender } = renderComposer();
+    paste(content, "half a thought");
+
+    rerender(<Composer {...props} placeholder="a different hint" />);
+
+    expect(text(content)).toBe("half a thought");
+    expect(hint(content)).toBe("");
+  });
+
+  it("waits until the composer is empty again before showing the new one", () => {
+    const { content, props, rerender } = renderComposer();
+
+    rerender(<Composer {...props} placeholder="a different hint" />);
+    paste(content, "something");
+    rerender(<Composer {...props} placeholder={PLACEHOLDER} />);
+
+    expect(hint(content)).toBe("");
   });
 });

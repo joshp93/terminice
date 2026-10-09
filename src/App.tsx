@@ -7,6 +7,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
 import { useVoice } from "./hooks/useVoice";
 import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
+import { composerPlaceholder } from "./lib/composerPlaceholder";
 import { monoFontStack, uiFontStack } from "./lib/fonts";
 import { runningGroups } from "./lib/runningTools";
 import { loadSettings, saveSettings } from "./lib/settings";
@@ -106,6 +107,10 @@ export function App() {
 
   const usage = chat.state.contextUsage;
   const sessionCwd = chat.state.cwd ?? cwd;
+  const placeholder = composerPlaceholder({
+    enterBehaviour: settings.enterBehaviour,
+    dictates: voice.ready,
+  });
 
   return (
     <div className="app">
@@ -167,6 +172,7 @@ export function App() {
           fastModeTitle={describeFastMode(chat.state.fastMode, chat.state.fastModeReason)}
           onSuggestFiles={chat.suggestFiles}
           sessionId={chat.state.sessionId}
+          placeholder={placeholder}
           voice={voice}
         />
       </div>

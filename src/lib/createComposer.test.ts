@@ -706,3 +706,35 @@ describe("the shape that stands in for the caret", () => {
     expect(textBeforeBars(composer.parent)).toBe("one");
   });
 });
+
+describe("the hint shown while the composer is empty", () => {
+  const hint = (parent: HTMLElement): string =>
+    parent.querySelector(".cm-placeholder")?.textContent ?? "";
+
+  it("swaps the hint for the one it is given, rather than keeping the first", () => {
+    const composer = makeComposer();
+
+    composer.handle.setPlaceholder("a second hint");
+
+    expect(hint(composer.parent)).toBe("a second hint");
+  });
+
+  it("takes the new hint without disturbing what has been typed", () => {
+    const composer = makeComposer();
+    composer.handle.setText("half a thought", true);
+
+    composer.handle.setPlaceholder("a second hint");
+
+    expect(composer.handle.getText()).toBe("half a thought");
+  });
+
+  it("comes back with the hint it was last given, once the composer is emptied", () => {
+    const composer = makeComposer();
+
+    composer.handle.setPlaceholder("a second hint");
+    composer.handle.setText("something", true);
+    composer.handle.clear();
+
+    expect(hint(composer.parent)).toBe("a second hint");
+  });
+});

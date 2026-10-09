@@ -1,3 +1,5 @@
+import { modifierShortcut } from "./modifierShortcut";
+
 /** A Markdown inline style the composer can apply. */
 export type FormatId = "bold" | "italic" | "strike" | "code";
 
@@ -71,10 +73,6 @@ export type TypingPlan = {
   state: InlineState;
 };
 
-function usesCommandKey(): boolean {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-}
-
 /**
  * Creates the inline state for an empty composer.
  *
@@ -101,23 +99,13 @@ export function formatMarkers(active: Iterable<FormatId>): string {
 }
 
 /**
- * Names a shortcut the way the platform writes it.
- *
- * @param key - The key, as it appears after the modifier.
- * @returns A label such as `Ctrl+B` or `⌘B`.
- */
-function shortcutLabel(key: string): string {
-  return usesCommandKey() ? `⌘${key}` : `Ctrl+${key}`;
-}
-
-/**
  * Returns the platform-appropriate shortcut label for a style.
  *
  * @param id - The style.
  * @returns A label such as `Ctrl+B` or `⌘B`.
  */
 export function formatShortcutLabel(id: FormatId): string {
-  return shortcutLabel(SHORTCUT_KEYS[id]);
+  return modifierShortcut(SHORTCUT_KEYS[id]);
 }
 
 /**
@@ -135,7 +123,7 @@ export const QUOTE_SHORTCUT_KEY = "Mod->";
  * @returns A label such as `Ctrl+>` or `⌘>`.
  */
 export function quoteShortcutLabel(): string {
-  return shortcutLabel(">");
+  return modifierShortcut(">");
 }
 
 /**
