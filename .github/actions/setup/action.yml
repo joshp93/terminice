@@ -59,18 +59,6 @@ runs:
       shell: bash
       run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
 
-    # The cc crate defaults the deployment target to 10.13, and Apple's libc++
-    # marks std::filesystem as introduced in 10.15. ggml's
-    # ggml-backend-reg.cpp uses it throughout, so at 10.13 every use is a hard
-    # error and clang gives up at its 20-error limit — twenty reports of one
-    # problem, which reads like a broken toolchain rather than a version floor.
-    #
-    # Every arm64 Mac runs 11.0 or later, so raising it costs nothing.
-    - name: Set the macOS deployment target
-      if: runner.os == 'macOS'
-      shell: bash
-      run: echo "MACOSX_DEPLOYMENT_TARGET=11.0" >> "$GITHUB_ENV"
-
     # whisper-rs-sys declares rust-version 1.88 of its own. Stable is well past
     # that, and taking stable rather than a pin keeps the toolchain in step with
     # what the manifest already asks for.

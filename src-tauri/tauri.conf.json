@@ -41,6 +41,9 @@
         "installMode": "currentUser",
         "installerHooks": "installer.nsh"
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
     }
   }
 }
