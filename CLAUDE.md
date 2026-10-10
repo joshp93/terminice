@@ -834,3 +834,13 @@ it with the user rather than quietly changing it.
   helper the formatting toolbar uses, so a `Mod-…` binding is never described as Control on a
   Mac. The README repeats the list for people who are not in the app yet, which makes that
   table the second place to change when a shortcut does.
+- **A shortcut has no working directory of its own, so it starts the app in the app's own
+  folder.** Verified in the generated installer: Tauri's NSIS template calls `CreateShortcut`
+  with a target and nothing else, and NSIS's `CreateShortcut` has no working-directory
+  parameter at all, so Windows uses the folder holding the executable. That is why
+  `startup.rs` treats a working directory equal to `current_exe().parent()` as saying nothing
+  and opens the home directory instead — the alternative is every Start menu launch reading
+  and writing files in `%LOCALAPPDATA%\terminice`. The two paths are canonicalised before
+  they are compared, because Windows does not guarantee the same case or short name for the
+  same folder. `cargo run` and `tauri dev` are unaffected: neither starts the process in the
+  target directory, so the working directory stays whatever the project was launched from.

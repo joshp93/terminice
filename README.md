@@ -420,8 +420,12 @@ PipeWire or PulseAudio holds the ALSA `default` device, so cpal needs its
   call with a matching name. With parallel tool calls that can be the wrong card; the chip
   names the hook itself so the guess is inspectable.
 - **How you get a `terminice` command depends on the platform.** The app opens the
-  directory given as `argv[1]` when that is a directory, and the working directory
-  otherwise, so `terminice` from inside a project opens that project.
+  directory given as `argv[1]` when that is a directory, then the working directory, so
+  `terminice` from inside a project opens that project. A working directory that is the
+  application's own folder — which is what a Start menu or desktop shortcut gives, since a
+  shortcut created without a working directory of its own starts the process where the
+  executable lives — opens the **home directory** instead, because the install folder is
+  nowhere anyone wants to work.
   - **Windows** — the NSIS installer is per-user, so it asks for no admin rights, installs
     under `%LOCALAPPDATA%\terminice`, and appends that to your `PATH`. The uninstaller
     takes it back off.
