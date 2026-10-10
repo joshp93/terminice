@@ -118,10 +118,8 @@ mod tests {
     /// test controls on any machine.
     #[test]
     fn runs_in_the_directory_it_is_given() {
-        let directory = std::env::temp_dir().join(format!(
-            "terminice-shell-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let directory =
+            std::env::temp_dir().join(format!("terminice-shell-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).expect("a scratch folder");
         let name = directory
             .file_name()
