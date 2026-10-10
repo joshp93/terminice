@@ -818,12 +818,13 @@ body {
 
 /*
  * The height is bounded as well as the text, so a line that somehow escapes the
- * character cap wraps into the card rather than growing it down the pane. Three
- * lines is the two the card previews plus the ellipsis that says more follows.
+ * character cap wraps into the card rather than growing it down the pane.
+ * Sixteen lines is the fifteen the card previews plus the ellipsis that says
+ * more follows.
  */
 .tool-preview pre {
   margin: 0;
-  max-height: 4.05em;
+  max-height: 21.6em;
   line-height: 1.35;
   color: var(--text-dim);
   font-family: var(--font-mono);

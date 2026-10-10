@@ -19,7 +19,7 @@ export type ToolCardProps = {
 };
 
 /** How many lines of output a collapsed card shows. */
-const PREVIEW_LINES = 2;
+const PREVIEW_LINES = 15;
 
 /**
  * Takes the first lines of a result, and counts what is left.
@@ -44,8 +44,8 @@ function previewOf(text: string, count: number): { lines: string[]; hidden: numb
 /**
  * Renders a tool call, collapsed to its summary and the start of its output.
  *
- * Collapsed, the command stays visible and so do the first couple of lines the
- * tool printed, so a run is readable without opening anything. Expanding
+ * Collapsed, the command stays visible and so does the start of what the tool
+ * printed, which is enough to read a run without opening anything. Expanding
  * reveals the exact input, the whole output and any hook that ran around it.
  *
  * @param props - The call and its result.

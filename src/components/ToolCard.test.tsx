@@ -69,17 +69,17 @@ describe("ToolCard", () => {
     expect(container.querySelector(".tool-status.error")).not.toBeNull();
   });
 
-  it("previews only the first two lines of a result", () => {
-    render(<Harness {...base} result={numberedLines(5)} />);
+  it("previews only the first fifteen lines of a result", () => {
+    render(<Harness {...base} result={numberedLines(20)} />);
     const preview = screen.getByRole("button", { name: "Expand Bash output" });
-    expect(preview).toHaveTextContent("line 2");
-    expect(preview).not.toHaveTextContent("line 3");
+    expect(preview).toHaveTextContent("line 15");
+    expect(preview).not.toHaveTextContent("line 16");
     expect(preview).toHaveTextContent("…");
   });
 
   it("counts the hidden lines in the disclosure", () => {
-    render(<Harness {...base} result={numberedLines(5)} />);
-    expect(summary()).toHaveTextContent("show 3 more");
+    render(<Harness {...base} result={numberedLines(20)} />);
+    expect(summary()).toHaveTextContent("show 5 more");
   });
 
   it("offers a plain show when there is nothing hidden", () => {
@@ -199,9 +199,9 @@ describe("ToolCard", () => {
     expect(summary()).toHaveAttribute("aria-expanded", "true");
   });
 
-  /// Two long lines are still two lines, so counting them is not enough to keep
-  /// a collapsed card small: a tool that returned a minified document would
-  /// otherwise lay the whole of it out behind a two-line preview.
+  /// Fifteen long lines are still fifteen lines, so counting them is not enough
+  /// to keep a collapsed card small: a tool that returned a minified document
+  /// would otherwise lay the whole of it out behind the preview.
   it("shortens a line too long for the collapsed card", () => {
     render(<Harness {...base} result={`${"x".repeat(MAX_PREVIEW_LINE + 500)}TAIL`} />);
 
@@ -212,7 +212,9 @@ describe("ToolCard", () => {
   });
 
   it("still counts lines when it shortens them", () => {
-    render(<Harness {...base} result={`${"x".repeat(MAX_PREVIEW_LINE + 500)}\nsecond\nthird`} />);
+    render(
+      <Harness {...base} result={`${"x".repeat(MAX_PREVIEW_LINE + 500)}\n${numberedLines(15)}`} />,
+    );
 
     expect(summary()).toHaveTextContent("show 1 more");
   });
