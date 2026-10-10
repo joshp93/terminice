@@ -1,6 +1,6 @@
 [package]
 name = "terminice"
-version = "1.0.0"
+version = "1.0.1"
 description = "A chat client for Claude Code"
 authors = ["joshp93"]
 edition = "2021"
