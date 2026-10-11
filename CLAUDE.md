@@ -780,6 +780,19 @@ it with the user rather than quietly changing it.
   produces otherwise. Without `LIBCLANG_PATH` it fails before anything else compiles. The
   dependency is also why `rust-version` reads 1.88 and why `panic = "abort"` now sits in
   front of C++ FFI.
+- **ggml picks its instruction set from the machine that builds it, so a released binary
+  has to say otherwise.** `GGML_NATIVE` defaults to on for anything that is not a cross
+  build, and for MSVC that means ggml *runs* a probe — `check_c_source_runs` in its own
+  `FindSIMD.cmake` — and compiles for whatever it finds. `windows-latest` has AVX-512, so
+  the 1.0.2 installers required it and died with `0xc000001d` the moment dictation reached
+  whisper, which is the first thing in the application to touch ggml. Every job goes
+  through the composite action, which sets `GGML_NATIVE=OFF`, because whisper-rs-sys
+  forwards every `GGML_*` variable to cmake as a define and so needs no patch. Two things
+  about that are easy to undo by accident: the flag only reaches a build that has no warm
+  rust-cache, because whisper-rs-sys reads those variables without declaring any
+  `cargo:rerun-if-env-changed` for them, which is what the cache `key` in the action is
+  for; and with the probe gone ggml falls back to AVX2, which is the floor this ships
+  against rather than something to raise back up.
 - **Enabling a TLS feature in `ureq` is not the same as choosing it.** The voice download
   takes `ureq` with default features off and `native-tls` on, so that Windows' own schannel
   is used rather than a TLS stack bundled into the binary. That is only half the job: ureq's

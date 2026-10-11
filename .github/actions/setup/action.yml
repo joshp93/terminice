@@ -59,6 +59,19 @@ runs:
       shell: bash
       run: echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
 
+    # ggml chooses the instruction set to compile for by *running* a probe on the
+    # build machine (`check_c_source_runs` in its own `FindSIMD.cmake`), which is
+    # the one CPU a released binary is guaranteed never to run on. `windows-latest`
+    # has AVX-512, so the installer required it and died with `0xc000001d` on any
+    # machine without it. OFF skips the probe and leaves ggml on the instruction
+    # sets it enables by default -- AVX2, no AVX-512 -- so the artifact runs
+    # wherever the rest of the Tauri targets do. whisper-rs-sys forwards every
+    # `GGML_*` variable to cmake as a define, which is what makes this an
+    # environment variable rather than a patch to the crate.
+    - name: Build ggml for the target, not for the runner
+      shell: bash
+      run: echo "GGML_NATIVE=OFF" >> "$GITHUB_ENV"
+
     # whisper-rs-sys declares rust-version 1.88 of its own. Stable is well past
     # that, and taking stable rather than a pin keeps the toolchain in step with
     # what the manifest already asks for.
@@ -80,9 +93,16 @@ runs:
         node-version: lts/*
         cache: pnpm
 
+    # The `key` is load-bearing rather than decoration. whisper-rs-sys reads the
+    # `GGML_*` variables out of the environment without declaring any of them
+    # with `cargo:rerun-if-env-changed`, so cargo sees no reason to re-run its
+    # build script and will happily hand back a cached whisper.cpp built for a
+    # different CPU. The key is what retires those artifacts when the flag above
+    # changes; without it, this fix never reaches a build that has a warm cache.
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: src-tauri
+        key: ggml-native-off
 
     # .cargo/config.toml pins the SDK, libclang and cmake paths belonging to one
     # particular machine. None of them exist on a runner, and cargo reads that
