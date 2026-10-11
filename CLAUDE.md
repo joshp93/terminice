@@ -444,6 +444,21 @@ it with the user rather than quietly changing it.
   the CLI's own skills come back absolute. The index behind it is `git ls-files` plus
   ripgrep, honouring the ignore files — do not replace it with a directory walk, which
   would offer a different and worse list.
+- **The index matches the session's own separators and its own letter case, and both are
+  verified against the binary rather than assumed.** The ripgrep fallback is run as
+  `--files --follow --hidden --glob !.git/ …`, so a directory reached through a symlink or
+  junction inside the session is indexed like any other and its files come back under the
+  link's name — which is what keeps them inside `cwd` and therefore visible here at all.
+  What is typed has to arrive in the separators those paths use: on Windows `src/lib`
+  answers with nothing while `src\lib` answers with the file beside it, because the query
+  is matched against the path text and no separator is rewritten for us. `suggestionQuery`
+  does that rewriting, from the session's directory rather than from `navigator.platform`,
+  so the two cannot disagree about which way round a separator goes. Case is the fuzzy
+  matcher's usual rule and is *not* a fault to fix: a lowercase character matches either
+  case (`app.tsx` finds `App.tsx`), while an uppercase one only matches an uppercase one,
+  which is why `TERMINICE` finds nothing and `Apps\Term` answers with paths that carry
+  capital letters. Lowercasing the query would "fix" that and cost the ability to narrow
+  by case, which is the terminal's behaviour too.
 - **Fast mode needs an opt-in, and an organisation can override it anyway.** `/fast` exists
   as a builtin and refuses in an SDK session with `fast_mode_disabled_reason:
   "sdk_opt_in_required"` until the session passes `--settings {"fastMode":true}`; with that,

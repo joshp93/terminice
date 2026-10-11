@@ -40,6 +40,7 @@ import {
   takeInterrupted,
 } from "../lib/sessions";
 import { runShellCommand } from "../lib/shell";
+import { suggestionQuery } from "../lib/suggestionQuery";
 import { type ChatState, type ClaudeEvent, createChatState } from "../types";
 
 /** A loaded Claude session, whether or not it is the one on screen. */
@@ -823,7 +824,9 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
    *
    * The CLI answers from an index it maintains itself — `git ls-files` plus
    * ripgrep, honouring the ignore files — so this offers what Claude Code's own
-   * terminal offers. A directory walk here would disagree with it.
+   * terminal offers. A directory walk here would disagree with it. What is typed
+   * is asked for in the separators the session's own paths use, which is the
+   * only form that index matches.
    *
    * @param query - What has been typed after the `@`.
    * @returns Paths relative to the session's directory, best match first.
@@ -832,10 +835,16 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     (query: string): Promise<string[]> => {
       const active = activeRef.current;
       if (active === null) return Promise.resolve([]);
+      const record = storeRef.current.get(active);
+      const dir = record?.state.cwd ?? cwdRef.current;
       return new Promise((resolve) => {
-        request(active, { subtype: "file_suggestions", query }, (envelope) => {
-          resolve(envelope.subtype === "error" ? [] : readFileSuggestions(envelope.response));
-        });
+        request(
+          active,
+          { subtype: "file_suggestions", query: suggestionQuery(query, dir) },
+          (envelope) => {
+            resolve(envelope.subtype === "error" ? [] : readFileSuggestions(envelope.response));
+          },
+        );
       });
     },
     [request],

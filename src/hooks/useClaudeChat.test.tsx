@@ -867,6 +867,17 @@ describe("file suggestions", () => {
     await expect(promise).resolves.toEqual(["src\\App.tsx"]);
   });
 
+  it("asks for the query in the separators the session's paths use", async () => {
+    const view = await mount();
+    const promise = view.result.current.suggestFiles("apps/terminice");
+    await waitFor(() => expect(sentRequests("file_suggestions")).toHaveLength(1));
+
+    expect(sentRequests("file_suggestions")[0]).toMatchObject({ query: "apps\\terminice" });
+
+    reply("file_suggestions", { cwd: CWD, suggestions: [] });
+    await expect(promise).resolves.toEqual([]);
+  });
+
   it("resolves empty when the CLI refuses", async () => {
     const view = await mount();
     const promise = view.result.current.suggestFiles("App");
