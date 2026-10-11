@@ -1068,6 +1068,8 @@ describe("the Markdown preview", () => {
     const shown = container.querySelector(".composer-preview") as HTMLElement;
     expect(shown.querySelector("h1")?.textContent).toBe("Heading");
     expect(shown.querySelector("strong")?.textContent).toBe("bold");
+
+    expect(shown.querySelector(".bubble.user")).toContainElement(shown.querySelector("h1"));
   });
 
   it("says so when there is nothing to preview", async () => {

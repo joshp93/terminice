@@ -1697,6 +1697,19 @@ body {
   outline: none;
 }
 
+/*
+ * The preview shows the message the way the transcript will, so it stands in the
+ * transcript's type scale: everything inside a bubble is an em multiple of this, which
+ * is what makes a heading, a code block and the prose around them agree with the chat.
+ *
+ * It is scoped to the preview rather than declared on .bubble itself because a bubble
+ * is also rendered inside a subagent card, where the card's own smaller size is what
+ * should win.
+ */
+.composer-preview .bubble {
+  font-size: var(--chat-font-size);
+}
+
 .preview-empty {
   margin: 0;
   color: var(--text-dim);
