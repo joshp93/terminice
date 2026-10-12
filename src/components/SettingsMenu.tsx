@@ -157,6 +157,21 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
             value={settings.appFontFamily}
             onChange={(appFontFamily) => onChange({ ...settings, appFontFamily })}
           />
+          <SegmentedChoice
+            label="Edit diffs"
+            value={settings.diffSideBySide ? "side-by-side" : "unified"}
+            options={[
+              { value: "side-by-side", label: "Side by side" },
+              { value: "unified", label: "One column" },
+            ]}
+            onSelect={(choice) =>
+              onChange({ ...settings, diffSideBySide: choice === "side-by-side" })
+            }
+          />
+          <p className="settings-note">
+            Two columns are used only where there is room for them. A card too narrow for this
+            patch, or lines too long to give a column to, is drawn as one column whatever this says.
+          </p>
           <VoiceSetting
             enabled={settings.voiceEnabled}
             onEnabledChange={(voiceEnabled) => onChange({ ...settings, voiceEnabled })}

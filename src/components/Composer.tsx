@@ -19,9 +19,11 @@ import {
 import { turnLabel } from "../lib/turnStatus";
 import { loadUserHistory, saveUserHistory } from "../lib/userHistory";
 import { HOLD_TO_TALK_MS } from "../lib/voiceHold";
+import type { ChatEntry } from "../types";
 import { FlameIcon } from "./FlameIcon";
 import { FormatToolbar } from "./FormatToolbar";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { PendingMessages } from "./PendingMessages";
 import { RunningTracker } from "./RunningTracker";
 import { SlashMenu } from "./SlashMenu";
 import { WorkingIndicator } from "./WorkingIndicator";
@@ -39,6 +41,10 @@ export type ComposerProps = {
   thinkingTokens: number;
   /** What the session is waiting on, for the tracker below the composer. */
   trackers: RunningGroup[];
+  /** Messages sent while a turn was running, which it has not picked up yet. */
+  pending: Extract<ChatEntry, { role: "user" }>[];
+  /** Takes one of those back out of the CLI's queue. */
+  onUnqueue: (id: string) => void;
   /** Jumps the transcript to one of those entries. */
   onReveal: (id: string) => void;
   onStop: () => void;
@@ -125,6 +131,8 @@ export function Composer({
   running,
   thinkingTokens,
   trackers,
+  pending,
+  onUnqueue,
   onReveal,
   onStop,
   onCycleMode,
@@ -722,13 +730,15 @@ export function Composer({
    * Puts what was dictated into the composer, where the microphone was opened.
    *
    * The spaces the hold typed were taken back as it opened, so the caret is
-   * already where the words belong and nothing has to be inserted around them.
+   * already where the words belong. What is left to settle is what they land
+   * against: dictated straight after a full stop the first word would otherwise
+   * be written hard against it, so the composer stands the two apart.
    */
   useEffect(() => {
     const arrived = voice.transcript;
     if (!arrived || arrived.seq === transcriptRef.current) return;
     transcriptRef.current = arrived.seq;
-    handleRef.current?.insertText(arrived.text);
+    handleRef.current?.insertDictation(arrived.text);
   }, [voice.transcript]);
 
   /**
@@ -811,6 +821,7 @@ export function Composer({
   return (
     <footer className="composer">
       {running && <WorkingIndicator label={turnLabel(thinkingTokens)} />}
+      <PendingMessages messages={pending} onUnqueue={onUnqueue} />
       <FormatToolbar
         status={status}
         onToggleFormat={toggleFormat}

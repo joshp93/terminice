@@ -3,12 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatPane, type RevealTarget } from "./components/ChatPane";
 import { Composer } from "./components/Composer";
 import { DialogCard } from "./components/DialogCard";
+import { DiffLayoutProvider } from "./components/DiffLayoutContext";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { useClaudeChat } from "./hooks/useClaudeChat";
 import { useVoice } from "./hooks/useVoice";
 import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
 import { composerPlaceholder } from "./lib/composerPlaceholder";
 import { monoFontStack, uiFontStack } from "./lib/fonts";
+import { pendingMessages } from "./lib/pendingMessages";
 import { runningGroups } from "./lib/runningTools";
 import { loadSettings, saveSettings } from "./lib/settings";
 import type { SlashMenuHost } from "./lib/slashMenu";
@@ -46,6 +48,24 @@ export function App() {
     settings.appFontFamily,
   ]);
 
+  /**
+   * Opens the settings on F1.
+   *
+   * Claimed on the document in the capture phase, the way the composer claims
+   * F6, so that whatever happens to be holding the keyboard cannot swallow it.
+   * The panel focuses its own first control as it opens, which is what puts the
+   * keyboard in it; there is nothing to do here beyond opening it.
+   */
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "F1") return;
+      event.preventDefault();
+      setSettingsOpen(true);
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   const chat = useClaudeChat(cwd);
   const voice = useVoice(settings.voiceEnabled);
   const [reveal, setReveal] = useState<RevealTarget | null>(null);
@@ -61,6 +81,7 @@ export function App() {
   }, []);
 
   const trackers = useMemo(() => runningGroups(chat.state), [chat.state]);
+  const pending = useMemo(() => pendingMessages(chat.state), [chat.state]);
 
   const updateSettings = useCallback((next: Settings) => {
     setSettings(next);
@@ -150,7 +171,9 @@ export function App() {
         </div>
       </header>
       <main className="workspace">
-        <ChatPane state={chat.state} reveal={reveal} />
+        <DiffLayoutProvider sideBySide={settings.diffSideBySide}>
+          <ChatPane state={chat.state} reveal={reveal} />
+        </DiffLayoutProvider>
       </main>
       <div
         className={chat.prompt ? "composer-slot hidden" : "composer-slot"}
@@ -163,6 +186,8 @@ export function App() {
           running={chat.state.busy}
           thinkingTokens={chat.state.thinkingTokens}
           trackers={trackers}
+          pending={pending}
+          onUnqueue={chat.unqueue}
           onReveal={revealEntry}
           onStop={chat.interrupt}
           onCycleMode={chat.cyclePermissionMode}

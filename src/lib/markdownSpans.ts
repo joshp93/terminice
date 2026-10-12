@@ -167,6 +167,38 @@ export function codeBlockText(node: SyntaxNode): { from: number; to: number } | 
   return text ? { from: text.from, to: text.to } : null;
 }
 
+/** The fence that opens and closes a code block. */
+export const FENCE = "```";
+
+/**
+ * Plans breaking a line around a selection, so the selection becomes a block.
+ *
+ * What came before the selection keeps the line above and what came after keeps
+ * the line below, which leaves the code standing on its own rather than inside
+ * the sentence it was carved out of. A side with nothing on it contributes no
+ * line at all, so a selection that began at the start of its line does not gain
+ * an empty line above it.
+ *
+ * @param before - What the selection was cut from, to its left.
+ * @param selected - The selected text.
+ * @param after - What the selection was cut from, to its right.
+ * @returns The text replacing those lines, and the selection's offsets within it.
+ */
+export function planCodeBlockBreakOut(
+  before: string,
+  selected: string,
+  after: string,
+): { text: string; from: number; to: number } {
+  const above = before.length > 0 ? `${before}\n` : "";
+  const below = after.length > 0 ? `\n${after}` : "";
+  const from = above.length + FENCE.length + 1;
+  return {
+    text: `${above}${FENCE}\n${selected}\n${FENCE}${below}`,
+    from,
+    to: from + selected.length,
+  };
+}
+
 /**
  * Removes the markers of the given nodes from a range's text.
  *

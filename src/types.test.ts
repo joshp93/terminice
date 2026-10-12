@@ -63,6 +63,7 @@ describe("createDefaultSettings", () => {
       fontFamily: BUILT_IN_FONT_VALUE,
       appFontFamily: BUILT_IN_FONT_VALUE,
       voiceEnabled: false,
+      diffSideBySide: true,
     });
   });
 

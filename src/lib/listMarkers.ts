@@ -1,3 +1,5 @@
+import { modifierShortcut } from "./modifierShortcut";
+
 /** The two list kinds the composer can apply to a line. */
 export type ListKind = "bullet" | "ordered";
 
@@ -42,6 +44,32 @@ const ORDERED_MARKER = /^(\d+)([.)])$/;
 
 /** One level of indentation. */
 export const INDENT_UNIT = "  ";
+
+/** How each list's shortcut is written: the binding, and the key in words. */
+const LIST_SHORTCUTS: Record<ListKind, { key: string; printed: string }> = {
+  bullet: { key: "Mod-l", printed: "L" },
+  ordered: { key: "Mod-1", printed: "1" },
+};
+
+/**
+ * The key that applies a list kind, as a keymap names it.
+ *
+ * @param kind - The list kind.
+ * @returns The binding.
+ */
+export function listShortcutKey(kind: ListKind): string {
+  return LIST_SHORTCUTS[kind].key;
+}
+
+/**
+ * Returns the platform-appropriate shortcut label for a list.
+ *
+ * @param kind - The list kind.
+ * @returns A label such as `Ctrl+L` or `Ctrl+1`.
+ */
+export function listShortcutLabel(kind: ListKind): string {
+  return modifierShortcut(LIST_SHORTCUTS[kind].printed);
+}
 
 /**
  * Parses a line as a list item.
@@ -136,6 +164,37 @@ export function planListToggle(line: string, kind: ListKind): LineEdit {
 }
 
 /**
+ * Plans applying a list kind across a block of lines.
+ *
+ * The block is one decision rather than one per line, the way an inline style
+ * across a selection is. When every line already carries the kind it comes off
+ * all of them; otherwise it goes on all of them, and a line that already carries
+ * it is left alone — toggling line by line would strip the marker off the lines
+ * that were already right, which is the opposite of what "make this a list"
+ * asks for.
+ *
+ * @param lines - The block of line texts, in document order.
+ * @param kind - The list kind that was requested.
+ * @returns One entry per line that has to change, naming the line by its index.
+ */
+export function planListToggleAll(
+  lines: readonly string[],
+  kind: ListKind,
+): { index: number; edit: LineEdit }[] {
+  const removing = lines.every((line) => readListMarker(line)?.kind === kind);
+
+  const planned: { index: number; edit: LineEdit }[] = [];
+  lines.forEach((line, index) => {
+    if (!removing && readListMarker(line)?.kind === kind) return;
+
+    const edit = planListToggle(line, kind);
+    if (edit.remove === 0 && edit.insert.length === 0) return;
+    planned.push({ index, edit });
+  });
+  return planned;
+}
+
+/**
  * Plans indenting a list line by one level.
  *
  * @param line - The line's text.
@@ -215,13 +274,18 @@ export function planListEnter(line: string): ListEnterPlan | null {
 /**
  * Renumbers a run of ordered-list lines.
  *
- * Indentation is respected, bullets break a run, and a run's first number is
- * kept as its starting point.
+ * Indentation is respected and bullets break a run. A run's first number is kept
+ * as its starting point unless `first` says otherwise, which is the difference
+ * between carrying a list on and rebuilding one: Enter after `5.` must not
+ * renumber the list back to `1.`, and a list whose first item has been deleted
+ * must not carry on from `2.` either.
  *
  * @param lines - The block of line texts to renumber.
+ * @param first - The number each run should start at, or undefined to keep the
+ *   number the run's first line already carries.
  * @returns The rewritten lines, or null when nothing needed to change.
  */
-export function renumberOrderedLines(lines: readonly string[]): string[] | null {
+export function renumberOrderedLines(lines: readonly string[], first?: number): string[] | null {
   const result: string[] = [];
   let counters = new Map<string, number>();
   let changed = false;
@@ -239,7 +303,8 @@ export function renumberOrderedLines(lines: readonly string[]): string[] | null 
     }
 
     const previous = counters.get(parsed.indent);
-    const number = previous === undefined ? Number.parseInt(parsed.marker, 10) : previous + 1;
+    const number =
+      previous === undefined ? (first ?? Number.parseInt(parsed.marker, 10)) : previous + 1;
     counters.set(parsed.indent, number);
 
     const rebuilt = `${parsed.indent}${number}${parsed.marker.slice(-1)}${parsed.gap}${parsed.content}`;

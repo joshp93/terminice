@@ -738,3 +738,101 @@ describe("the hint shown while the composer is empty", () => {
     expect(hint(composer.parent)).toBe("a second hint");
   });
 });
+
+describe("toggling a code block", () => {
+  it("puts the line back exactly as it was", () => {
+    const composer = makeComposer();
+    composer.handle.setText("code");
+    composer.caretAt(2);
+
+    composer.handle.toggleCodeBlock();
+    expect(composer.handle.getText()).toBe("```\ncode\n```");
+
+    composer.handle.toggleCodeBlock();
+    expect(composer.handle.getText()).toBe("code");
+  });
+
+  it("puts a line back when it had neighbours", () => {
+    const composer = makeComposer();
+    composer.handle.setText("above\ncode\nbelow");
+    composer.caretAt("above\nco".length);
+
+    composer.handle.toggleCodeBlock();
+    composer.handle.toggleCodeBlock();
+
+    expect(composer.handle.getText()).toBe("above\ncode\nbelow");
+  });
+
+  it("puts back a block that was typed with its own fences", () => {
+    const composer = makeComposer();
+    composer.handle.setText("```\none\ntwo\n```");
+    composer.caretAt("```\non".length);
+
+    composer.handle.toggleCodeBlock();
+
+    expect(composer.handle.getText()).toBe("one\ntwo");
+  });
+
+  it("puts an empty line back as an empty line", () => {
+    const composer = makeComposer();
+    composer.handle.setText("above\n\nbelow");
+    composer.caretAt("above\n".length);
+
+    composer.handle.toggleCodeBlock();
+    composer.handle.toggleCodeBlock();
+
+    expect(composer.handle.getText()).toBe("above\n\nbelow");
+  });
+});
+
+describe("deleting an item from a numbered list", () => {
+  /// Selecting a line and deleting it takes the line break with it, and that is
+  /// what tells this apart from an edit made inside a line.
+  it("rebuilds the run from one when the first item goes", () => {
+    const composer = makeComposer();
+    composer.handle.setText("1. one\n2. two\n3. three");
+
+    composer.handle.replaceRange(0, "1. one\n".length, "");
+
+    expect(composer.handle.getText()).toBe("1. two\n2. three");
+  });
+
+  it("closes the gap when an item in the middle goes", () => {
+    const composer = makeComposer();
+    composer.handle.setText("1. one\n2. two\n3. three");
+
+    composer.handle.replaceRange("1. one\n".length, "1. one\n2. two\n".length, "");
+
+    expect(composer.handle.getText()).toBe("1. one\n2. three");
+  });
+
+  it("renumbers a run down to its last surviving item", () => {
+    const composer = makeComposer();
+    composer.handle.setText("1. one\n2. two\n3. three");
+
+    composer.handle.replaceRange(0, "1. one\n2. two\n".length, "");
+
+    expect(composer.handle.getText()).toBe("1. three");
+  });
+
+  /// The words of an item are not a list, so editing them renumbers nothing.
+  it("leaves the numbering alone when the edit is inside a line", () => {
+    const composer = makeComposer();
+    composer.handle.setText("5. five\n9. nine");
+
+    composer.handle.replaceRange("5. five\n9.".length, "5. five\n9. ".length, "");
+
+    expect(composer.handle.getText()).toBe("5. five\n9.nine");
+  });
+
+  /// Restoring a session or recalling a message replaces the document outright,
+  /// and the lists in it are left numbered as they were written.
+  it("leaves numbering alone when the whole document is replaced", () => {
+    const composer = makeComposer();
+    composer.handle.setText("1. one\n2. two\n3. three");
+
+    composer.handle.setText("5. five\n9. nine");
+
+    expect(composer.handle.getText()).toBe("5. five\n9. nine");
+  });
+});

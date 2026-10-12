@@ -682,97 +682,21 @@ describe("stepping off a session", () => {
   });
 });
 
-describe("the silence guard", () => {
-  it("interrupts a turn that produces nothing", async () => {
+describe("a turn that goes quiet", () => {
+  /// The reader decides when a session is dead. Nothing here interrupts one for
+  /// being silent, however long it stays that way — a build, a test run or a
+  /// long search is silent for as long as it takes, and a session that has
+  /// genuinely wedged is the reader's call and not a timer's.
+  it("is never interrupted for producing nothing", async () => {
     const view = await mount();
     vi.useFakeTimers();
 
     act(() => view.result.current.send("hello"));
-    act(() => vi.advanceTimersByTime(20_001));
-    vi.useRealTimers();
-
-    expect(sentRequests("interrupt")).toHaveLength(1);
-    await waitFor(() =>
-      expect(entries(view.result.current.state.entries, "notice")).toHaveLength(1),
-    );
-  });
-
-  it("leaves a turn alone while a tool is out, however long the tool takes", async () => {
-    const view = await mount();
-    vi.useFakeTimers();
-
-    act(() => view.result.current.send("run the tests"));
-    emit({
-      type: "assistant",
-      message: {
-        content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test" } }],
-      },
-    });
-    act(() => vi.advanceTimersByTime(120_000));
+    act(() => vi.advanceTimersByTime(3_600_000));
     vi.useRealTimers();
 
     expect(sentRequests("interrupt")).toHaveLength(0);
-    expect(entries(view.result.current.state.entries, "tool")).toHaveLength(1);
-  });
-
-  it("still interrupts a tool that never comes back", async () => {
-    const view = await mount();
-    vi.useFakeTimers();
-
-    act(() => view.result.current.send("run the tests"));
-    emit({
-      type: "assistant",
-      message: {
-        content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test" } }],
-      },
-    });
-    act(() => vi.advanceTimersByTime(600_001));
-
-    expect(sentRequests("interrupt")).toHaveLength(1);
-    vi.useRealTimers();
-  });
-
-  it("goes back to the short allowance once the tool has reported back", async () => {
-    const view = await mount();
-    vi.useFakeTimers();
-
-    act(() => view.result.current.send("run the tests"));
-    emit({
-      type: "assistant",
-      message: {
-        content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "pnpm test" } }],
-      },
-    });
-    emit({
-      type: "user",
-      message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "all green" }] },
-    });
-    emit({
-      type: "stream_event",
-      event: { type: "content_block_delta", delta: { type: "text_delta", text: "It passed" } },
-    });
-
-    act(() => vi.advanceTimersByTime(20_001));
-
-    expect(sentRequests("interrupt")).toHaveLength(1);
-    vi.useRealTimers();
-  });
-
-  it("stands down while the CLI is waiting on the user", async () => {
-    const view = await mount();
-    emit({
-      type: "control_request",
-      request_id: "req-waiting",
-      request: { subtype: "can_use_tool", tool_name: "Bash", input: {} },
-    });
-    await waitFor(() => expect(view.result.current.prompt).not.toBeNull());
-
-    vi.useFakeTimers();
-    act(() => view.result.current.send("hello"));
-    act(() => vi.advanceTimersByTime(20_001));
-    vi.useRealTimers();
-
-    expect(sentRequests("interrupt")).toHaveLength(0);
+    expect(entries(view.result.current.state.entries, "notice")).toHaveLength(0);
   });
 });
 
@@ -898,5 +822,98 @@ describe("file suggestions", () => {
     });
 
     await expect(promise).resolves.toEqual([]);
+  });
+});
+
+describe("taking a message back out of the queue", () => {
+  /** Sends one message, waits for the turn to start, then queues a second. */
+  async function queueSecond(view: Awaited<ReturnType<typeof mount>>) {
+    act(() => view.result.current.send("first"));
+    await waitFor(() => expect(view.result.current.state.busy).toBe(true));
+    act(() => view.result.current.send("second"));
+    await waitFor(() => expect(entries(view.result.current.state.entries, "user")).toHaveLength(2));
+    return entries(view.result.current.state.entries, "user")[1];
+  }
+
+  it("sends every message under a uuid of its own", async () => {
+    const view = await mount();
+    act(() => view.result.current.send("first"));
+    await waitFor(() => expect(view.result.current.state.busy).toBe(true));
+    act(() => view.result.current.send("second"));
+    await waitFor(() => expect(entries(view.result.current.state.entries, "user")).toHaveLength(2));
+
+    const [first, second] = sentLines().filter((line) => line.type === "user");
+
+    expect(first.uuid).toEqual(expect.any(String));
+    expect(second.uuid).not.toBe(first.uuid);
+  });
+
+  it("asks the CLI to drop a waiting message, naming it by that uuid", async () => {
+    const view = await mount();
+    const queued = await queueSecond(view);
+    const uuid = (
+      sentLines()
+        .filter((line) => line.type === "user")
+        .pop() as { uuid: string }
+    ).uuid;
+
+    act(() => view.result.current.unqueue(queued.id));
+
+    await waitFor(() => expect(sentRequests("cancel_async_message")).toHaveLength(1));
+    expect(sentRequests("cancel_async_message")[0]).toMatchObject({ message_uuid: uuid });
+  });
+
+  it("drops the message from the transcript once the CLI says it is gone", async () => {
+    const view = await mount();
+    const queued = await queueSecond(view);
+
+    act(() => view.result.current.unqueue(queued.id));
+    await waitFor(() => expect(sentRequests("cancel_async_message")).toHaveLength(1));
+    reply("cancel_async_message", { cancelled: true });
+
+    await waitFor(() => expect(entries(view.result.current.state.entries, "user")).toHaveLength(1));
+    expect(entries(view.result.current.state.entries, "user")[0]).toMatchObject({ text: "first" });
+  });
+
+  it("keeps a message the CLI had already taken, and settles it", async () => {
+    const view = await mount();
+    const queued = await queueSecond(view);
+
+    act(() => view.result.current.unqueue(queued.id));
+    await waitFor(() => expect(sentRequests("cancel_async_message")).toHaveLength(1));
+    reply("cancel_async_message", { cancelled: false });
+
+    await waitFor(() => {
+      const [, second] = entries(view.result.current.state.entries, "user");
+      expect(second.role === "user" && second.queued).toBe(false);
+    });
+    expect(entries(view.result.current.state.entries, "user")).toHaveLength(2);
+  });
+
+  it("says so when the CLI will not take it back", async () => {
+    const view = await mount();
+    const queued = await queueSecond(view);
+
+    act(() => view.result.current.unqueue(queued.id));
+    await waitFor(() => expect(sentRequests("cancel_async_message")).toHaveLength(1));
+
+    act(() => {
+      sessionChannel().emit({
+        kind: "line",
+        line: JSON.stringify({
+          type: "control_response",
+          response: {
+            subtype: "error",
+            request_id: requestIdOf("cancel_async_message"),
+            error: "too late",
+          },
+        }),
+      });
+    });
+
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "notice")).toHaveLength(1),
+    );
+    expect(entries(view.result.current.state.entries, "user")).toHaveLength(2);
   });
 });

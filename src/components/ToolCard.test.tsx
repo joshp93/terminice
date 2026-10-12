@@ -231,3 +231,48 @@ describe("ToolCard", () => {
     expect(screen.queryByText(/TAIL/)).toBeNull();
   });
 });
+
+describe("a tool that changed a file", () => {
+  const edit: Omit<ToolCardProps, "id"> = {
+    ...base,
+    name: "Edit",
+    detail: "src/app.ts",
+    input: "",
+    result: "@@ -1,3 +1,3 @@\n kept\n-gone\n+arrived",
+  };
+
+  const editSummary = () => screen.getByRole("button", { name: /^Edit/ });
+
+  it("draws the patch a line at a time in the preview", () => {
+    const { container } = render(<Harness {...edit} />);
+
+    expect(container.querySelector(".tool-preview.diff-host")).not.toBeNull();
+    expect(container.querySelectorAll(".diff-line")).toHaveLength(4);
+  });
+
+  /// Each line carries what it is, which is what the tint is applied by.
+  it("tints what was added and what was taken away", () => {
+    const { container } = render(<Harness {...edit} />);
+
+    expect(container.querySelector(".diff-line.addition")).toHaveTextContent("+arrived");
+    expect(container.querySelector(".diff-line.removal")).toHaveTextContent("-gone");
+  });
+
+  it("draws the patch a line at a time once opened too", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Harness {...edit} />);
+
+    await user.click(editSummary());
+
+    const body = container.querySelector(".tool-body");
+    expect(body?.querySelectorAll(".diff-line")).toHaveLength(4);
+    expect(body?.querySelector("pre")).toBeNull();
+  });
+
+  it("leaves a result that is not a patch alone", () => {
+    const { container } = render(<Harness {...base} input="" result={"plain\noutput"} />);
+
+    expect(container.querySelector(".diff")).toBeNull();
+    expect(container.querySelector(".tool-preview pre")).not.toBeNull();
+  });
+});

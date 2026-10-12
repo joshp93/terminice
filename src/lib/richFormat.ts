@@ -126,6 +126,18 @@ export function quoteShortcutLabel(): string {
   return modifierShortcut(">");
 }
 
+/** The key that toggles a code block, as a keymap names it. */
+export const CODE_BLOCK_SHORTCUT_KEY = "Mod-Shift-e";
+
+/**
+ * Returns the platform-appropriate shortcut label for the code block.
+ *
+ * @returns A label such as `Ctrl+Shift+E` or `⌘Shift+E`.
+ */
+export function codeBlockShortcutLabel(): string {
+  return modifierShortcut("Shift+E");
+}
+
 /**
  * Arms a style, so the next character typed is wrapped in it.
  *

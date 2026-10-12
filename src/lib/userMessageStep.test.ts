@@ -10,11 +10,17 @@ const at = (id: string, top: number): UserMessagePlacement => ({
 
 const VIEW = 400;
 
-const up = (placements: UserMessagePlacement[], viewportHeight = VIEW) =>
-  userMessageStep({ placements, viewportHeight, direction: -1 });
+const up = (
+  placements: UserMessagePlacement[],
+  viewportHeight = VIEW,
+  current: string | null = null,
+) => userMessageStep({ placements, viewportHeight, direction: -1, current });
 
-const down = (placements: UserMessagePlacement[], viewportHeight = VIEW) =>
-  userMessageStep({ placements, viewportHeight, direction: 1 });
+const down = (
+  placements: UserMessagePlacement[],
+  viewportHeight = VIEW,
+  current: string | null = null,
+) => userMessageStep({ placements, viewportHeight, direction: 1, current });
 
 describe("userMessageStep", () => {
   it("finds nothing at all in a transcript with no messages of its own", () => {
@@ -35,8 +41,10 @@ describe("userMessageStep", () => {
       expect(up([at("u1", -40)])).toBe("u1");
     });
 
-    it("finds nothing when every message is below the top", () => {
-      expect(up([at("u1", 0), at("u2", 80)])).toBeNull();
+    /// Nothing past the top means the reader is at the top, so the walk starts
+    /// at the newest message rather than not starting at all.
+    it("starts at the newest message when nothing has scrolled off", () => {
+      expect(up([at("u1", 0), at("u2", 80)])).toBe("u2");
     });
   });
 
@@ -54,31 +62,50 @@ describe("userMessageStep", () => {
     });
   });
 
-  /// The jump centres what it lands on, so the next press has to move past it
-  /// rather than land on it again.
-  describe("walking", () => {
-    const centred = [at("u1", -520), at("u2", -40), at("u3", 180), at("u4", 420), at("u5", 640)];
+  /// Once the walk has landed somewhere it steps to the message beside it, so
+  /// one press moves one message however much of the transcript is on screen.
+  describe("stepping", () => {
+    const list = [at("u1", -520), at("u2", -40), at("u3", 180), at("u4", 420), at("u5", 640)];
 
-    it("carries on upwards past the message that was just centred", () => {
-      const landed = up(centred);
-      expect(landed).toBe("u2");
-
-      const after = centred.map((placement) =>
-        placement.id === landed ? { ...placement, top: 180, bottom: 220 } : placement,
-      );
-
-      expect(up(after)).toBe("u1");
+    it("moves up one message from where it landed", () => {
+      expect(up(list, VIEW, "u3")).toBe("u2");
+      expect(up(list, VIEW, "u2")).toBe("u1");
     });
 
-    it("carries on downwards past the message that was just centred", () => {
-      const landed = down(centred);
-      expect(landed).toBe("u4");
+    it("moves down one message from where it landed", () => {
+      expect(down(list, VIEW, "u3")).toBe("u4");
+      expect(down(list, VIEW, "u4")).toBe("u5");
+    });
 
-      const after = centred.map((placement) =>
-        placement.id === landed ? { ...placement, top: 180, bottom: 220 } : placement,
-      );
+    /// The whole point of the cursor: messages already on screen are stepped
+    /// through rather than jumped over.
+    it("reaches a message that is in the middle of the view", () => {
+      const onScreen = [at("u1", 40), at("u2", 120), at("u3", 200)];
 
-      expect(down(after)).toBe("u5");
+      expect(up(onScreen, VIEW, "u3")).toBe("u2");
+      expect(up(onScreen, VIEW, "u2")).toBe("u1");
+    });
+
+    it("stops at each end of the list", () => {
+      expect(up(list, VIEW, "u1")).toBeNull();
+      expect(down(list, VIEW, "u5")).toBeNull();
+    });
+
+    /// The anchor is the id, not the position, so a transcript that has scrolled
+    /// underneath the walk still steps from the right message.
+    it("steps from the id it was given, wherever that message now is", () => {
+      const moved = list.map((placement) => ({
+        ...placement,
+        top: placement.top + 1000,
+        bottom: placement.bottom + 1000,
+      }));
+
+      expect(up(moved, VIEW, "u3")).toBe("u2");
+    });
+
+    it("falls back to the geometry when the anchor is not in the list", () => {
+      expect(up(list, VIEW, "gone")).toBe("u2");
+      expect(down(list, VIEW, "gone")).toBe("u4");
     });
   });
 });

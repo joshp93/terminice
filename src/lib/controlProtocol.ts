@@ -115,6 +115,23 @@ export function controlRequest(
 }
 
 /**
+ * Reads whether a queued message was actually dropped.
+ *
+ * The request that asks for it is `cancel_async_message`, written from the
+ * session like every other control body; this reads the answer it gives, which
+ * is the only thing that says whether the message was still there to drop.
+ *
+ * @param payload - The response body.
+ * @returns True when it was in the queue and is now gone, false when the CLI had
+ *   already taken it, or null when the answer says nothing either way.
+ */
+export function readCancelled(payload: unknown): boolean | null {
+  const record = asRecord(payload);
+  if (!record) return null;
+  return typeof record.cancelled === "boolean" ? record.cancelled : null;
+}
+
+/**
  * Builds an approval for a tool the CLI asked about.
  *
  * @param requestId - The request being answered.

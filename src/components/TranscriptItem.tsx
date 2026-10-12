@@ -65,7 +65,6 @@ export const TranscriptItem = memo(function TranscriptItem({ entry }: Transcript
     case "user":
       return (
         <div className="bubble user">
-          {entry.queued === true && <span className="queued-badge">Queued</span>}
           <MessageBubble text={entry.text} preserveLineBreaks />
         </div>
       );

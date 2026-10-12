@@ -19,7 +19,10 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **Tool calls you can open** — every call shows the command and the first couple of lines
   it printed; expanding it reveals the exact input, the whole output and any hook that ran
   around it. Cards take a focus ring, by keyboard or mouse, and **Expand all** opens every
-  one at once.
+  one at once. A call that changed a file shows its patch with the additions and removals
+  tinted, the old lines beside the new ones wherever the card is wide enough for two
+  columns and one column where it is not — and *Edit diffs* in the settings can ask for one
+  column always.
 - **Subagents get their own card** — when Claude delegates, the agent's conversation is
   nested inside the call that spawned it rather than interleaved with the main one, where
   it would read as things Claude never said. Collapsed by default; opening it shows what
@@ -257,6 +260,13 @@ open the file menu — `Enter` or `Tab` takes the highlighted one, replacing wha
 after the `@` and leaving the rest of the message alone. User messages render with
 single newlines preserved.
 
+**Sending mid-turn.** A message sent while a turn is running waits above the composer
+rather than joining the transcript, because the conversation has not reached it yet. It
+drops into the transcript where it was sent from once the turn ends. The `×` beside it
+takes it back out of the queue before it runs — if the CLI has already picked it up, the
+message stays, since the model has read it by then, and the app says what happened either
+way.
+
 ## Slash commands
 
 Type `/` as the first character and a menu opens under the composer — above it when there
@@ -403,9 +413,6 @@ PipeWire or PulseAudio holds the ALSA `default` device, so cpal needs its
   `system/compact_boundary` when it ends, with nothing in between. There is no percentage
   to draw, so the bar slides rather than filling, and the label shows the token count from
   the last context reading — the only figure that is actually known while it runs.
-- **`/doctor` is slow enough to trip the silence guard.** It blocks the session for a long
-  time without emitting anything, so after 20 seconds of total silence the turn is
-  interrupted with a note. Other commands are unaffected because they speak up as they go.
 - **MCP servers are read-only.** The CLI rejects `toggle_mcp_server` as an unsupported
   control subtype (verified), so servers can be listed and reconnect/enable/disable issued
   for *all* of them via `/mcp`, but not toggled individually.

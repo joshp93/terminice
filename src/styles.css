@@ -17,6 +17,14 @@
   --accent-border: #2f6b4c;
   --accent-fill: #2f6b4c;
   --accent-on-fill: #eafff3;
+  /* A reader's own message. Enough green to read as theirs at a glance, and
+     faint enough not to fight the prose written inside it. */
+  --accent-wash: rgba(125, 211, 160, 0.07);
+  /* The lines a patch added and the lines it took away, in a tool card. */
+  --diff-add-text: #8ee0ad;
+  --diff-add-bg: rgba(125, 211, 160, 0.16);
+  --diff-remove-text: #f08c96;
+  --diff-remove-bg: rgba(224, 108, 117, 0.16);
   /* The ring around whatever the keyboard is currently on. It has to read as
      an unmistakable edge against its own background, which the accent border
      does not — it sits too close to the plain border in both themes. */
@@ -48,6 +56,11 @@
   --accent-border: #7fc4a0;
   --accent-fill: #1f7a4d;
   --accent-on-fill: #ffffff;
+  --accent-wash: rgba(26, 107, 69, 0.06);
+  --diff-add-text: #1a6b45;
+  --diff-add-bg: rgba(26, 107, 69, 0.12);
+  --diff-remove-text: #a3261f;
+  --diff-remove-bg: rgba(192, 57, 43, 0.1);
   --focus-ring: #2a2f36;
   /* The composer's outline while it is holding a local command. */
   --shell-accent: #0b8f4d;
@@ -685,8 +698,8 @@ body {
 }
 
 .bubble.user {
-  background: var(--panel-raised);
-  border: 1px solid var(--border);
+  background: var(--accent-wash);
+  border: 1px solid var(--accent-border);
   border-radius: 10px;
   padding: 10px 13px;
 }
@@ -1046,6 +1059,146 @@ body {
   color: var(--danger-text);
 }
 
+/*
+ * A patch, drawn one line at a time so that what was added and what was taken
+ * away can be read at a glance.
+ *
+ * The tint runs the full width of the card rather than only behind the
+ * characters of the line — which is what a background on the text alone would
+ * give. The horizontal inset the card would have handed the text is carried by
+ * each line instead, so the box the lines sit in can reach both edges while the
+ * text itself stays exactly where it was.
+ */
+.diff {
+  line-height: 1.35;
+  font-family: var(--font-mono);
+  font-size: 0.821em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff-line {
+  display: block;
+  /* A blank line is a line of the patch like any other, and a block with
+     nothing in it would otherwise collapse to no height at all. */
+  min-height: 1.35em;
+}
+
+.diff-line.addition,
+.diff-cell.addition {
+  background: var(--diff-add-bg);
+  color: var(--diff-add-text);
+}
+
+.diff-line.removal,
+.diff-cell.removal {
+  background: var(--diff-remove-bg);
+  color: var(--diff-remove-text);
+}
+
+/*
+ * Two columns, the old lines beside the new ones. The box is the grid and each
+ * row is `display: contents`, so a row's cells are the grid's own items — which
+ * is what lets a line that belongs to neither side span both of them without a
+ * nested grid to keep in step.
+ */
+.diff.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.diff-row {
+  display: contents;
+}
+
+.diff-cell {
+  display: block;
+  min-height: 1.35em;
+  /* The inner edge, one half of the gutter the columns are read across. */
+  padding: 0 10px;
+}
+
+/* The rule between the two sides, continuous down the card because one row
+   begins where the last one ended. */
+.diff-cell.right {
+  border-left: 1px solid var(--border);
+}
+
+/* A cell with nothing beside it: the side that had no line to show. It keeps
+   its height so the columns stay in step, and no tint, so it reads as an
+   absence rather than as a line of the file. */
+.diff-cell.empty {
+  background: none;
+}
+
+.diff-cell.across {
+  grid-column: span 2;
+}
+
+/* The outer edges follow the single-column view's, so the text does not move
+   when the card changes its mind about the layout. */
+.tool-preview .diff-cell.left {
+  padding-left: 26px;
+}
+
+.tool-preview .diff-cell.right {
+  padding-right: 11px;
+}
+
+.tool-body .diff-cell.left {
+  padding-left: 20px;
+}
+
+.tool-body .diff-cell.right {
+  padding-right: 20px;
+}
+
+.tool-preview .diff-cell.across {
+  padding: 0 11px 0 26px;
+}
+
+.tool-body .diff-cell.across {
+  padding: 0 20px;
+}
+
+/* The collapsed preview: the button's own inset moves onto the lines, and the
+   height stays bounded as it is for any other preview. */
+.tool-preview.diff-host {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.tool-preview .diff {
+  max-height: 21.6em;
+  overflow: hidden;
+  color: var(--text-dim);
+}
+
+.tool-preview.failed .diff {
+  color: var(--danger-text);
+}
+
+.tool-preview .diff-line {
+  padding: 0 11px 0 26px;
+}
+
+/* The expanded body: the patch gives back what the body and its code box would
+   between them have inset it by, so a tinted line reaches the card's edges. The
+   two paddings become the line's own, which keeps the text where it was. */
+/* biome-ignore lint/style/noDescendingSpecificity: a diff preview and an expanded diff body are different elements, so the rules never compete. */
+.tool-body .diff {
+  margin: 0 -11px;
+  padding: 7px 0;
+  max-height: 22em;
+  overflow: auto;
+  border-radius: 0;
+  background: var(--code-bg);
+}
+
+.tool-body .diff-line {
+  padding: 0 20px;
+}
+
 .tool-name {
   color: var(--accent);
   font-weight: 600;
@@ -1085,6 +1238,59 @@ body {
   padding: 2px 4px;
   color: var(--text-dim);
   font-size: 0.893em;
+}
+
+/*
+ * Messages the running turn has not picked up yet. They wait above the composer
+ * rather than in the transcript, so the reader can see they have been sent
+ * without the chat claiming a place the conversation has not reached.
+ */
+.pending {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The message and the way to take it back, side by side — the same shape the
+   suggestion above the composer uses. */
+.pending-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pending-message {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  gap: 7px;
+  margin: 0;
+  min-width: 0;
+  color: var(--text-dim);
+  /* The reader's own words, so they are drawn at the size the chat is drawn at
+     rather than at the composer's — the same rule the transcript's own text
+     follows, and the reason the setting is called the chat text size. */
+  font-size: var(--chat-font-size);
+  /* The same tint and edge the message wears once it is in the transcript, in a
+     tighter box and a dashed line: the words are settled, the place for them is
+     not. */
+  background: var(--accent-wash);
+  border: 1px dashed var(--accent-border);
+  border-radius: 10px;
+  padding: 4px 8px;
+}
+
+/* The badge is written to sit above a message inside a bubble; here it leads a
+   line, so the gap beneath it is the row's to set. */
+.pending-message .queued-badge {
+  flex: 0 0 auto;
+  margin-bottom: 0;
+}
+
+.pending-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /*
@@ -2194,7 +2400,8 @@ body {
   color: var(--text);
 }
 
-.suggestion-dismiss {
+.suggestion-dismiss,
+.pending-dismiss {
   flex: 0 0 auto;
   width: 24px;
   padding: 4px 0;
@@ -2207,7 +2414,8 @@ body {
   cursor: pointer;
 }
 
-.suggestion-dismiss:hover {
+.suggestion-dismiss:hover,
+.pending-dismiss:hover {
   color: var(--text);
   background: var(--panel-raised);
 }

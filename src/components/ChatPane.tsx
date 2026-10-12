@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isPending } from "../lib/pendingMessages";
 import { compactLabel, turnLabel } from "../lib/turnStatus";
 import { type UserMessagePlacement, userMessageStep } from "../lib/userMessageStep";
 import type { ChatState } from "../types";
@@ -106,6 +107,15 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
   const [exceptions, setExceptions] = useState<ReadonlySet<string>>(new Set());
   /** The entry the tracker last asked for, lit while it is being looked at. */
   const [flash, setFlash] = useState<RevealTarget | null>(null);
+  /**
+   * The message the keyboard walk is standing on, while the reader has not
+   * scrolled since. It is what lets one press move one message: the walk steps
+   * from here rather than working out where it is from the scroll position.
+   * Forgetting it is what re-anchors the walk to what is on screen.
+   */
+  const walkRef = useRef<string | null>(null);
+  /** Where the walk last left the scroll, so its own scroll is not read as the reader's. */
+  const walkScrollRef = useRef<number | null>(null);
   /** Read by the reveal effect, which must not run again when it changes. */
   const defaultOpenRef = useRef(defaultOpen);
   defaultOpenRef.current = defaultOpen;
@@ -142,6 +152,11 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     const distance = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+
+    // A scroll the walk made is not the reader going anywhere — the walk is
+    // still standing on the message it landed on. Any other scroll is the reader
+    // taking over, and the next press starts again from what is on screen.
+    if (scroller.scrollTop !== walkScrollRef.current) walkRef.current = null;
 
     if (followingRef.current && scroller.scrollTop === settledRef.current) {
       if (distance > FOLLOW_THRESHOLD_PX) scrollToEnd();
@@ -236,7 +251,7 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
    *
    * @param id - The entry to show.
    */
-  const revealNow = useCallback((id: string) => {
+  const revealNow = useCallback((id: string, where: "top" | "centre" = "centre") => {
     const open = defaultOpenRef.current;
     setExceptions((current) => {
       const next = new Set(current);
@@ -245,7 +260,27 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
       return next;
     });
     setFlash((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
-    rowFor(scrollerRef.current, id)?.scrollIntoView({ block: "center" });
+
+    const scroller = scrollerRef.current;
+    const row = rowFor(scroller, id);
+    if (!scroller || !row) return;
+
+    // A jump from the tracker centres what it names. The keyboard walk asks for
+    // the top instead: a message the reader can already see is left exactly
+    // where it is rather than being pulled about under them, and one that is out
+    // of view goes to the top of the pane — which is the best that can be done
+    // for a message taller than the view.
+    if (where === "centre") {
+      row.scrollIntoView({ block: "center" });
+      return;
+    }
+
+    const view = scroller.getBoundingClientRect();
+    const rect = row.getBoundingClientRect();
+    if (rect.top >= view.top && rect.bottom <= view.bottom) return;
+
+    row.scrollIntoView({ block: "start" });
+    walkScrollRef.current = scroller.scrollTop;
   }, []);
 
   useEffect(() => {
@@ -278,8 +313,11 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
         placements: userPlacements(),
         viewportHeight: scroller.clientHeight,
         direction,
+        current: walkRef.current,
       });
       if (id === null) return;
+
+      walkRef.current = id;
 
       // Taken before the composer sees it: a bare arrow belongs to whatever has
       // the keyboard, but this one is a move through the transcript from
@@ -287,7 +325,7 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
       // keys that this must not also trip.
       event.preventDefault();
       event.stopPropagation();
-      revealNow(id);
+      revealNow(id, "top");
     };
 
     document.addEventListener("keydown", onKeyDown, true);
@@ -336,15 +374,17 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
       >
         <ExpansionProvider value={expansion}>
           {empty && <EmptyChat />}
-          {state.entries.map((entry) => (
-            <div
-              key={entry.id}
-              className={flash?.id === entry.id ? "transcript-row flash" : "transcript-row"}
-              data-entry-id={entry.id}
-            >
-              <TranscriptItem entry={entry} />
-            </div>
-          ))}
+          {state.entries
+            .filter((entry) => !isPending(entry))
+            .map((entry) => (
+              <div
+                key={entry.id}
+                className={flash?.id === entry.id ? "transcript-row flash" : "transcript-row"}
+                data-entry-id={entry.id}
+              >
+                <TranscriptItem entry={entry} />
+              </div>
+            ))}
           {state.streaming.length > 0 && (
             <div className="bubble assistant streaming">
               <MessageBubble text={state.streaming} />

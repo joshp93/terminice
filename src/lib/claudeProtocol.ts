@@ -105,15 +105,55 @@ export function readToolUses(
  * @param text - The message text.
  * @param queued - True when a turn was already running, so the CLI has yet to
  *   pick this message up.
+ * @param messageUuid - The uuid the message was sent under, which is how the CLI
+ *   names it if it has to be taken back out of the queue.
  * @returns The updated chat state.
  */
-export function withUserMessage(state: ChatState, text: string, queued = false): ChatState {
+export function withUserMessage(
+  state: ChatState,
+  text: string,
+  queued = false,
+  messageUuid?: string,
+): ChatState {
   return {
     ...state,
     busy: true,
     thinkingTokens: 0,
     suggestion: null,
-    entries: [...state.entries, { id: nextId("user"), role: "user", text, queued }],
+    entries: [...state.entries, { id: nextId("user"), role: "user", text, queued, messageUuid }],
+  };
+}
+
+/**
+ * Takes one entry out of the transcript.
+ *
+ * A message dropped from the CLI's queue never ran and never entered the
+ * conversation, so nothing about it belongs in the transcript.
+ *
+ * @param state - The current chat state.
+ * @param id - The entry to remove.
+ * @returns The updated chat state.
+ */
+export function withoutEntry(state: ChatState, id: string): ChatState {
+  return { ...state, entries: state.entries.filter((entry) => entry.id !== id) };
+}
+
+/**
+ * Takes the waiting mark off one message.
+ *
+ * Used when the CLI has already taken a message into a turn: it is being read,
+ * so it has joined the conversation whether or not it could still be dropped.
+ *
+ * @param state - The current chat state.
+ * @param id - The entry to settle.
+ * @returns The updated chat state.
+ */
+export function withSettledMessage(state: ChatState, id: string): ChatState {
+  return {
+    ...state,
+    entries: state.entries.map((entry) =>
+      entry.id === id && entry.role === "user" ? { ...entry, queued: false } : entry,
+    ),
   };
 }
 
@@ -125,11 +165,33 @@ export function withUserMessage(state: ChatState, text: string, queued = false):
  * @returns The updated chat state.
  */
 export function withError(state: ChatState, text: string): ChatState {
+  const over = withTurnOver(state);
+  return {
+    ...over,
+    entries: [...over.entries, { id: nextId("error"), role: "error", text }],
+  };
+}
+
+/**
+ * Ends a turn that nothing else is going to end.
+ *
+ * A turn normally ends with a `result`, and a `result` is what settles the queue
+ * of messages sent while it ran. Some turn ends never produce one — the process
+ * exits, the CLI reports itself idle, a failure is recorded from outside the
+ * event stream — and a message left carrying the mark is one the reader can
+ * neither see in the transcript nor reach with the keyboard, because a message
+ * that is not drawn is not there to be jumped to. So whatever ends a turn
+ * settles the queue along with it.
+ *
+ * @param state - The current chat state.
+ * @returns The state with the turn over and nothing left waiting.
+ */
+export function withTurnOver(state: ChatState): ChatState {
   return {
     ...state,
     busy: false,
     streaming: "",
-    entries: [...state.entries, { id: nextId("error"), role: "error", text }],
+    entries: withSettledQueue(state.entries),
   };
 }
 
@@ -539,7 +601,7 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
   if (subtype === "status") {
     const status = asText(message.status);
     if (status === "requesting") return { ...state, busy: true };
-    if (status === "idle") return { ...state, busy: false, compacting: false };
+    if (status === "idle") return { ...withTurnOver(state), compacting: false };
     if (status === "compacting") return { ...state, busy: true, compacting: true };
   }
 
@@ -692,6 +754,10 @@ function applyResultEvent(state: ChatState, message: Json, interrupted: boolean)
  * @returns The entries, with nothing left marked as queued.
  */
 function withSettledQueue(entries: ChatEntry[]): ChatEntry[] {
+  const waiting = (entry: ChatEntry): boolean => entry.role === "user" && entry.queued === true;
+  // Handed back as it came when nothing was waiting, so a turn ending with
+  // nothing queued does not hand the pane a new array to re-render.
+  if (!entries.some(waiting)) return entries;
   return entries.map((entry) =>
     entry.role === "user" && entry.queued === true ? { ...entry, queued: false } : entry,
   );

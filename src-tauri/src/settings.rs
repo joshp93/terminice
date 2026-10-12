@@ -127,6 +127,8 @@ pub struct Settings {
     pub app_font_family: String,
     /// Whether holding the space bar starts dictating.
     pub voice_enabled: bool,
+    /// Whether a tool's patch is drawn as two columns, where there is room.
+    pub diff_side_by_side: bool,
 }
 
 impl Default for Settings {
@@ -139,6 +141,7 @@ impl Default for Settings {
             font_family: String::new(),
             app_font_family: String::new(),
             voice_enabled: false,
+            diff_side_by_side: true,
         }
     }
 }
@@ -193,6 +196,7 @@ mod tests {
         assert_eq!(settings.chat_font_size, FontSize(14.0));
         assert_eq!(settings.font_family, "");
         assert_eq!(settings.app_font_family, "");
+        assert!(settings.diff_side_by_side);
     }
 
     #[test]
@@ -205,6 +209,7 @@ mod tests {
             font_family: "JetBrainsMono Nerd Font".to_string(),
             app_font_family: "Georgia".to_string(),
             voice_enabled: true,
+            diff_side_by_side: false,
         };
         let json = serde_json::to_string(&settings).expect("serialises");
         assert!(json.contains("\"enterBehaviour\":\"newline\""), "{json}");
@@ -217,6 +222,7 @@ mod tests {
         );
         assert!(json.contains("\"appFontFamily\":\"Georgia\""), "{json}");
         assert!(json.contains("\"voiceEnabled\":true"), "{json}");
+        assert!(json.contains("\"diffSideBySide\":false"), "{json}");
 
         let parsed: Settings = serde_json::from_str(&json).expect("parses");
         assert_eq!(parsed.theme, Theme::Light);
@@ -225,6 +231,15 @@ mod tests {
         assert_eq!(parsed.font_family, "JetBrainsMono Nerd Font");
         assert_eq!(parsed.app_font_family, "Georgia");
         assert!(parsed.voice_enabled);
+        assert!(!parsed.diff_side_by_side);
+    }
+
+    /// The diff layout changes nothing but how a patch is drawn, so a file
+    /// written before it existed comes back with it on.
+    #[test]
+    fn a_settings_file_written_before_the_diff_layout_has_it_on() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"light"}"#).expect("parses");
+        assert!(parsed.diff_side_by_side);
     }
 
     /// A file written before the app font existed still loads, with that one

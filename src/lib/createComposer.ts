@@ -6,7 +6,15 @@ import {
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
-import { Compartment, EditorState, Prec, type Range } from "@codemirror/state";
+import {
+  ChangeSet,
+  Compartment,
+  EditorState,
+  Prec,
+  type Range,
+  type Text,
+  type Transaction,
+} from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -23,20 +31,23 @@ import {
   type LineEdit,
   type ListEnterPlan,
   type ListKind,
+  listShortcutKey,
   parseListLine,
   planIndent,
   planListBackspace,
   planListEnter,
   planListToggle,
+  planListToggleAll,
   planOutdent,
   readListMarker,
   renumberOrderedLines,
 } from "./listMarkers";
 import {
-  codeBlockText,
+  FENCE,
   findCodeBlock,
   findStyleNode,
   hasStyleMarkers,
+  planCodeBlockBreakOut,
   type StyleState,
   spanOf,
   stripMarkers,
@@ -46,6 +57,7 @@ import {
 } from "./markdownSpans";
 import { parseQuoteLine, planQuoteEnter, planQuoteToggle } from "./quoteMarkers";
 import {
+  CODE_BLOCK_SHORTCUT_KEY,
   createInlineState,
   disarmFormat,
   FORMAT_MARKERS,
@@ -62,6 +74,7 @@ import { planSelectionToggle } from "./styleEdits";
 import { findUrls, urlAt } from "./urls";
 import { setVoiceCaret, type VoiceCaretMode, voiceCaret } from "./voiceCaret";
 import { holdCleanupRange } from "./voiceHold";
+import { dictationPrefix } from "./voiceInsertion";
 
 /** Everything the toolbar needs to render the composer's current state. */
 export type ComposerStatus = {
@@ -89,6 +102,8 @@ export type ComposerHandle = {
   replaceRange: (from: number, to: number, text: string) => void;
   clear: () => void;
   insertText: (text: string) => void;
+  /** Writes dictated words at the caret, standing them off a sentence before them. */
+  insertDictation: (text: string) => void;
   /** True when the caret is at the very start, with nothing selected. */
   caretAtStart: () => boolean;
   /** True when the caret is at the very end, with nothing selected. */
@@ -134,10 +149,18 @@ export type VoiceOptions = {
   onEnd: () => void;
 };
 
-const FENCE = "```";
-
 /** The character that turns the composer into a shell. */
 const SHELL_PREFIX = "!";
+
+/**
+ * Whether the composer is holding a local command rather than a message.
+ *
+ * @param text - The composer's contents.
+ * @returns True when it is a shell command.
+ */
+function isShellCommand(text: string): boolean {
+  return text.startsWith(SHELL_PREFIX);
+}
 
 /**
  * Marks the leading `!` so it can be spaced away from the command.
@@ -146,7 +169,7 @@ const SHELL_PREFIX = "!";
  * @returns A decoration over the prefix, or none when there is not one.
  */
 function shellPrefixDecorations(view: EditorView): DecorationSet {
-  if (!view.state.doc.toString().startsWith(SHELL_PREFIX)) return Decoration.none;
+  if (!isShellCommand(view.state.doc.toString())) return Decoration.none;
   return Decoration.set([Decoration.mark({ class: "cm-shell-prefix" }).range(0, 1)]);
 }
 
@@ -305,6 +328,36 @@ function mapPosition(position: number, from: number, to: number, insertLength: n
 }
 
 /**
+ * Whether a transaction deleted whole lines from the document.
+ *
+ * A list item goes either because whole lines were selected and deleted, or
+ * because a Backspace joined one to the line above. Both begin and end at a line
+ * boundary in the document as it was, which is what separates them from an edit
+ * made inside a line — and an edit inside a line must never renumber its
+ * neighbours.
+ *
+ * A transaction that replaced the document outright is refused as well. That is
+ * a session being restored or a message recalled rather than something typed, so
+ * its lists are left numbered as they were written.
+ *
+ * @param transaction - The transaction to inspect.
+ * @returns True when the change took whole lines and left the rest alone.
+ */
+function removedWholeLines(transaction: Transaction): boolean {
+  const before = transaction.startState.doc;
+  if (transaction.newDoc.lines >= before.lines) return false;
+
+  let wholeLines = true;
+  let replacedEverything = false;
+  transaction.changes.iterChanges((fromA, toA) => {
+    if (fromA === 0 && toA >= before.length) replacedEverything = true;
+    if (fromA !== before.lineAt(fromA).from) wholeLines = false;
+    if (toA < before.length && toA !== before.lineAt(toA).from) wholeLines = false;
+  });
+  return wholeLines && !replacedEverything;
+}
+
+/**
  * Creates a Markdown-aware composer.
  *
  * Enter sends when `submitsOnEnter` allows it and otherwise inserts a newline,
@@ -381,8 +434,23 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     report(view);
   };
 
-  const renumberAround = (view: EditorView, position: number): void => {
-    const doc = view.state.doc;
+  /**
+   * The edits that close up the ordered run a position sits in.
+   *
+   * Planned against a document rather than applied to a view, so the same
+   * arithmetic serves a keystroke and a transaction that has not been applied
+   * yet.
+   *
+   * @param doc - The document to read.
+   * @param position - A position inside the run.
+   * @param first - The number the run should start at, if it is being rebuilt.
+   * @returns One edit per line whose marker has to change.
+   */
+  const orderedRunEdits = (
+    doc: Text,
+    position: number,
+    first?: number,
+  ): { from: number; to: number; insert: string }[] => {
     const lineNumber = doc.lineAt(position).number;
 
     let start = lineNumber;
@@ -392,17 +460,56 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
 
     const texts: string[] = [];
     for (let number = start; number <= end; number += 1) texts.push(doc.line(number).text);
-    const renumbered = renumberOrderedLines(texts);
-    if (!renumbered) return;
+    const renumbered = renumberOrderedLines(texts, first);
+    if (!renumbered) return [];
 
-    const changes: { from: number; to: number; insert: string }[] = [];
+    const edits: { from: number; to: number; insert: string }[] = [];
     for (let number = start; number <= end; number += 1) {
       const line = doc.line(number);
       const next = renumbered[number - start];
-      if (next !== line.text) changes.push({ from: line.from, to: line.to, insert: next });
+      if (next !== line.text) edits.push({ from: line.from, to: line.to, insert: next });
     }
-    if (changes.length > 0) view.dispatch({ changes });
+    return edits;
   };
+
+  const renumberAround = (view: EditorView, position: number, first?: number): void => {
+    const edits = orderedRunEdits(view.state.doc, position, first);
+    if (edits.length > 0) view.dispatch({ changes: edits });
+  };
+
+  /**
+   * Rebuilds an ordered run from `1.` when one of its items has been deleted.
+   *
+   * A deleted item takes its number with it and leaves the rest carrying on from
+   * where it stopped: removing the first of three leaves `2.` and `3.`. The run
+   * is rebuilt from one instead, which is the number a list starts at and the
+   * number a reader who deleted an item expects to find.
+   *
+   * This is a transaction filter rather than a key binding because a line is
+   * deleted in more than one way — a selection deleted, a Backspace joining two
+   * lines, a cut — and the ones that do not come through a command of ours are
+   * the ones that would otherwise leave the numbers stale.
+   *
+   * Every other transaction is handed back untouched. Rebuilding one means
+   * describing it again from its parts, and a transaction's annotations are not
+   * readable from outside, so a spec built here would lose the `userEvent` that
+   * tells the history what kind of edit it was. Nothing is rebuilt that does not
+   * have to be.
+   */
+  const renumberDeleted = EditorState.transactionFilter.of((transaction) => {
+    if (!removedWholeLines(transaction)) return transaction;
+
+    const edits = orderedRunEdits(transaction.newDoc, transaction.newSelection.main.head, 1);
+    if (edits.length === 0) return transaction;
+
+    const added = ChangeSet.of(edits, transaction.newDoc.length);
+    return {
+      changes: transaction.changes.compose(added),
+      selection: transaction.newSelection.map(added),
+      effects: transaction.effects,
+      scrollIntoView: transaction.scrollIntoView,
+    };
+  });
 
   /**
    * Ends a style at the caret, by moving its closing markers there.
@@ -517,10 +624,40 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     report(view);
   };
 
+  /**
+   * Applies a list kind to the caret's line, or to every line a selection touches.
+   *
+   * @param view - The editor.
+   * @param kind - The list kind to apply.
+   */
   const toggleList = (view: EditorView, kind: ListKind): void => {
-    const cursor = view.state.selection.main.head;
-    applyLineEdit(view, planListToggle(view.state.doc.lineAt(cursor).text, kind), cursor);
-    renumberAround(view, cursor);
+    const range = view.state.selection.main;
+    const first = view.state.doc.lineAt(range.from);
+    const last = view.state.doc.lineAt(range.to);
+
+    if (first.number === last.number) {
+      applyLineEdit(view, planListToggle(first.text, kind), range.head);
+      renumberAround(view, view.state.selection.main.head);
+      report(view);
+      return;
+    }
+
+    const texts: string[] = [];
+    for (let number = first.number; number <= last.number; number += 1) {
+      texts.push(view.state.doc.line(number).text);
+    }
+
+    const changes: { from: number; to: number; insert: string }[] = [];
+    for (const { index, edit } of planListToggleAll(texts, kind)) {
+      const line = view.state.doc.line(first.number + index);
+      const from = line.from + edit.offset;
+      changes.push({ from, to: Math.min(from + edit.remove, line.to), insert: edit.insert });
+    }
+
+    if (changes.length > 0) {
+      view.dispatch({ changes });
+      renumberAround(view, view.state.selection.main.head);
+    }
     report(view);
   };
 
@@ -530,37 +667,89 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     report(view);
   };
 
+  /**
+   * Takes the fences off a code block, a whole line at a time.
+   *
+   * The opening fence goes with the newline that ends it, and the closing fence
+   * with the newline that begins it, rather than the two ranges the syntax tree
+   * reports for the fences themselves. An empty block is why: its `CodeText` is
+   * the newline between the two fences, so taking away the fences alone leaves
+   * that newline behind and the one line the block stood for becomes two.
+   *
+   * @param view - The editor.
+   * @param block - The block to open up.
+   * @param caret - Where the caret is inside it.
+   */
+  const unwrapCodeBlock = (
+    view: EditorView,
+    block: { from: number; to: number },
+    caret: number,
+  ): void => {
+    const doc = view.state.doc;
+    const opening = doc.lineAt(block.from);
+    const closing = doc.lineAt(Math.max(block.from, block.to - 1));
+    const openingTo = Math.min(opening.to + 1, doc.length);
+
+    const changes: { from: number; to: number; insert: string }[] = [
+      { from: opening.from, to: openingTo, insert: "" },
+    ];
+    if (closing.number > opening.number) {
+      changes.push({ from: closing.from - 1, to: closing.to, insert: "" });
+    }
+
+    view.dispatch({
+      changes,
+      selection: { anchor: Math.max(opening.from, caret - (openingTo - opening.from)) },
+    });
+    report(view);
+  };
+
   const toggleCodeBlock = (view: EditorView): void => {
     const range = view.state.selection.main;
     const enclosing = findCodeBlock(treeAt(view).resolveInner(range.head, -1));
 
     if (enclosing) {
-      const content = codeBlockText(enclosing);
-      if (!content) {
-        view.dispatch({ changes: { from: enclosing.from, to: enclosing.to, insert: "" } });
-      } else {
-        view.dispatch({
-          changes: [
-            { from: enclosing.from, to: content.from, insert: "" },
-            { from: content.to, to: enclosing.to, insert: "" },
-          ],
-          selection: { anchor: range.head - (content.from - enclosing.from) },
-        });
-      }
-      report(view);
+      unwrapCodeBlock(view, enclosing, range.head);
       return;
     }
 
     const first = view.state.doc.lineAt(range.from);
     const last = view.state.doc.lineAt(range.to);
-    const body = view.state.sliceDoc(first.from, last.to);
+
+    // A caret, or a selection covering whole lines, takes those lines as they
+    // stand. Anything else was carved out of a line, so it is broken out
+    // instead: what came before it keeps the line above, what came after keeps
+    // the line below, and the code stands on its own rather than inside the
+    // sentence it was cut from.
+    const wholeLines =
+      range.from === range.to || (range.from === first.from && range.to === last.to);
+
+    if (wholeLines) {
+      const body = view.state.sliceDoc(first.from, last.to);
+      replaceRange(
+        view,
+        first.from,
+        last.to,
+        `${FENCE}\n${body}\n${FENCE}`,
+        range.from + FENCE.length + 1,
+        range.to + FENCE.length + 1,
+      );
+      return;
+    }
+
+    const selected = view.state.sliceDoc(range.from, range.to);
+    const plan = planCodeBlockBreakOut(
+      view.state.sliceDoc(first.from, range.from),
+      selected,
+      view.state.sliceDoc(range.to, last.to),
+    );
     replaceRange(
       view,
       first.from,
       last.to,
-      `${FENCE}\n${body}\n${FENCE}`,
-      range.from + FENCE.length + 1,
-      range.to + FENCE.length + 1,
+      plan.text,
+      first.from + plan.from,
+      first.from + plan.to,
     );
   };
 
@@ -609,7 +798,10 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
       return true;
     }
 
-    if (options.submitsOnEnter()) {
+    // A local command is a command rather than prose, so Enter runs it whatever
+    // the send setting says: `!pwd` has no second line to be written on, and
+    // Enter set to New line would leave the reader with no way to run it.
+    if (options.submitsOnEnter() || isShellCommand(view.state.doc.toString())) {
       options.onSubmit();
       return true;
     }
@@ -791,6 +983,27 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
           return true;
         },
       },
+      {
+        key: CODE_BLOCK_SHORTCUT_KEY,
+        run: (view) => {
+          toggleCodeBlock(view);
+          return true;
+        },
+      },
+      {
+        key: listShortcutKey("bullet"),
+        run: (view) => {
+          toggleList(view, "bullet");
+          return true;
+        },
+      },
+      {
+        key: listShortcutKey("ordered"),
+        run: (view) => {
+          toggleList(view, "ordered");
+          return true;
+        },
+      },
       ...(
         [
           ["Mod-b", "bold"],
@@ -887,6 +1100,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         placeholderSlot.of(placeholder(options.placeholder)),
         shortcuts,
+        renumberDeleted,
         handleTypedCharacter,
         trackStatus,
         shellPrefix,
@@ -925,6 +1139,13 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     insertText: (text) => {
       const range = view.state.selection.main;
       replaceRange(view, range.from, range.to, text, range.from + text.length);
+      view.focus();
+    },
+    insertDictation: (text) => {
+      const range = view.state.selection.main;
+      const before = range.from > 0 ? view.state.sliceDoc(range.from - 1, range.from) : "";
+      const insert = dictationPrefix(before, text) + text;
+      replaceRange(view, range.from, range.to, insert, range.from + insert.length);
       view.focus();
     },
     caretAtStart: () => {

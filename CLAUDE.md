@@ -192,21 +192,17 @@ it with the user rather than quietly changing it.
   call with a matching name. That is a heuristic; with parallel tool calls it can attribute
   a hook to the wrong card, which is why the chip shows the hook's own name rather than
   claiming certainty.
-- **The silence guard must stand down for both kinds of silence that are not faults.** A
-  CLI waiting for the user is silent by design, and so is a CLI waiting on a tool: while a
-  tool runs the model is not generating, so nothing is streamed for its whole life. The
-  guard therefore bails out when the session has pending prompts *and* allows a tool far
-  longer (`TOOL_SILENCE_TIMEOUT_MS`, ten minutes, against twenty seconds) — otherwise a test
-  run, a build or a long search is interrupted part-way through for the crime of taking a
-  while. This was not theoretical: building terminice through terminice killed every command
-  that ran longer than twenty seconds, because the app's own guard fired at its own tool.
-- **`armSilence` has to be armed from the state *after* the event, not before it.** The
-  guard picks its allowance by asking whether a tool is out, and the event that starts the
-  tool is the very event being applied — arming first asks a transcript that has not heard
-  about the tool yet, gets "no tool", and hands the turn the twenty-second allowance anyway.
-  `armSilenceAfter` exists for that reason and reads the store itself; do not fold it back
-  into the top of `handleEvent`, and note the `result` branch returns before it because the
-  turn is over and the guard should be clear rather than armed.
+- **Nothing interrupts a session for being silent, and that is deliberate.** There was a
+  guard here — twenty seconds with no output ended the turn, with ten minutes while a tool
+  was out and two for a slash command — and it was removed at the reader's request. It
+  earned its keep only against a wedged process, and against that it was a guess: a build, a
+  test run, `/doctor` doing its work before it says anything, and a model that is simply
+  thinking are all silent for reasons that are not faults, and a timer cannot tell any of
+  them from a session that has died. Before the tool allowance was added it killed every
+  command of its own that ran longer than twenty seconds, which is the shape of the problem
+  rather than a bug that got fixed. The Stop button answers a session the reader has lost
+  patience with, and the reader is the better judge of one that is dead. Do not put a clock
+  back in its place.
 - **`system/init` repeats, and that is the only signal for a directory change.** The CLI
   re-sends it with a new `cwd` whenever the session moves — verified by having Claude run
   `cd /d/apps && pwd` and watching init arrive again reporting `D:\apps`. Nothing else
@@ -588,14 +584,53 @@ it with the user rather than quietly changing it.
   ended with an error" for a keypress the reader had just made. The host knows what the CLI
   does not: `interrupt` sets `interrupted` on the session record, `settleInterrupt` spends
   it when the result arrives, and `applyResultEvent` records a notice instead of an error.
-  The silence guard sets the same flag, so its notice is neutral rather than blaming the
-  reader. Do not "simplify" this by reading a subtype off the result — there is no field
+  Do not "simplify" this by reading a subtype off the result — there is no field
   that distinguishes the two.
 - **A message sent mid-turn is queued, and the end of the turn is what releases it.** The
   CLI says nothing about picking a message up, so `send` marks a user entry `queued` when
   the session was already busy, and `applyResultEvent` takes the mark off every waiting
   message when a turn ends. That is the only signal there is; a per-message acknowledgement
   does not exist to be read.
+- **A waiting message is drawn above the composer, not in the transcript.** While the mark
+  is on, `ChatPane` filters the entry out of the rows and `PendingMessages` shows it under
+  the turn's status line. It is filtered at *render* rather than taken out of `entries`, and
+  that is the whole reason the message lands in the right place when it is released: the
+  entry keeps the index it was appended at, so it drops back into the conversation where it
+  was sent from. Pulling it out of the array and re-appending it on release would put it
+  after the turn that was already running — which is a message arriving after an answer it
+  never saw. What the filter does cost is the `Ctrl`-arrow walk, and the earlier note here
+  claiming otherwise was wrong: `userPlacements` drops any entry whose row it cannot find, so
+  a waiting message is stepped over rather than jumped to — and if every message is waiting,
+  there is nothing to jump to at all and the key falls through to the composer's own recall.
+  Stepping over a message still in the bottom bar is right, because there is no row to land
+  on; what makes it safe is that a waiting message cannot outlive its turn. `withTurnOver`
+  settles the queue wherever a turn ends *without* a `result` — an exit, an idle report, a
+  failure recorded from outside the stream — so "waiting" can never quietly become "gone".
+  It is drawn at `--chat-font-size` rather than at the composer's size, which is the one
+  place a rule inside the composer footer deliberately borrows the transcript's scale: the
+  words in it are the reader's own and belong to the conversation, not to the box they were
+  typed in. The setting is called the chat text size for that reason. It wears the user
+  bubble's own tint and edge — `--accent-wash` and `--accent-border` — in a tighter box and
+  a **dashed** line, and the dashes are the point: they are what says the words have been
+  sent but the place for them has not been settled yet. Making that border solid to match
+  the transcript would take the only mark of that apart.
+- **A waiting message can be taken back, but only because the app named it first.** The
+  `×` on the row asks the CLI to drop it with `cancel_async_message`, and a message is
+  addressable there *only* by the `message_uuid` it was sent under — the CLI has no other
+  handle on it, and a `user` line sent without a uuid is unreachable for the rest of the
+  turn. So `send` mints one per message (`messageUuid.ts`) and puts it on both the entry and
+  the line. A message with no uuid therefore offers no button rather than a button that
+  cannot work, which is what a replayed transcript is: `read_session_history` returns text
+  and a role, so a message restored from a previous session is not addressable and the row
+  draws as words alone. The answer is `{cancelled: boolean}` and the two values mean
+  different things. `true` means the CLI still had it, so it is removed outright —
+  `withoutEntry`, not a settled mark, because a message that never ran never entered the
+  conversation and leaving it in the transcript would claim a turn that never happened.
+  `false` means it was already being read, so it stays and is settled with
+  `withSettledMessage`: the words cannot be unsaid, and dropping them would lose text the
+  model has already seen. An error reply — a CLI old enough not to know the subtype — is
+  reported as a notice rather than passed over, which is what keeps the button from looking
+  inert on a CLI that cannot honour it.
 - **The free-text answer is a row in the option list, not a pane beside it.** A
   single-select question is laid out with one more row than the CLI sent it —
   `rowsForQuestion` appends "Type your own response", and that row is focused and chosen by
@@ -693,15 +728,23 @@ it with the user rather than quietly changing it.
   direct scroll on send is separate from that and stays: it is the one case where the reader
   has just said what they want to watch, so there is no reason to make them wait a frame to
   see it.
-- **Ctrl and an arrow walks the user's own messages, and nothing remembers where it got
-  to.** The pane asks where every user message sits relative to the visible transcript and
-  takes the nearest one fully past the top (or past the bottom), which needs no cursor:
-  landing centres the message, which puts it inside the view, so the next press carries on
-  past it and scrolling away by hand needs no reset either. A message counts as "above"
-  only once its *bottom* has gone past the top, so a message taller than the pane does not
-  become its own answer. The listener is on the document in the capture phase and stops
-  propagation, because the composer has its own uses for a bare arrow — history recall and
-  the slash menu — that Ctrl+Arrow must not also trip.
+- **Ctrl and an arrow walks the user's own messages one message a press, and a cursor is
+  what makes that possible.** The pane remembers the message the last press landed on and
+  steps to the one beside it, so a message already on screen is reached by a press of its
+  own. It has to be a cursor: the geometry alone — nearest message fully past the top of the
+  view — steps over everything visible at once, which with four short messages in a row
+  means three of them can never be landed on. The cursor is dropped as soon as the reader
+  scrolls, told apart from the pane's own scrolling by `walkScrollRef`, so a press after a
+  scroll starts again from what is on screen. Without an anchor the geometry decides, and a
+  transcript with nothing past the top is one the reader is at the top of, so up lands on
+  the *newest* message — which is what lets a walk start at all. The scroll the walk causes
+  puts the message at the top of the pane, and does nothing at all when the message is
+  already wholly in view, because a jump that moves a message the reader is looking at is
+  worse than one that does not. A message taller than the pane goes to the top too: that is
+  the best that can be done for it. A jump from the tracker still centres, which is why
+  `revealNow` takes the placement as an argument. The listener is on the document in the
+  capture phase and stops propagation, because the composer has its own uses for a bare
+  arrow — history recall and the slash menu — that Ctrl+Arrow must not also trip.
 - **The preview swaps the editor rather than replacing it.** `.composer-host` stays mounted
   and is hidden with a class, so the text, the caret, the selection and the undo history
   all survive the round trip; the preview is drawn in the same field, at least as tall as
@@ -724,6 +767,40 @@ it with the user rather than quietly changing it.
   nothing else can be tracked once anything has been typed. The emphasis characters are
   exempt and must stay exempt: `**bold**` with the caret between the leading asterisks is
   the opening marker of a style, and deleting both there would break the Markdown.
+- **A selection carved out of the middle of a line is broken out, not swallowed.** The code
+  block toggle takes whole lines when it is given a caret or a whole-line selection, and
+  otherwise splits the line around what was selected: the text before keeps the line above,
+  the text after keeps the line below, and the selection becomes a fenced block between
+  them. Wrapping the whole lines instead would drag the rest of the sentence into the block,
+  which is not what selecting four words and asking for code means. The cutting is
+  `planCodeBlockBreakOut`, so the three parts and the offsets the selection ends up at are
+  one piece of arithmetic that can be tested without an editor.
+- **Whether a patch is drawn in two columns is measured, per patch, rather than decided by a
+  breakpoint.** `DiffView` measures the box it was given and the width of one character in
+  the font the diff is drawn in, and puts both against the longest line of *this* patch —
+  `splitDiff.ts` holds the arithmetic and the pairing of each removal with the addition that
+  took its place. A breakpoint on the window cannot do this: the same card holds a patch of
+  short lines that reads well in two columns and one of long lines that does not, and the
+  same width has to answer differently for the two. Three things are deliberate. The setting
+  only ever *permits* two columns; it never forces them, which is what its note says. A line
+  past `SPLIT_LINE_LIMIT` gets one column whatever the window is doing, because two columns
+  of very long lines wrap until neither reads as a line. And a character width of zero means
+  one column, because a canvas that cannot measure is not a reason to guess — which is also
+  why every component test in jsdom draws the single-column view.
+- **A `fit`-named helper in a test file is read as a focused test.** Biome's
+  `noFocusedTests` fires on `fit(...)`, the Jasmine spelling, so a local helper that decides
+  whether something fits has to be called anything else.
+- **Deleting an item from a numbered list renumbers the run from one.** A deleted item takes
+  its number with it and leaves the rest carrying on from where it stopped — the first of
+  three gone leaves `2.` and `3.` — so the run is rebuilt. This is a transaction filter
+  rather than a key binding because a line is deleted in more than one way, and the ways
+  that do not come through a command of ours are exactly the ones that would otherwise
+  leave the numbers stale. Two things are refused on purpose: an edit made *inside* a line
+  never renumbers its neighbours, and a transaction that replaces the document outright — a
+  session restored, a message recalled — is left numbered as it was written. Every other
+  transaction is handed back untouched, because rebuilding one means describing it again
+  from its parts, a transaction's annotations cannot be read from outside, and a spec built
+  here would lose the `userEvent` that the history groups undos by.
 - **Holding the space bar is dictation, and the composer owns it.** The hold, the cleanup
   and the bars all live in `createComposer.ts`, because taking back the spaces is a
   document edit and the editor is the only thing that can make one. The first press is let
@@ -732,7 +809,12 @@ it with the user rather than quietly changing it.
   *exactly the range that press typed*. Not "every space before the caret": a space typed
   deliberately before the hold is not redundant, and eating it would run the dictated words
   into the word before them. Once the microphone is open the repeats are swallowed instead,
-  because there is nothing left to clean up after.
+  because there is nothing left to clean up after. What the words land *against* is settled
+  as they arrive rather than before they are recorded: `dictationPrefix` stands them off by
+  one space when the character before the caret is punctuation, because a transcript
+  dictated straight after a full stop would otherwise be written hard against it, and adds
+  nothing when the reader typed their own space — the space is then what sits before the
+  caret, so the gap is left as it is instead of being doubled.
 - **The bars are a widget and one custom property, not an animation.** `voiceCaret` is a
   `StateField` holding a `Decoration.widget` at the caret, switched on and off with
   `setVoiceCaret` from inside the composer (which knows immediately, rather than waiting

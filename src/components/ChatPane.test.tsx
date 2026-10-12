@@ -642,6 +642,21 @@ describe("walking through the user's own messages", () => {
     return event;
   };
 
+  /**
+   * Moves the scroller the way a reader's own scroll would.
+   *
+   * jsdom does no scrolling of its own, so the position is set outright and the
+   * event is raised by hand — which is what the pane listens for to tell the
+   * reader taking over from a scroll it made itself.
+   */
+  function scrollBy(container: HTMLElement, top: number): void {
+    const scroller = container.querySelector(".transcript") as HTMLElement;
+    Object.defineProperty(scroller, "scrollTop", { value: top, configurable: true });
+    act(() => {
+      scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+  }
+
   const flashOn = (container: HTMLElement): string | null =>
     container.querySelector(".transcript-row.flash")?.getAttribute("data-entry-id") ?? null;
 
@@ -673,14 +688,80 @@ describe("walking through the user's own messages", () => {
     expect(flashOn(container)).toBe("u2");
   });
 
-  it("brings the message it lands on into the middle of the pane", () => {
+  it("brings a message that is out of view to the top of the pane", () => {
     const scroll = stubScrolling();
     const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
     place(container, [-500]);
 
     pressCtrlArrow("ArrowUp");
 
-    expect(scroll).toHaveBeenCalledWith({ block: "center" });
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+  });
+
+  /// One press, one message — including the ones already on screen, which the
+  /// geometry rule on its own stepped straight over.
+  it("steps up one message at a time, through those already on screen", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: said("u1", "u2", "u3") })} />,
+    );
+    place(container, [40, 120, 200]);
+
+    pressCtrlArrow("ArrowUp");
+    expect(flashOn(container)).toBe("u3");
+
+    pressCtrlArrow("ArrowUp");
+    expect(flashOn(container)).toBe("u2");
+
+    pressCtrlArrow("ArrowUp");
+    expect(flashOn(container)).toBe("u1");
+  });
+
+  /// A message the reader can already see is left where it is rather than being
+  /// pulled about under them.
+  it("leaves a message that is wholly in view where it is", () => {
+    const scroll = stubScrolling();
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [40]);
+
+    pressCtrlArrow("ArrowUp");
+
+    expect(flashOn(container)).toBe("u1");
+    // The pane still does its own following; what it must not do is scroll this
+    // message anywhere.
+    expect(scroll).not.toHaveBeenCalledWith({ block: "start" });
+  });
+
+  /// Anything only partly in view goes to the top, which is the best that can be
+  /// done for a message too tall to fit.
+  it("brings a message that is only partly in view to the top", () => {
+    const scroll = stubScrolling();
+    const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
+    place(container, [380]);
+
+    pressCtrlArrow("ArrowUp");
+
+    expect(flashOn(container)).toBe("u1");
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+  });
+
+  /// Scrolling by hand is the reader taking over, so the next press starts again
+  /// from what is on screen rather than carrying on from where the walk was.
+  it("re-anchors to what is on screen once the reader scrolls", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: said("u1", "u2", "u3") })} />,
+    );
+    place(container, [-500, -100, 120]);
+
+    pressCtrlArrow("ArrowUp");
+    expect(flashOn(container)).toBe("u2");
+
+    scrollBy(container, 137);
+    place(container, [-600, -400, -150]);
+
+    // Carrying on from u2 would be u1; re-anchored, the nearest message past the
+    // top is u3.
+    pressCtrlArrow("ArrowUp");
+    expect(flashOn(container)).toBe("u3");
   });
 
   it("leaves out everything that is not the user's own message", () => {
@@ -698,15 +779,14 @@ describe("walking through the user's own messages", () => {
     expect(flashOn(container)).toBe("u1");
   });
 
-  it("stays put when there is nothing that way", () => {
-    const scroll = stubScrolling();
+  it("stays put once the walk has run off the end of the list", () => {
     const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
-    place(container, [10]);
+    place(container, [-500]);
 
+    pressCtrlArrow("ArrowUp");
     const event = pressCtrlArrow("ArrowUp");
 
-    expect(flashOn(container)).toBeNull();
-    expect(scroll).not.toHaveBeenCalledWith({ block: "center" });
+    expect(flashOn(container)).toBe("u1");
     expect(event.defaultPrevented).toBe(false);
   });
 

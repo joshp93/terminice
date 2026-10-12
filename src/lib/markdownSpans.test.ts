@@ -6,6 +6,7 @@ import {
   findCodeBlock,
   findStyleNode,
   nodeRepresentsFormat,
+  planCodeBlockBreakOut,
   spanOf,
   spansCover,
   stripMarkers,
@@ -275,5 +276,44 @@ describe("stripMarkers", () => {
 
   it("returns the text unchanged when there are no spans", () => {
     expect(stripMarkers([], 0, 4, "text")).toBe("text");
+  });
+});
+
+describe("planCodeBlockBreakOut", () => {
+  /// The sentence the code was cut out of keeps the lines above and below it,
+  /// rather than being swallowed into the block.
+  it("breaks the line around the selection", () => {
+    const plan = planCodeBlockBreakOut("before ", "code", " after");
+
+    expect(plan.text).toBe("before \n```\ncode\n```\n after");
+    expect(plan.text.slice(plan.from, plan.to)).toBe("code");
+  });
+
+  it("leaves no empty line above a selection that began its line", () => {
+    const plan = planCodeBlockBreakOut("", "code", " tail");
+
+    expect(plan.text).toBe("```\ncode\n```\n tail");
+    expect(plan.text.slice(plan.from, plan.to)).toBe("code");
+  });
+
+  it("leaves no empty line below a selection that ended its line", () => {
+    const plan = planCodeBlockBreakOut("head ", "code", "");
+
+    expect(plan.text).toBe("head \n```\ncode\n```");
+    expect(plan.text.slice(plan.from, plan.to)).toBe("code");
+  });
+
+  it("makes a bare block when the selection was the whole line", () => {
+    const plan = planCodeBlockBreakOut("", "code", "");
+
+    expect(plan.text).toBe("```\ncode\n```");
+    expect(plan.text.slice(plan.from, plan.to)).toBe("code");
+  });
+
+  it("keeps a multi-line selection together inside the one fence", () => {
+    const plan = planCodeBlockBreakOut("before ", "one\ntwo", " after");
+
+    expect(plan.text).toBe("before \n```\none\ntwo\n```\n after");
+    expect(plan.text.slice(plan.from, plan.to)).toBe("one\ntwo");
   });
 });

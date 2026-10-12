@@ -4,6 +4,7 @@ import {
   controlRequest,
   controlSuccess,
   denyTool,
+  readCancelled,
   readContextUsage,
   readControlResponse,
   readFastMode,
@@ -453,5 +454,20 @@ describe("readNames", () => {
 
   it("returns empty for a field that is not an array", () => {
     expect(readNames(null)).toEqual([]);
+  });
+});
+
+describe("readCancelled", () => {
+  /// The answer is the only thing that says whether the message was still there
+  /// to drop, so both values have to survive reading.
+  it("reads whether the message was in the queue", () => {
+    expect(readCancelled({ cancelled: true })).toBe(true);
+    expect(readCancelled({ cancelled: false })).toBe(false);
+  });
+
+  it("says nothing when the answer does not", () => {
+    expect(readCancelled({})).toBeNull();
+    expect(readCancelled(null)).toBeNull();
+    expect(readCancelled({ cancelled: "yes" })).toBeNull();
   });
 });

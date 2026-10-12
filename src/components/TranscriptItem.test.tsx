@@ -24,14 +24,13 @@ describe("TranscriptItem", () => {
     expect(container.querySelectorAll("br")).toHaveLength(1);
   });
 
-  it("marks a message the CLI has not picked up yet", () => {
+  /// A waiting message is not in the transcript at all — it is shown above the
+  /// composer until the turn it was sent during ends, so there is no mark for
+  /// this component to draw.
+  it("draws no queued mark, which belongs to the bottom bar", () => {
     const container = renderEntry({ id: "u1", role: "user", text: "second", queued: true });
-    expect(container.querySelector(".queued-badge")).toHaveTextContent("Queued");
-  });
-
-  it("marks nothing on a message that has already been picked up", () => {
-    const container = renderEntry({ id: "u1", role: "user", text: "first" });
     expect(container.querySelector(".queued-badge")).toBeNull();
+    expect(container.querySelector(".bubble.user")).toHaveTextContent("second");
   });
 
   it("renders an assistant message as an assistant bubble", () => {

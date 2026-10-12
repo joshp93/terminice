@@ -12,6 +12,7 @@ import {
   withNotice,
   withShellCommand,
   withShellResult,
+  withTurnOver,
   withUserMessage,
 } from "./claudeProtocol";
 import type { Json } from "./json";
@@ -789,6 +790,36 @@ describe("the queued mark", () => {
     });
 
     expect(queued(streamed)).toEqual([true]);
+  });
+
+  /// A turn can end without ever producing a `result` — the process exits, the
+  /// CLI reports itself idle, a failure is recorded from outside the stream. A
+  /// message left waiting through one of those is one the reader can neither see
+  /// in the transcript nor reach with the arrow keys, because a message with no
+  /// row is a message the walk cannot land on.
+  it("comes off when a failure ends the turn", () => {
+    const waiting = withUserMessage(createChatState(), "second", true);
+
+    expect(queued(withError(waiting, "the process went away"))).toEqual([false]);
+  });
+
+  it("comes off when the CLI reports itself idle", () => {
+    const waiting = withUserMessage(createChatState(), "second", true);
+
+    const state = apply(waiting, { type: "system", subtype: "status", status: "idle" });
+
+    expect(queued(state)).toEqual([false]);
+    expect(state.busy).toBe(false);
+  });
+
+  it("comes off when a turn is closed out directly", () => {
+    const waiting = withUserMessage(createChatState(), "second", true);
+
+    const over = withTurnOver(waiting);
+
+    expect(queued(over)).toEqual([false]);
+    expect(over.busy).toBe(false);
+    expect(over.streaming).toBe("");
   });
 
   it("leaves other roles untouched", () => {

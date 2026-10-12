@@ -40,6 +40,7 @@ describe("saveSettings", () => {
       fontFamily: "JetBrainsMono Nerd Font",
       appFontFamily: "Georgia",
       voiceEnabled: true,
+      diffSideBySide: false,
     } as const;
 
     await saveSettings({ ...settings });

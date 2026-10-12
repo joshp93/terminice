@@ -1,7 +1,13 @@
 import type { ComposerStatus } from "../lib/createComposer";
-import type { ListKind } from "../lib/listMarkers";
+import { type ListKind, listShortcutLabel } from "../lib/listMarkers";
 import type { StyleState } from "../lib/markdownSpans";
-import { FORMATS, type FormatId, formatShortcutLabel, quoteShortcutLabel } from "../lib/richFormat";
+import {
+  codeBlockShortcutLabel,
+  FORMATS,
+  type FormatId,
+  formatShortcutLabel,
+  quoteShortcutLabel,
+} from "../lib/richFormat";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {
@@ -68,7 +74,7 @@ export function FormatToolbar({
       <button
         type="button"
         className={`format-button${status.inCodeBlock ? " on" : ""}`}
-        title="Code block"
+        title={`Code block (${codeBlockShortcutLabel()})`}
         aria-label="Code block"
         aria-pressed={status.inCodeBlock}
         onMouseDown={(event) => event.preventDefault()}
@@ -84,7 +90,7 @@ export function FormatToolbar({
             key={list.kind}
             type="button"
             className={active ? "format-button on" : "format-button"}
-            title={list.label}
+            title={`${list.label} (${listShortcutLabel(list.kind)})`}
             aria-label={list.label}
             aria-pressed={active}
             onMouseDown={(event) => event.preventDefault()}

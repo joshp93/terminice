@@ -86,6 +86,66 @@ pub struct HistoryMessage {
     pub text: String,
 }
 
+/// Reads the text out of a message's content.
+///
+/// Content is either a bare string or a list of blocks, and only the text blocks
+/// are wanted: the rest is tool traffic.
+fn content_text(content: Option<&serde_json::Value>) -> Option<String> {
+    match content? {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(blocks) => Some(
+            blocks
+                .iter()
+                .filter(|block| block.get("type").and_then(|kind| kind.as_str()) == Some("text"))
+                .filter_map(|block| block.get("text").and_then(|text| text.as_str()))
+                .collect::<Vec<_>>()
+                .join(""),
+        ),
+        _ => None,
+    }
+}
+
+/// Reads what one transcript line says, if it says anything.
+///
+/// Tool traffic, bookkeeping and metadata say nothing a reader would recognise
+/// as a message, so they come back as `None`.
+///
+/// A message typed while a turn was already running is **not** written as a
+/// `user` line: the CLI records it as an attachment of `queued_command`, holding
+/// the same content blocks. Reading only `user` lines loses every message the
+/// reader sent mid-turn — which is most of them, when they are typing while
+/// Claude works — and a message that never reaches the pane is one the arrow
+/// keys cannot step through either.
+fn spoken_line(line: &str) -> Option<(&'static str, String)> {
+    let value: serde_json::Value = serde_json::from_str(line).ok()?;
+    if value.get("isMeta").and_then(|meta| meta.as_bool()) == Some(true) {
+        return None;
+    }
+
+    let (role, text) = match value.get("type").and_then(|kind| kind.as_str())? {
+        "user" => ("user", content_text(value.pointer("/message/content"))?),
+        "assistant" => (
+            "assistant",
+            content_text(value.pointer("/message/content"))?,
+        ),
+        "attachment" => {
+            let attachment = value.get("attachment")?;
+            if attachment.get("type").and_then(|kind| kind.as_str()) != Some("queued_command") {
+                return None;
+            }
+            ("user", content_text(attachment.get("prompt"))?)
+        }
+        _ => return None,
+    };
+
+    // A wrapper the CLI puts around its own reminders, rather than anything the
+    // reader typed.
+    if text.trim().is_empty() || text.starts_with('<') {
+        return None;
+    }
+    Some((role, text))
+}
+
 /// Reads the spoken part of a transcript, oldest first.
 ///
 /// Tool traffic and metadata are skipped: this is only what was said, which is
@@ -101,41 +161,60 @@ pub fn read_session_history(cwd: String, id: String, limit: usize) -> Vec<Histor
 
     let mut messages: Vec<HistoryMessage> = Vec::new();
     for line in std::io::BufReader::new(file).lines().map_while(Result::ok) {
-        let value: serde_json::Value = match serde_json::from_str(&line) {
-            Ok(value) => value,
-            Err(_) => continue,
-        };
-        let role = match value.get("type").and_then(|t| t.as_str()) {
-            Some("user") => "user",
-            Some("assistant") => "assistant",
-            _ => continue,
-        };
-        if value.get("isMeta").and_then(|m| m.as_bool()) == Some(true) {
-            continue;
+        if let Some((role, text)) = spoken_line(&line) {
+            messages.push(HistoryMessage {
+                role: role.to_string(),
+                text,
+            });
         }
-
-        let text = match value.get("message").and_then(|m| m.get("content")) {
-            Some(serde_json::Value::String(text)) => text.clone(),
-            Some(serde_json::Value::Array(blocks)) => blocks
-                .iter()
-                .filter(|block| block.get("type").and_then(|t| t.as_str()) == Some("text"))
-                .filter_map(|block| block.get("text").and_then(|t| t.as_str()))
-                .collect::<Vec<_>>()
-                .join(""),
-            _ => continue,
-        };
-
-        if text.trim().is_empty() || text.starts_with('<') {
-            continue;
-        }
-        messages.push(HistoryMessage {
-            role: role.to_string(),
-            text,
-        });
     }
 
     let start = messages.len().saturating_sub(limit);
     messages.split_off(start)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spoken_line;
+
+    /// The CLI writes a message sent mid-turn as an attachment rather than as a
+    /// `user` line. Reading only `user` lines is what loses the reader's own
+    /// messages when a session is resumed: four sent in a row came back as one.
+    #[test]
+    fn reads_a_message_that_was_queued_behind_a_running_turn() {
+        let line = r#"{"type":"attachment","attachment":{"type":"queued_command","prompt":[{"type":"text","text":"test"}]},"uuid":"a1","timestamp":"2026-10-12T18:58:29.962Z"}"#;
+        assert_eq!(spoken_line(line), Some(("user", "test".to_string())));
+    }
+
+    #[test]
+    fn reads_a_message_that_started_a_turn() {
+        let line = r#"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#;
+        assert_eq!(spoken_line(line), Some(("user", "hello".to_string())));
+    }
+
+    #[test]
+    fn reads_an_assistant_reply() {
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}"#;
+        assert_eq!(spoken_line(line), Some(("assistant", "hi".to_string())));
+    }
+
+    /// Everything else in a transcript is bookkeeping or tool traffic.
+    #[test]
+    fn says_nothing_about_the_lines_that_are_not_messages() {
+        let nothing = [
+            r#"{"type":"queue-operation","operation":"dequeue","sessionId":"s"}"#,
+            r#"{"type":"user","message":{"content":[{"type":"tool_result","content":"x"}]}}"#,
+            r#"{"type":"last-prompt","lastPrompt":"test"}"#,
+            r#"{"type":"attachment","attachment":{"type":"other","prompt":[{"type":"text","text":"no"}]}}"#,
+            r#"{"type":"user","message":{"content":[{"type":"text","text":"<system-reminder>"}]}}"#,
+            r#"{"type":"user","isMeta":true,"message":{"content":[{"type":"text","text":"hidden"}]}}"#,
+            "not json at all",
+        ];
+
+        for line in nothing {
+            assert_eq!(spoken_line(line), None, "{line}");
+        }
+    }
 }
 
 /// Path of the record of sessions left waiting on a decision.

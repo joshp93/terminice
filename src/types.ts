@@ -46,6 +46,14 @@ export type ChatEntry =
       text: string;
       /** True while the CLI has not yet picked this message up. */
       queued?: boolean;
+      /**
+       * The uuid the message was sent to the CLI under.
+       *
+       * It is how the CLI names a message it is holding in its queue, so it is
+       * what taking one back is addressed by. Absent on anything the app did not
+       * send — a replayed message, or one the CLI raised itself.
+       */
+      messageUuid?: string;
     }
   | { id: string; role: "assistant"; text: string }
   | { id: string; role: "thinking"; text: string }
@@ -185,6 +193,14 @@ export type Settings = {
    * quietly eats a keystroke is worse than one that has to be found.
    */
   voiceEnabled: boolean;
+  /**
+   * Whether a tool's patch is drawn as two columns.
+   *
+   * Only ever used where there is room for two: a narrow card, or a patch of
+   * lines too long to give a column to, is drawn as one column whatever this
+   * says.
+   */
+  diffSideBySide: boolean;
 };
 
 /**
@@ -203,5 +219,6 @@ export function createDefaultSettings(): Settings {
     fontFamily: BUILT_IN_FONT_VALUE,
     appFontFamily: BUILT_IN_FONT_VALUE,
     voiceEnabled: false,
+    diffSideBySide: true,
   };
 }

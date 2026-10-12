@@ -9,6 +9,7 @@ import {
   planListBackspace,
   planListEnter,
   planListToggle,
+  planListToggleAll,
   planOutdent,
   readListMarker,
   renumberOrderedLines,
@@ -243,5 +244,48 @@ describe("renumberOrderedLines", () => {
 
   it("leaves a plain paragraph alone and breaks the run", () => {
     expect(renumberOrderedLines(["1. a", "text", "1. b"])).toBeNull();
+  });
+
+  /// Enter after `5.` continues the list, so the run keeps the number it starts
+  /// at. Deleting the first item is the opposite case: the run has to be
+  /// rebuilt, and `first` is what tells the two apart.
+  it("rebuilds a run from the number it is given", () => {
+    expect(renumberOrderedLines(["2. b", "3. c"], 1)).toEqual(["1. b", "2. c"]);
+  });
+});
+
+describe("planListToggleAll", () => {
+  it("puts the kind on every line of a plain block", () => {
+    expect(planListToggleAll(["one", "two"], "bullet")).toEqual([
+      { index: 0, edit: { offset: 0, remove: 0, insert: "- " } },
+      { index: 1, edit: { offset: 0, remove: 0, insert: "- " } },
+    ]);
+  });
+
+  it("swaps the other kind for the one asked for", () => {
+    expect(planListToggleAll(["1. one", "2. two"], "bullet")).toEqual([
+      { index: 0, edit: { offset: 0, remove: 2, insert: "-" } },
+      { index: 1, edit: { offset: 0, remove: 2, insert: "-" } },
+    ]);
+  });
+
+  it("takes the kind off when every line carries it", () => {
+    expect(planListToggleAll(["- one", "- two"], "bullet")).toEqual([
+      { index: 0, edit: { offset: 0, remove: 2, insert: "" } },
+      { index: 1, edit: { offset: 0, remove: 2, insert: "" } },
+    ]);
+  });
+
+  /// A half-list block becomes wholly a list. Toggling line by line would strip
+  /// the marker off the line that was already right, which is the opposite of
+  /// what was asked for.
+  it("leaves a line that already carries the kind alone while it goes on", () => {
+    expect(planListToggleAll(["- one", "two"], "bullet")).toEqual([
+      { index: 1, edit: { offset: 0, remove: 0, insert: "- " } },
+    ]);
+  });
+
+  it("plans nothing for a block with nothing in it", () => {
+    expect(planListToggleAll([], "ordered")).toEqual([]);
   });
 });

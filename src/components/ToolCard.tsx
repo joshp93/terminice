@@ -1,5 +1,7 @@
+import { looksLikePatch } from "../lib/diffLines";
 import { capForCard, clipLine } from "../lib/outputLimits";
 import type { HookNote } from "../lib/toolResults";
+import { DiffView } from "./DiffView";
 import { useExpansion } from "./ExpansionContext";
 
 /** Props for {@link ToolCard}. */
@@ -57,6 +59,7 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
   const open = expandable && isOpen(id);
   const preview = previewOf(result, PREVIEW_LINES);
   const shownResult = open ? capForCard(result) : "";
+  const patch = looksLikePatch(result);
   const notable = hooks.filter(
     (hook) => (hook.exitCode !== null && hook.exitCode !== 0) || hook.output.trim().length > 0,
   );
@@ -100,14 +103,18 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
       {!open && preview.lines.length > 0 && (
         <button
           type="button"
-          className={status === "error" ? "tool-preview failed" : "tool-preview"}
+          className={`tool-preview${status === "error" ? " failed" : ""}${patch ? " diff-host" : ""}`}
           aria-label={`Expand ${name} output`}
           onClick={() => toggle(id)}
         >
-          <pre>
-            {preview.lines.join("\n")}
-            {preview.hidden > 0 ? "\n…" : ""}
-          </pre>
+          {patch ? (
+            <DiffView lines={preview.lines} hidden={preview.hidden} />
+          ) : (
+            <pre>
+              {preview.lines.join("\n")}
+              {preview.hidden > 0 ? "\n…" : ""}
+            </pre>
+          )}
         </button>
       )}
 
@@ -122,7 +129,11 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
           {result.length > 0 && (
             <div className="tool-section">
               <span className="tool-section-title">Output</span>
-              <pre className={status === "error" ? "failed" : ""}>{shownResult}</pre>
+              {patch ? (
+                <DiffView lines={shownResult.split("\n")} />
+              ) : (
+                <pre className={status === "error" ? "failed" : ""}>{shownResult}</pre>
+              )}
             </div>
           )}
           {notable.length > 0 && (

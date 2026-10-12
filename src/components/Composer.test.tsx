@@ -63,6 +63,8 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     running: false,
     thinkingTokens: 0,
     trackers: [],
+    pending: [],
+    onUnqueue: vi.fn(),
     suggestion: null,
     fastMode: false,
     fastModeTitle: "",

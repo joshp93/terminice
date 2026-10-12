@@ -37,8 +37,14 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
         { keys: mod("B"), description: "Bold" },
         { keys: mod("I"), description: "Italic" },
         { keys: mod("E"), description: "Inline code" },
+        {
+          keys: mod("Shift+E"),
+          description: "Turns the line, or the selection, into a code block",
+        },
         { keys: mod("Shift+X"), description: "Strikethrough" },
         { keys: mod(">"), description: "Turns the line into a quote" },
+        { keys: mod("L"), description: "Turns the line into a bulleted item" },
+        { keys: mod("1"), description: "Turns the line into a numbered item" },
         { keys: `${mod("]")} / ${mod("[")}`, description: "Indents and outdents, list items too" },
         {
           keys: "Tab",
@@ -91,6 +97,7 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
     {
       title: "Window",
       shortcuts: [
+        { keys: "F1", description: "Opens the settings, with the keyboard already in them" },
         { keys: "F6", description: "Puts the keyboard in the composer, from anywhere" },
         { keys: "Esc", description: "Leaves the Markdown preview, while it is open" },
       ],
