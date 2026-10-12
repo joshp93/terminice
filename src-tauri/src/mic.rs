@@ -8,7 +8,7 @@
 
 use crate::resample::{level_of, resample, to_mono, WHISPER_HZ};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, Sample, SampleFormat, SizedSample, StreamConfig};
+use cpal::{ErrorKind, FromSample, Sample, SampleFormat, SizedSample, StreamConfig};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -37,7 +37,9 @@ pub struct Capture {
     samples: Arc<Mutex<Vec<f32>>>,
     /// Told when the stream has been dropped and the samples are settled.
     done: Receiver<()>,
-    /// Whatever went wrong in the audio callback, if anything did.
+    /// Whatever went wrong in the audio callback that ended the recording, if
+    /// anything did. A recording that dropped samples glitched rather than
+    /// ended, so this stays empty through one.
     failure: Arc<Mutex<Option<String>>>,
     sample_rate: u32,
     channels: u16,
@@ -247,6 +249,9 @@ where
     };
 
     let on_error = move |error: cpal::Error| {
+        if !has_stopped(&error) {
+            return;
+        }
         if let Ok(mut slot) = failure.lock() {
             *slot = Some(format!("the microphone stopped: {error}"));
         }
@@ -259,4 +264,43 @@ where
     device
         .build_input_stream(*config, on_data, on_error, None)
         .map_err(|error| format!("the microphone could not be opened: {error}"))
+}
+
+/// Whether an error from the audio callback means the microphone has given up.
+///
+/// An `Xrun` does not. It is the audio engine saying it dropped samples because
+/// the stream fell behind, and `cpal` reports it without stopping anything —
+/// on WASAPI it is raised for any packet that arrives flagged as discontinuous,
+/// which is a glitch in the recording rather than the end of it. Failing on one
+/// throws away an utterance that is otherwise whole, and says "the microphone
+/// stopped" about a microphone that did no such thing.
+///
+/// # Arguments
+///
+/// * `error` - What the audio callback was handed.
+///
+/// # Returns
+///
+/// True when what was recorded cannot be trusted to continue.
+fn has_stopped(error: &cpal::Error) -> bool {
+    error.kind() != ErrorKind::Xrun
+}
+
+#[cfg(test)]
+mod tests {
+    use super::has_stopped;
+    use cpal::{Error, ErrorKind};
+
+    /// The one that reached a reader: WASAPI flags a packet as discontinuous,
+    /// which is a glitch and not an ending.
+    #[test]
+    fn a_dropped_sample_is_not_the_microphone_stopping() {
+        assert!(!has_stopped(&Error::new(ErrorKind::Xrun)));
+    }
+
+    #[test]
+    fn a_backend_that_gave_up_is() {
+        assert!(has_stopped(&Error::new(ErrorKind::BackendError)));
+        assert!(has_stopped(&Error::new(ErrorKind::Other)));
+    }
 }

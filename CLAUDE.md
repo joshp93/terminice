@@ -760,6 +760,13 @@ it with the user rather than quietly changing it.
   stream of zeros and no error at all when desktop applications are not allowed the
   microphone, so `is_silent` catches it and the message names the setting to go and look
   at. Without it the feature would look like it was working and simply failing to hear.
+- **A dropped sample is not a stopped microphone.** `cpal` raises an `Xrun` whenever the
+  audio engine reports that it lost samples — on WASAPI, any capture packet arriving flagged
+  as discontinuous — and it raises it without stopping anything, which the library's own doc
+  comment calls a glitch. Treating every error from the callback as fatal threw the whole
+  utterance away and told the reader the microphone had stopped, which it had not. It bit on
+  one machine of two, which is what a driver-shaped discontinuity looks like from here.
+  `has_stopped` in `mic.rs` is the filter, and the test beside it is why it stays.
 - **The model lives beside the settings, not beside the executable.** Session history goes
   next to the exe because the installer is per-user; a 140 MB model must not, because in
   development the exe is inside `target` and a `cargo clean` would cost a fresh download.
