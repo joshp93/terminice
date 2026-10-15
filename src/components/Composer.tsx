@@ -65,6 +65,11 @@ export type ComposerProps = {
   sessionId: string | null;
   /** The hint shown while the composer is empty, which follows the settings. */
   placeholder: string;
+  /**
+   * Bumped when the transcript has finished being walked through and the
+   * keyboard belongs back here.
+   */
+  focusSignal: number;
   /** The microphone, the speech engine and the model behind hold-to-talk. */
   voice: Voice;
 };
@@ -144,6 +149,7 @@ export function Composer({
   onSuggestFiles,
   sessionId,
   placeholder,
+  focusSignal,
   voice,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -173,6 +179,8 @@ export function Composer({
   const placeholderRef = useRef(placeholder);
   /** The last transcript put into the composer, so each one lands exactly once. */
   const transcriptRef = useRef(0);
+  /** The focus request the composer has already answered, so only a new one moves it. */
+  const focusSignalRef = useRef(focusSignal);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   sessionRef.current = sessionId;
@@ -806,6 +814,24 @@ export function Composer({
       setStatus(INITIAL_STATUS);
     };
   }, [handleStatusChange, submit]);
+
+  /**
+   * Takes the keyboard when the transcript hands it back.
+   *
+   * The value the composer mounts with is not a request — it is where the count
+   * happened to be — so only a change takes the keyboard. Focus is asked for
+   * rather than taken by the caller because the composer is the only thing that
+   * can put the caret in its own editor, and what it writes into is the reason
+   * the keyboard is being returned at all.
+   *
+   * Declared after the editor is built, because effects run in the order they
+   * are written and this one has nothing to focus until there is an editor.
+   */
+  useEffect(() => {
+    if (focusSignal === focusSignalRef.current) return;
+    focusSignalRef.current = focusSignal;
+    handleRef.current?.focus();
+  }, [focusSignal]);
 
   /**
    * Keeps the empty composer's hint in step with the settings behind it.

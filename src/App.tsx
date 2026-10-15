@@ -64,6 +64,15 @@ export function App() {
   const chat = useClaudeChat(cwd);
   const voice = useVoice(settings.voiceEnabled);
   const [reveal, setReveal] = useState<RevealTarget | null>(null);
+  /**
+   * Counts the times the transcript has handed the keyboard back.
+   *
+   * A count rather than a flag, because the same request twice is two requests:
+   * a state that is already set would change nothing, which is the same problem
+   * a jump back to one entry has. This is the third of them, which is why all
+   * three are counts.
+   */
+  const [composerFocus, setComposerFocus] = useState(0);
 
   /**
    * Takes the window's own keys: F1 for the settings, and the mode switch.
@@ -102,6 +111,11 @@ export function App() {
    */
   const revealEntry = useCallback((id: string) => {
     setReveal((current) => ({ id, seq: (current?.seq ?? 0) + 1 }));
+  }, []);
+
+  /** Hands the keyboard back to the composer, from the transcript's own keys. */
+  const returnToComposer = useCallback(() => {
+    setComposerFocus((seq) => seq + 1);
   }, []);
 
   const trackers = useMemo(() => runningGroups(chat.state), [chat.state]);
@@ -240,7 +254,7 @@ export function App() {
       </header>
       <main className="workspace">
         <DiffLayoutProvider sideBySide={settings.diffSideBySide}>
-          <ChatPane state={chat.state} reveal={reveal} />
+          <ChatPane state={chat.state} reveal={reveal} onReturnToComposer={returnToComposer} />
         </DiffLayoutProvider>
         {plan !== null && <PlanSidebar key={plan.requestId} text={plan.text} />}
       </main>
@@ -267,6 +281,7 @@ export function App() {
           onSuggestFiles={chat.suggestFiles}
           sessionId={chat.state.sessionId}
           placeholder={placeholder}
+          focusSignal={composerFocus}
           voice={voice}
         />
       </div>

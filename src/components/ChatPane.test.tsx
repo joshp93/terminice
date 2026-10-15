@@ -790,6 +790,65 @@ describe("walking through the user's own messages", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  /// The end of the reader's own messages is where the keyboard stops being
+  /// the transcript's: the way on is the end of the chat, with the caret back
+  /// in the box to write in.
+  it("hands the keyboard back when the walk runs out of messages below it", () => {
+    const scroll = stubScrolling();
+    const onReturnToComposer = vi.fn();
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: said("u1", "u2") })}
+        onReturnToComposer={onReturnToComposer}
+      />,
+    );
+    place(container, [10, 460]);
+
+    pressCtrlArrow("ArrowDown");
+    pressCtrlArrow("ArrowDown");
+    const event = pressCtrlArrow("ArrowDown");
+
+    expect(onReturnToComposer).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
+    expect(scroll).toHaveBeenCalledWith({ block: "end" });
+  });
+
+  /// A press with nothing being walked is not the end of a walk: there was no
+  /// navigation to finish, so the key stays the composer's.
+  it("leaves the key alone when nothing was being walked", () => {
+    const onReturnToComposer = vi.fn();
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: said("u1") })}
+        onReturnToComposer={onReturnToComposer}
+      />,
+    );
+    place(container, [10]);
+
+    const event = pressCtrlArrow("ArrowDown");
+
+    expect(onReturnToComposer).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  /// Going up has its own answer — staying where it is — and that one is not a
+  /// way back to the composer.
+  it("does not hand the keyboard back at the top of the walk", () => {
+    const onReturnToComposer = vi.fn();
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: said("u1") })}
+        onReturnToComposer={onReturnToComposer}
+      />,
+    );
+    place(container, [-500]);
+
+    pressCtrlArrow("ArrowUp");
+    pressCtrlArrow("ArrowUp");
+
+    expect(onReturnToComposer).not.toHaveBeenCalled();
+  });
+
   it("takes the keypress, so the composer never also answers it", () => {
     const { container } = render(<ChatPane state={stateWith({ entries: said("u1") })} />);
     place(container, [-500]);

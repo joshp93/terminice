@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MessageBubble } from "./MessageBubble";
 
 describe("MessageBubble", () => {
@@ -110,5 +111,67 @@ describe("MessageBubble", () => {
     render(<MessageBubble text="see https://example.com/docs." />);
 
     expect(screen.getByRole("link", { name: "https://example.com/docs" })).toBeInTheDocument();
+  });
+});
+
+describe("code blocks", () => {
+  /** A clipboard that records what it was given. */
+  function stubClipboard(): ReturnType<typeof vi.fn> {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    return writeText;
+  }
+
+  const fenced = "```ts\nconst x: number = 1;\n```";
+
+  it("offers a copy button on a fenced block", () => {
+    render(<MessageBubble text={fenced} />);
+
+    expect(screen.getByRole("button", { name: "Copy code" })).toBeInTheDocument();
+  });
+
+  it("offers none on a message without code", () => {
+    render(<MessageBubble text="just a sentence" />);
+
+    expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
+  });
+
+  /// What is copied is the code the message wrote, not the markup it was
+  /// highlighted into — the tree the button wraps is spans, one per token.
+  it("copies the code as it was written, without the highlighting", async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(<MessageBubble text={fenced} />);
+
+    await user.click(screen.getByRole("button", { name: "Copy code" }));
+
+    expect(writeText).toHaveBeenCalledWith("const x: number = 1;");
+  });
+
+  it("gives every block its own button, and copies that block", async () => {
+    const user = userEvent.setup();
+    const writeText = stubClipboard();
+    render(<MessageBubble text={"```\nfirst\n```\n\ntext\n\n```\nsecond\n```"} />);
+
+    const buttons = screen.getAllByRole("button", { name: "Copy code" });
+    expect(buttons).toHaveLength(2);
+
+    await user.click(buttons[1]);
+
+    expect(writeText).toHaveBeenCalledWith("second");
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(navigator, "clipboard");
+  });
+
+  it("turns the button it copied from into a tick", async () => {
+    const user = userEvent.setup();
+    stubClipboard();
+    render(<MessageBubble text={fenced} />);
+
+    await user.click(screen.getByRole("button", { name: "Copy code" }));
+
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 });

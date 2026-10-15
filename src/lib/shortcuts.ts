@@ -92,7 +92,8 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
       shortcuts: [
         {
           keys: `${mod("↑")} / ${mod("↓")}`,
-          description: "Jumps to the previous or next message you sent",
+          description:
+            "Steps through the messages you sent; past the last one it goes to the end of the chat and back to the composer",
         },
       ],
     },

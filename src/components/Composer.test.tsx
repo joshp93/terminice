@@ -42,6 +42,17 @@ function createMenuHost(overrides: Partial<SlashMenuHost> = {}): SlashMenuHost {
   };
 }
 
+/** Renders the composer, with a way to change one prop and ask for a re-render. */
+function renderComposerWithProps(overrides: Partial<ComposerProps> = {}) {
+  const view = renderComposer(overrides);
+  return {
+    ...view,
+    rerender: (next: Partial<ComposerProps>): void => {
+      view.rerender(<Composer {...view.props} {...next} />);
+    },
+  };
+}
+
 function paste(element: Element, text: string): void {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
@@ -70,6 +81,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     fastModeTitle: "",
     sessionId: null,
     placeholder: PLACEHOLDER,
+    focusSignal: 0,
     onSend,
     onRunShell,
     onCycleMode,
@@ -1208,6 +1220,42 @@ describe("the Markdown preview", () => {
 
     expect(backToEdit()).toHaveAttribute("aria-pressed", "true");
     expect(backToEdit()).toHaveAttribute("title", "Return to editing (Ctrl+P, Esc)");
+  });
+});
+
+describe("handing the keyboard back", () => {
+  /// The transcript walks the reader through their own messages and runs out at
+  /// the last one, where the caret belongs back in the box to write in — which
+  /// only the composer can put it there.
+  it("takes the keyboard when the signal changes", () => {
+    const { content, rerender } = renderComposerWithProps();
+    content.blur();
+    expect(content).not.toHaveFocus();
+
+    rerender({ focusSignal: 1 });
+
+    expect(content).toHaveFocus();
+  });
+
+  /// The value it mounted with is where the count happened to be, not a request
+  /// to take the keyboard.
+  it("does not take the keyboard for a signal that has not changed", () => {
+    const { content, rerender } = renderComposerWithProps();
+    content.blur();
+
+    rerender({ focusSignal: 0 });
+
+    expect(content).not.toHaveFocus();
+  });
+
+  it("takes it again on the next request", () => {
+    const { content, rerender } = renderComposerWithProps();
+    rerender({ focusSignal: 1 });
+    content.blur();
+
+    rerender({ focusSignal: 2 });
+
+    expect(content).toHaveFocus();
   });
 });
 

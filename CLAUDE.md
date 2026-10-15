@@ -237,33 +237,41 @@ it with the user rather than quietly changing it.
   flyout is part of the trade** — keeping it means answering `WM_NCHITTEST` with `HTMAXBUTTON`,
   which is native code or a plugin built against Tauri 2.0-rc; dragging to a screen edge,
   `Win`+arrow and `Win`+`Z` are unaffected.
-- **A background agent is not finished by the acknowledgement that starts it.** Measured over
-  110 real queued-message deliveries: the `Agent` call's result comes back in one to three
-  seconds saying "Async agent launched successfully", and the agent then works for another
-  minute or two before reporting. The structured `tool_use_result` says which this is —
-  `{isAsync: true, status: "async_launched"}` — and a frame holding two parallel results carries
-  no structured field at all, which is why that wording is the fallback. The card stays running
-  until the task notification arrives, which is the *only* thing that says the agent finished:
-  a `<task-notification>` payload addressed by `<tool-use-id>`, carrying `<status>`, `<summary>`
-  and usually `<result>`. Its frame type is the CLI's choice — its own records file it as an
-  attachment, which is not a message type the stream carries — so `taskReportIn` searches the
-  frame for the payload rather than predicting the shape. Getting this wrong is what a chip
-  dropping while its agent still ran looked like: the tracker was reading the acknowledgement
-  as the outcome. **The acknowledgement also carries the agent's own id**, and that is the other
-  name its frames arrive under — a background agent's spawning call was answered before it did
-  any work, so `parent_tool_use_id` on its frames is the agent rather than the call, and a card
-  that only answered to the call collected nothing and sat on "starting…" for the whole run.
-  `agentCardFor` therefore matches both names, and takes the one running agent as the owner of a
-  frame tagged with an id no card answers to. Two agents running is where that stops, and the
-  frame is dropped: a mistaken attribution reads as something the other agent said, which is
-  worse than a step that is not shown.
-- **A mode the agent changes itself arrives on a frame of its own.** Verified in the CLI's
-  records: `permission-mode` records carrying `permissionMode`, and `plan` among the values. It
-  is not a reply to anything the host asked for, so `applyClaudeMessage` reads the field off any
-  frame rather than off a frame *type* — the type it arrives under is the CLI's to choose — and
-  applies it to whatever that frame then means rather than in place of it, or a frame that
-  changed the mode and did something else would lose the second half. Frames from inside an
-  agent are routed before this, because the session's mode is not a subagent's to change.
+- **A background agent is ended by the CLI's own task events, and by nothing else.** Read off the
+  stream itself, with a probe that reproduced one (see below): the CLI has a whole task lifecycle,
+  and every one of these is a `system` subtype the app used to drop —
+  `task_started` (`{task_id, tool_use_id, description, is_backgrounded, …}`),
+  `task_progress` (`{…, usage: {total_tokens, tool_uses, duration_ms}, last_tool_name}`),
+  `task_updated` (`{patch: {status: "completed"}}`), `task_notification`
+  (`{status, summary, usage}`, and the one that ends it), and `background_tasks_changed`
+  (`{tasks: [{task_id, task_type, description}]}` — the list of what is running, read by nothing
+  yet). All but the last name the `tool_use_id` of the call the agent was started by, which is
+  what a card is keyed by. Three things follow, and the first is the one that bit twice. **An
+  agent's call is answered the moment it is started** — "Async agent launched successfully", with
+  the structured `tool_use_result` `{isAsync: true, status: "async_launched"}` — so reading that
+  result as the outcome dropped the chip while the agent was still working. **The end arrives
+  only as `task_updated`/`task_notification`**: an earlier version of this looked for a
+  `<task-notification>` payload in whatever frame carried it, which was an inference from the
+  CLI's own transcript records rather than from the stream, and it never fired — the payload is
+  not on the stream in that form at all, and the parent's own reply can contain the tag, which
+  made it a false-positive risk as well. Do not go back to searching frames for that tag.
+  **A background agent's report is not on this stream**: the CLI hands it to the model, so the
+  card's `result` is the `summary` the notification carries, and what the agent actually said
+  arrives as its own tagged frames.
+- **The subagent's own frames do arrive, tagged with the call's tool-use id.** Confirmed by the
+  same probe: `assistant` and `user` frames carrying `parent_tool_use_id: call_…` — the same id
+  the task events name and the same id the card is keyed by. `agentCardFor` matches either that
+  or the agent's own id, and takes the one running agent as the owner of a frame tagged with an
+  id no card answers to, but with the task events in place the tag is no longer load-bearing.
+- **A probe is how to ask this CLI a question, and it must not answer approval prompts.**
+  `claude.exe` driven with the app's own `--input-format stream-json` arguments and one narrow
+  `--allowedTools Agent` reproduces a background agent end to end in under a minute and prints
+  every frame it sends — that is where all of the above came from. It deliberately does **not**
+  pass `--permission-prompt-tool stdio` and never answers a `can_use_tool` request: with no
+  permission tool the CLI denies everything the agent's prompt does not need, which is the point
+  — the subagent is asked to use no tools, so nothing has to be permitted beyond starting it.
+  An earlier version of the probe auto-allowed every tool call to keep a longer session alive,
+  which is a different thing entirely and was refused, rightly.
 - **A queued message is taken up at a tool boundary, and never while a tool is still running.**
   Measured across 110 deliveries in the CLI's own records — 78 of them in `sdk-cli` sessions,
   which is this application's mode — every one arrived immediately after a tool result, with
@@ -598,6 +606,18 @@ it with the user rather than quietly changing it.
   no shell, and it refuses anything that is not `http` or `https` so a link in model output
   cannot ask the system to run a local file or a custom protocol handler. `mailto:` links
   are therefore inert: that is deliberate, and better than the alternative.
+- **A code block is copied from the rendered tree, not from the Markdown source.** The `pre`
+  component wraps the block the renderer already drew, so highlighting is untouched, and what
+  goes to the clipboard is `textInHast` of that drawing — the text at its leaves, which is the
+  code as the message wrote it rather than the spans it was highlighted into. Two details are
+  the whole of it. Only `value` is read from each node, so no class name or language can leak
+  into a clipboard. And exactly one trailing newline comes off, because the renderer adds one so
+  the block lays out as its own line and a paste that carries a stray newline into a shell is a
+  second command waiting to be run — a block whose own last line is blank keeps it. The button
+  stands *over* the block rather than inside it, because the block scrolls sideways and a control
+  inside that scroll would leave with it; it rests dimmed rather than hidden, since a button
+  nobody can see is a button nobody presses; and a copy that is refused shows no tick at all,
+  because the tick is the only thing claiming the code reached the clipboard.
 - **A bare URL costs nothing to link, so do not ask for markup.** `remark-gfm` already
   turns `https://…` and `www.…` into anchors, which is why a link in a message needs no
   `[text](url)` around it — the token count of the address is the whole cost. The composer
@@ -848,6 +868,14 @@ it with the user rather than quietly changing it.
   `revealNow` takes the placement as an argument. The listener is on the document in the
   capture phase and stops propagation, because the composer has its own uses for a bare
   arrow — history recall and the slash menu — that Ctrl+Arrow must not also trip.
+  **The end of the walk is the way out of the transcript.** A press that finds nothing below
+  the message the walk is standing on — and only from a walk, since a press with nothing being
+  navigated is not the end of anything — goes to the end of the chat and hands the keyboard to
+  the composer, which is the one thing that can put the caret in its own editor: `App` counts
+  the requests and `Composer` answers a changed count, the same "an event, not a state" shape
+  the reveal uses, because asking twice has to be two requests. The walk is dropped as it hands
+  over, since the reader has left the transcript — so the next press up starts from the newest
+  message, which is what the geometry says for a transcript with nothing past the top.
 - **The preview swaps the editor rather than replacing it.** `.composer-host` stays mounted
   and is hidden with a class, so the text, the caret, the selection and the undo history
   all survive the round trip; the preview is drawn in the same field, at least as tall as

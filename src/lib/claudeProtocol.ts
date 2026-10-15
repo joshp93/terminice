@@ -1,9 +1,8 @@
-import type { ChatEntry, ChatState } from "../types";
+import type { ChatEntry, ChatState, TaskUsage } from "../types";
 import { readFastMode, readNames, readPlugins } from "./controlProtocol";
 import { describeToolUse } from "./describeToolUse";
 import { asArray, asNumber, asRecord, asText, type Json, parseJsonLine, prettyJson } from "./json";
 import { nextId } from "./nextId";
-import { type TaskReport, taskReportIn } from "./taskReport";
 import {
   describeToolResult,
   type HookNote,
@@ -310,16 +309,6 @@ export function applyClaudeMessage(
   message: Json,
   options: ApplyOptions = {},
 ): ChatState {
-  // A background agent reports by a notification of its own rather than by the
-  // result of the call that started it, so it is looked for before the frame is
-  // read as anything else. The frame it arrives in is the CLI's choice, and a
-  // report about a card takes precedence over whatever else that frame meant.
-  const report = taskReportIn(message);
-  if (report) {
-    const entries = withTaskReport(state.entries, report);
-    if (entries !== state.entries) return { ...state, entries };
-  }
-
   // Subagent output rides the same stream as everything else and is told apart
   // only by the call it belongs to, so it is routed before anything else can
   // mistake it for the main conversation.
@@ -602,32 +591,6 @@ function launchedAgentId(structured: unknown): string {
 }
 
 /**
- * Records what a background agent finished with.
- *
- * It is addressed by the call that started the agent, which is what the card is
- * keyed by, so no other bookkeeping is needed to find it.
- *
- * @param entries - The transcript entries.
- * @param report - What the task notification said.
- * @returns The entries, or the same array when nothing matched.
- */
-function withTaskReport(entries: ChatEntry[], report: TaskReport): ChatEntry[] {
-  const index = entries.findIndex(
-    (entry) => entry.role === "subagent" && entry.toolUseId === report.toolUseId,
-  );
-  const agent = index >= 0 ? entries[index] : null;
-  if (agent?.role !== "subagent") return entries;
-
-  const next = [...entries];
-  next[index] = {
-    ...agent,
-    status: report.failed ? "error" : "ok",
-    result: report.report.length > 0 ? report.report : report.summary,
-  };
-  return next;
-}
-
-/**
  * Attaches a hook's outcome to the tool call it most likely surrounds.
  *
  * Hook events do not carry a tool-use id, so the call is matched by the hook's
@@ -738,7 +701,104 @@ function applySystemEvent(state: ChatState, message: Json): ChatState {
 
   if (subtype === "compact_boundary") return applyCompactBoundary(state, message);
 
+  if (TASK_SUBTYPES.includes(subtype)) {
+    const entries = withTaskEvent(state.entries, subtype, message);
+    return entries === state.entries ? state : { ...state, entries };
+  }
+
   return state;
+}
+
+/**
+ * The system events that report on a task an agent was started for.
+ *
+ * Verified against the CLI's own stream, which sends all five: a task is
+ * announced with `task_started`, reports its numbers while it runs with
+ * `task_progress`, and is closed by `task_updated` and `task_notification` —
+ * both of which name the call the agent was started by, which is what a card is
+ * keyed by. `background_tasks_changed` carries the list of what is running in
+ * the background, which is the same story told whole; it is not read here
+ * because a card is what the tracker shows.
+ */
+const TASK_SUBTYPES = ["task_started", "task_progress", "task_updated", "task_notification"];
+
+/**
+ * Applies one report about a task to the card of the call that started it.
+ *
+ * A background agent is the reason this exists: its call is answered the moment
+ * it is started, and then nothing else on the stream says whether it is still
+ * working — the agent's own frames are inside its card, and the report it hands
+ * back arrives as a turn of the main conversation. These events are the CLI
+ * saying so itself, and they are the only thing that ends a background card.
+ *
+ * @param entries - The transcript entries.
+ * @param subtype - The task event's subtype.
+ * @param message - The decoded event.
+ * @returns The entries, or the same array when no card was found.
+ */
+function withTaskEvent(entries: ChatEntry[], subtype: string, message: Json): ChatEntry[] {
+  const toolUseId = asText(message.tool_use_id);
+  const index = entries.findIndex(
+    (entry) => entry.role === "subagent" && entry.toolUseId === toolUseId,
+  );
+  const agent = index >= 0 ? entries[index] : null;
+  if (agent?.role !== "subagent" || toolUseId.length === 0) return entries;
+
+  const next = [...entries];
+  const finished = subtype === "task_updated" || subtype === "task_notification";
+  if (finished) {
+    const patch = asRecord(message.patch);
+    const status = asText(message.status) || asText(patch?.status);
+    next[index] = {
+      ...agent,
+      status: status === "failed" ? "error" : "ok",
+      // What the CLI says about the ending, which is all it gives here: the
+      // agent's own report is handed to the model rather than to this stream.
+      result: agent.result.length > 0 ? agent.result : asText(message.summary).trim(),
+      usage: readTaskUsage(message) ?? agent.usage,
+      progress: undefined,
+    };
+    return next;
+  }
+
+  next[index] = {
+    ...agent,
+    // A task started in the background is one whose call has been answered and
+    // whose work goes on, which is what the card's own line says about it.
+    background: agent.background === true || message.is_backgrounded === true,
+    usage: readTaskUsage(message) ?? agent.usage,
+    progress:
+      subtype === "task_progress" ? (readTaskProgress(message) ?? undefined) : agent.progress,
+  };
+  return next;
+}
+
+/**
+ * Reads the token and tool counts a task reported.
+ *
+ * @param message - A task event.
+ * @returns What it spent, or null when it reported nothing.
+ */
+function readTaskUsage(message: Json): TaskUsage | null {
+  const usage = asRecord(message.usage);
+  if (!usage) return null;
+  return {
+    tokens: asNumber(usage.total_tokens) ?? 0,
+    toolUses: asNumber(usage.tool_uses) ?? 0,
+    durationMs: asNumber(usage.duration_ms) ?? 0,
+  };
+}
+
+/**
+ * Reads what a running task is doing now.
+ *
+ * @param message - A `task_progress` event.
+ * @returns The reading, or null when it carried none.
+ */
+function readTaskProgress(message: Json): TaskUsage | null {
+  const usage = readTaskUsage(message);
+  if (!usage) return null;
+  return { ...usage, lastTool: asText(message.last_tool_name) };
 }
 
 /**

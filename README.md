@@ -50,6 +50,10 @@ Markdown, with a rich composer that writes the Markdown for you.
 - **Rich composer** — bold, italic, strikethrough, inline code, fenced code blocks,
   bulleted and numbered lists, all with keyboard shortcuts, plus auto-pairing brackets
   and file-drop.
+- **Copy a code block** — every fenced block in the transcript carries a copy button in its
+  top right corner, which puts the code on the clipboard and turns into a tick for two
+  seconds. What it copies is the code the message wrote, not the markup it was highlighted
+  into, and without the newline the renderer puts after the last line.
 - **Formatting that reads the document** — the toolbar reflects the Markdown around the
   caret, so it shows what is actually there rather than only a pending toggle.
 - **Context from the CLI itself** — the header percentage is what `/context` reports, not
@@ -268,7 +272,7 @@ no longer a plan waiting on anything.
 | `Ctrl+>` | Quote |
 | `Hold Space` | Dictates, while dictation is switched on |
 | `F6` | Puts the keyboard in the composer, from anywhere |
-| `Ctrl+↑` / `Ctrl+↓` | Jumps to the previous or next message you sent |
+| `Ctrl+↑` / `Ctrl+↓` | Steps through the messages you sent; past the last one it goes to the end of the chat and puts the caret back in the composer |
 
 (The same list is in the app, under **Settings → Keyboard shortcuts**, written for whichever
 platform it is running on.)

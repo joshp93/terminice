@@ -57,13 +57,60 @@ describe("SubagentCard", () => {
     expect(summary()).toHaveTextContent("starting…");
   });
 
-  /// An agent the CLI has already answered for was started successfully — that
-  /// is what the acknowledgement says — so it is described as running in the
-  /// background rather than as still starting minutes later.
-  it("describes an acknowledged background agent as running in the background", () => {
-    render(<Harness value={entry({ agentId: "agent-7" })} />);
+  /// An agent started in the background outlives the call that started it, so
+  /// it is described as running in the background rather than as still starting
+  /// minutes later.
+  it("describes a background agent as running in the background", () => {
+    render(<Harness value={entry({ background: true })} />);
 
     expect(summary()).toHaveTextContent("running in the background…");
+  });
+
+  /// What a running task reports about itself is the only sign of life there is
+  /// between starting and finishing, so it is what the card says.
+  it("counts what a running task has done, when it has recorded no steps", () => {
+    render(
+      <Harness
+        value={entry({
+          progress: { tokens: 24_894, toolUses: 3, durationMs: 3951, lastTool: "Read" },
+        })}
+      />,
+    );
+
+    expect(summary()).toHaveTextContent("3 tools · 24,894 tokens");
+  });
+
+  it("counts a single call in the singular", () => {
+    render(<Harness value={entry({ progress: { tokens: 900, toolUses: 1, durationMs: 10 } })} />);
+
+    expect(summary()).toHaveTextContent("1 tool · 900 tokens");
+  });
+
+  /// The numbers are what is left when an agent's frames never arrived, so a
+  /// finished task with no steps still says what it did.
+  it("falls back to the numbers a finished task reported", () => {
+    const { container } = render(
+      <Harness
+        value={entry({ status: "ok", usage: { tokens: 24_945, toolUses: 4, durationMs: 5692 } })}
+      />,
+    );
+
+    expect(container.querySelector(".subagent-steps")).toHaveTextContent("4 tools · 24,945 tokens");
+  });
+
+  /// Steps are the work itself, so they are the better answer when there are
+  /// any.
+  it("prefers the steps it recorded to the numbers a task reported", () => {
+    const { container } = render(
+      <Harness
+        value={entry({
+          entries: [{ id: "e1", role: "assistant", text: "working" }],
+          usage: { tokens: 900, toolUses: 1, durationMs: 10 },
+        })}
+      />,
+    );
+
+    expect(container.querySelector(".subagent-steps")).toHaveTextContent("1 step");
   });
 
   it("does not claim a finished agent is still starting when none of its frames arrived", () => {

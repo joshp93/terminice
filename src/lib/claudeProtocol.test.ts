@@ -945,7 +945,10 @@ describe("subagent output", () => {
     expect(agent.role === "subagent" && agent.status).toBe("running");
   });
 
-  it("ends a background agent on the report it sends when it is done", () => {
+  /// The CLI reports the end of a task itself, naming the call the agent was
+  /// started by — which is the only thing that ends a background agent, since
+  /// its call was answered before it did any work.
+  it("ends a background agent on the task the CLI says has finished", () => {
     const started = apply(withAgent(), {
       type: "user",
       message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
@@ -953,47 +956,96 @@ describe("subagent output", () => {
     });
 
     const state = apply(started, {
-      type: "user",
-      attachment: {
-        type: "queued_command",
-        prompt:
-          "<task-notification>\n<task-id>a1</task-id>\n" +
-          "<tool-use-id>task-1</tool-use-id>\n<status>completed</status>\n" +
-          '<summary>Agent "Explore" finished</summary>\n<result>found it</result>\n' +
-          "</task-notification>",
-      },
+      type: "system",
+      subtype: "task_notification",
+      task_id: "a1",
+      tool_use_id: "task-1",
+      status: "completed",
+      summary: 'Agent "Explore" finished',
+      usage: { total_tokens: 24_945, tool_uses: 4, duration_ms: 5692 },
     });
 
     const agent = entriesOf(state, "subagent")[0];
     expect(agent.role === "subagent" && agent.status).toBe("ok");
-    expect(agent.role === "subagent" && agent.result).toBe("found it");
+    expect(agent.role === "subagent" && agent.result).toBe('Agent "Explore" finished');
+    expect(agent.role === "subagent" && agent.usage?.toolUses).toBe(4);
     expect(runningGroups(state)).toEqual([]);
   });
 
-  it("records a background agent that failed as having failed", () => {
-    const started = apply(withAgent(), {
-      type: "user",
-      message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
-      tool_use_result: { isAsync: true, status: "async_launched" },
+  it("ends one on the update that came before the notification", () => {
+    const state = apply(withAgent(), {
+      type: "system",
+      subtype: "task_updated",
+      task_id: "a1",
+      tool_use_id: "task-1",
+      patch: { status: "completed", end_time: 1 },
     });
 
-    const state = apply(started, {
-      type: "user",
-      message: {
-        content: [
-          {
-            type: "text",
-            text:
-              "<task-notification>\n<tool-use-id>task-1</tool-use-id>\n" +
-              "<status>failed</status>\n<summary>it broke</summary>\n</task-notification>",
-          },
-        ],
-      },
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.status).toBe("ok");
+  });
+
+  it("records a background agent that failed as having failed", () => {
+    const state = apply(withAgent(), {
+      type: "system",
+      subtype: "task_notification",
+      tool_use_id: "task-1",
+      status: "failed",
+      summary: "it broke",
     });
 
     const agent = entriesOf(state, "subagent")[0];
     expect(agent.role === "subagent" && agent.status).toBe("error");
     expect(agent.role === "subagent" && agent.result).toBe("it broke");
+  });
+
+  /// A task started in the background is one whose work outlives the call that
+  /// started it, which is what the card's own line has to say.
+  it("marks an agent the CLI started in the background", () => {
+    const state = apply(withAgent(), {
+      type: "system",
+      subtype: "task_started",
+      task_id: "a1",
+      tool_use_id: "task-1",
+      description: "Explore",
+      is_backgrounded: true,
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.background).toBe(true);
+    expect(agent.role === "subagent" && agent.status).toBe("running");
+    expect(runningGroups(state).map((group) => group.kind)).toEqual(["agent"]);
+  });
+
+  /// What a running task reports about itself is the only sign of life a
+  /// background agent gives, so it is kept while it works.
+  it("records what a running task has done so far", () => {
+    const state = apply(withAgent(), {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "a1",
+      tool_use_id: "task-1",
+      usage: { total_tokens: 24_894, tool_uses: 3, duration_ms: 3951 },
+      last_tool_name: "Read",
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.progress).toEqual({
+      tokens: 24_894,
+      toolUses: 3,
+      durationMs: 3951,
+      lastTool: "Read",
+    });
+    expect(agent.role === "subagent" && agent.status).toBe("running");
+  });
+
+  /// A task the app never saw the call for has no card to report to.
+  it("ignores a task event for a call it never saw", () => {
+    const state = withAgent();
+
+    expect(
+      apply(state, { type: "system", subtype: "task_notification", tool_use_id: "gone" }),
+    ).toBe(state);
   });
 
   /// A watcher reports on itself with no call behind it, so there is no card to

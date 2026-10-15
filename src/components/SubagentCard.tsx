@@ -13,12 +13,14 @@ export type SubagentCardProps = {
 /**
  * Summarises how far an agent has got.
  *
- * An agent whose frames were never forwarded records no steps at all, so an
- * empty transcript is not the same thing in both cases. One that was never
- * acknowledged is only being started, and that is all there is to say. One the
- * CLI has already answered for — a background agent, named by its own id — was
- * started successfully and has not reported since, so it is described as what
- * it is rather than left saying it is still starting minutes later.
+ * What can be said depends on what the CLI has said, and the three answers are
+ * not equally good. The steps it took are the best, because they are the work
+ * itself. Failing that, the numbers the task reports while it runs — calls made
+ * and tokens spent — which is the only sign of life a background agent gives
+ * between starting and finishing. Failing that, a word for the state it is in:
+ * one the CLI has already answered for was started successfully, so it is
+ * described as running in the background rather than as still starting minutes
+ * later; and one that has finished with no steps recorded says so.
  *
  * @param entry - The subagent card being summarised.
  * @returns A short label for the card's summary line.
@@ -26,8 +28,15 @@ export type SubagentCardProps = {
 function progressLabel(entry: SubagentCardProps["entry"]): string {
   const steps = entry.entries.length;
   if (steps > 0) return `${steps} step${steps === 1 ? "" : "s"}`;
+
+  const progress = entry.progress ?? entry.usage;
+  if (progress) {
+    const tools = `${progress.toolUses} tool${progress.toolUses === 1 ? "" : "s"}`;
+    return `${tools} · ${progress.tokens.toLocaleString()} tokens`;
+  }
+
   if (entry.status !== "running") return "no steps";
-  return entry.agentId === undefined ? "starting…" : "running in the background…";
+  return entry.background === true ? "running in the background…" : "starting…";
 }
 
 /**

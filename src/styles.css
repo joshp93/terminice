@@ -979,6 +979,59 @@ body {
   overflow-x: auto;
 }
 
+/*
+ * The copy button stands over the block rather than in it, because the block
+ * scrolls sideways and a control inside that scroll would leave with it.
+ *
+ * It rests dimmed rather than hidden: a button nobody can see is a button
+ * nobody presses, and one at full strength on every block in a long reply
+ * competes with the code. The tick wears the accent, which is the same green
+ * the Send button fills with — the confirmation is the one thing here worth
+ * colour.
+ */
+.code-block {
+  position: relative;
+}
+
+.code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 90ms ease-out;
+}
+
+.code-block:hover .code-copy,
+.code-copy:focus-visible,
+.code-copy.copied {
+  opacity: 1;
+}
+
+.code-copy:hover {
+  color: var(--text);
+  border-color: var(--accent-border);
+}
+
+.code-copy.copied,
+.code-copy.copied:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 .bubble pre code {
   background: none;
   border: none;

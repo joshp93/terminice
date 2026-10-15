@@ -23,6 +23,11 @@ export type ChatPaneProps = {
   state: ChatState;
   /** The entry to bring into view, if the tracker has asked for one. */
   reveal?: RevealTarget | null;
+  /**
+   * Called when the walk through the reader's own messages runs out of messages
+   * below it, which is the moment the keyboard is handed back to the composer.
+   */
+  onReturnToComposer?: () => void;
 };
 
 /** How long a revealed entry stays lit. */
@@ -86,7 +91,7 @@ const FOLLOW_THRESHOLD_PX = 32;
  * @param props - The chat state, and the entry the tracker has asked to see.
  * @returns The rendered chat pane.
  */
-export function ChatPane({ state, reveal = null }: ChatPaneProps) {
+export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -315,7 +320,26 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
         direction,
         current: walkRef.current,
       });
-      if (id === null) return;
+
+      if (id === null) {
+        // Nothing below the message the walk is standing on: the reader is at
+        // the end of their own messages, so the way on is out of the transcript
+        // — the end of the chat, and the keyboard back in the composer to write
+        // in. Only from a walk: with no message being walked there was nothing
+        // being navigated, and the key is left to whatever else wants it, which
+        // is also what the walk's own "nothing that way" does going up.
+        if (direction === 1 && walkRef.current !== null) {
+          event.preventDefault();
+          event.stopPropagation();
+          // The walk is left behind with the transcript: the reader is no
+          // longer in it, and the next press starts from what is on screen —
+          // which, from the end of the chat, is the newest message.
+          walkRef.current = null;
+          jumpToEnd();
+          onReturnToComposer?.();
+        }
+        return;
+      }
 
       walkRef.current = id;
 
@@ -330,7 +354,7 @@ export function ChatPane({ state, reveal = null }: ChatPaneProps) {
 
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [userPlacements, revealNow]);
+  }, [jumpToEnd, onReturnToComposer, userPlacements, revealNow]);
 
   useEffect(() => {
     if (flash === null) return;

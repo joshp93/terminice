@@ -95,6 +95,18 @@ export type ChatEntry =
       /** The agent's closing report. */
       result: string;
       status: "running" | "ok" | "error";
+      /**
+       * True when the agent was started to run in the background.
+       *
+       * Such an agent's call is answered as soon as it has been started, so
+       * nothing about the call says whether the work is over — the CLI's own
+       * task events do.
+       */
+      background?: boolean;
+      /** What the task has spent, as the CLI last reported it. */
+      usage?: TaskUsage;
+      /** Where the task is up to, while it is still running. */
+      progress?: TaskUsage;
       /** What the agent said and did, in the order it happened. */
       entries: ChatEntry[];
     }
@@ -120,6 +132,18 @@ export type TokenUsage = {
   cacheRead: number;
   /** Tokens written into the prompt cache. */
   cacheWrite: number;
+};
+
+/** What a task an agent was started for has spent, as the CLI reports it. */
+export type TaskUsage = {
+  /** Tokens the task has used. */
+  tokens: number;
+  /** Calls it has made. */
+  toolUses: number;
+  /** How long it has been running, in milliseconds. */
+  durationMs: number;
+  /** The call it made last, while it is still running. */
+  lastTool?: string;
 };
 
 /** Everything the chat pane renders for one Claude session. */

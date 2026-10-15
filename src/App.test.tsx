@@ -274,3 +274,43 @@ describe("the window's own keys", () => {
     expect(sentRequests("set_permission_mode")).toHaveLength(0);
   });
 });
+
+describe("walking the transcript", () => {
+  /** Sends a line to the app, as the session would. */
+  const say = (line: unknown): void => {
+    sessionChannel<ClaudeEvent>().emit({ kind: "line", line: JSON.stringify(line) });
+  };
+
+  /// The walk ends at the reader's last message, and what is below it is the
+  /// composer: the caret goes back into the box, which is the only thing in the
+  /// window that can put it there.
+  it("hands the caret back to the composer at the end of the walk", async () => {
+    render(<App />);
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+
+    say({ type: "assistant", message: { content: [{ type: "text", text: "said first" }] } });
+
+    const editor = await waitFor(() => {
+      const content = document.querySelector(".cm-content");
+      if (!(content instanceof HTMLElement)) throw new Error("the composer has not mounted");
+      return content;
+    });
+
+    // The reader's own message is made the way the reader makes one: a message
+    // is only theirs once it has been sent, so one arriving on the stream is not
+    // a row the walk could land on.
+    await userEvent.type(editor, "the only message");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => expect(screen.getByText("the only message")).toBeInTheDocument());
+
+    editor.blur();
+    expect(editor).not.toHaveFocus();
+
+    // Two presses: the first lands on the only message there is to walk to, the
+    // second finds nothing below it.
+    await userEvent.keyboard("{Control>}{ArrowDown}{/Control}");
+    await userEvent.keyboard("{Control>}{ArrowDown}{/Control}");
+
+    expect(editor).toHaveFocus();
+  });
+});
