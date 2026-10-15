@@ -128,6 +128,19 @@ it with the user rather than quietly changing it.
    long-lived shell, so an `export` or a `cd` does not reach Claude's own tool calls, and a
    command that prompts on stdin gets EOF instead. The wrappers are right; the shell is not
    the same one.
+- **A local command that leaves something running is over when the shell exits, not when its
+  pipes close.** `Command::output()` waits for the child's stdout to reach end-of-file, and a
+  process the command started in the background — `!code .`, `!pnpm dev`, anything with a `&`,
+  even `(cmd &)` in a subshell — inherits those pipes and holds them open. Waiting for them is
+  waiting for the *command's children*, which can be forever: measured, `echo plain` returned and
+  `sleep 30 & echo backgrounded` never did. So `shell.rs` reads both streams on threads of their
+  own, waits for the shell, and gives what is left in the pipe a quarter of a second to arrive.
+  Do not put `output()` back, and do not "simplify" it to reading the pipes inline — the whole
+  point is that reading is not the same wait as running. Two consequences worth knowing: a
+  command's output is what it wrote *before* the shell exited, and the reader threads keep
+  draining past the cap rather than closing the pipe, because a process left running that finds
+  its reader gone blocks the moment the pipe fills — and killing what the reader started is not
+  this application's business.
 
 ## Code style
 
