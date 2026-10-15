@@ -158,6 +158,28 @@ export function withSettledMessage(state: ChatState, id: string): ChatState {
 }
 
 /**
+ * Takes the waiting mark off one message, by the uuid it was sent under.
+ *
+ * That uuid is the only name the CLI knows a message by, so it is what the CLI
+ * reports on a message with — see {@link withCommandLifecycle}. A message the
+ * app did not send has no uuid, and so cannot be addressed here.
+ *
+ * @param state - The current chat state.
+ * @param commandUuid - The uuid the message was sent under.
+ * @returns The updated chat state.
+ */
+export function withSettledUuid(state: ChatState, commandUuid: string): ChatState {
+  const waiting = (entry: ChatEntry): entry is Extract<ChatEntry, { role: "user" }> =>
+    entry.role === "user" && entry.queued === true && entry.messageUuid === commandUuid;
+  if (!state.entries.some(waiting)) return state;
+
+  return {
+    ...state,
+    entries: state.entries.map((entry) => (waiting(entry) ? { ...entry, queued: false } : entry)),
+  };
+}
+
+/**
  * Records a failure that did not come from the Claude event stream.
  *
  * @param state - The current chat state.
@@ -338,9 +360,47 @@ export function applyClaudeMessage(
       return applyResultEvent(next, message, options.interrupted === true);
     case "prompt_suggestion":
       return { ...next, suggestion: asText(message.suggestion) || null };
+    case "command_lifecycle":
+      return withCommandLifecycle(next, message);
     default:
       return next;
   }
+}
+
+/**
+ * Applies the CLI's own account of a message the host sent.
+ *
+ * A message sent while a turn was running is queued, and the CLI says so itself
+ * rather than leaving it to be inferred: these frames are addressed by the uuid
+ * the message was sent under — the same uuid the app mints so a message can be
+ * taken back out of the queue — and carry one of three states.
+ *
+ * `queued` is where a message waits, and nothing is done with it: the app marks
+ * the message as waiting the moment it sends it, so that the reader sees it
+ * straight away, and a confirmation arriving a moment later has nothing to add.
+ *
+ * `started` is the acknowledgement that exists nowhere else, and it is what the
+ * badge has been waiting for. Measured on the stream: it arrives with the tool
+ * result of the call that was running when the message was queued, which is
+ * where the CLI takes a queued message up — so it comes as the agent reads the
+ * message rather than when the turn it joined finishes, which can be minutes
+ * later. Without it a message the model was already answering sat labelled
+ * "Queued", and missing from the transcript, for the rest of the turn.
+ *
+ * `completed` closes the message out, which matters only when its `started` was
+ * missed — a session reattached mid-turn, say.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `command_lifecycle` line.
+ * @returns The updated chat state.
+ */
+function withCommandLifecycle(state: ChatState, message: Json): ChatState {
+  const commandUuid = asText(message.command_uuid);
+  const lifecycle = asText(message.state);
+  if (commandUuid.length === 0) return state;
+  if (lifecycle !== "started" && lifecycle !== "completed") return state;
+
+  return withSettledUuid(state, commandUuid);
 }
 
 /**

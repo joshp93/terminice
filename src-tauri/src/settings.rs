@@ -4,6 +4,7 @@ use crate::home;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 /// What a bare Enter key does in the composer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -179,6 +180,55 @@ fn write_settings(settings: &Settings) -> io::Result<()> {
     let text = serde_json::to_string_pretty(settings)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     std::fs::write(path, text)
+}
+
+/// How often the settings file is looked at.
+///
+/// The file is one small object and reading its modification time is a `stat`,
+/// so this can afford to be short: the point of watching at all is that a
+/// hand-edit takes effect while the window is open, and a setting that lands a
+/// second late reads as one that did not work.
+const POLL: Duration = Duration::from_millis(750);
+
+/// The event the frontend is told about a settings file that changed.
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+
+/// When the settings file was last written, or none when there is not one.
+///
+/// The modification time is enough on its own: the file is written whole, by
+/// this application or by hand, so a change of any kind moves it.
+///
+/// @returns The file's modification time.
+fn settings_modified() -> Option<SystemTime> {
+    std::fs::metadata(settings_path()?).ok()?.modified().ok()
+}
+
+/// Announces every change to the settings file, for as long as the app runs.
+///
+/// The settings are read when the application starts and written when the menu
+/// changes one, which leaves the file itself as the only thing both sides agree
+/// on. A reader who edits it by hand — a cost rate, a font family — would
+/// otherwise be editing something nothing was going to look at again, and the
+/// application's own next save would write its older copy straight over it.
+///
+/// The thread ends when the app does; nothing has to stop it.
+///
+/// @param app - The application to announce the change to.
+pub fn watch_settings(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        use tauri::Emitter;
+
+        let mut last = settings_modified();
+        loop {
+            std::thread::sleep(POLL);
+            let current = settings_modified();
+            if current == last {
+                continue;
+            }
+            last = current;
+            let _ = app.emit(SETTINGS_CHANGED, ());
+        }
+    });
 }
 
 /// Reads the persisted settings.

@@ -17,9 +17,11 @@ import { modifierShortcut } from "./lib/modifierShortcut";
 import { pendingMessages } from "./lib/pendingMessages";
 import { planOf } from "./lib/planOf";
 import { runningGroups } from "./lib/runningTools";
+import { sameSettings } from "./lib/sameSettings";
 import { describeCost, sessionCost } from "./lib/sessionCost";
 import { sessionTitle } from "./lib/sessionTitle";
 import { loadSettings, saveSettings } from "./lib/settings";
+import { watchSettingsFile } from "./lib/settingsWatcher";
 import type { SlashMenuHost } from "./lib/slashMenu";
 import { claimWindowColour } from "./lib/windowColour";
 import { setWindowTitle } from "./lib/windowControls";
@@ -45,6 +47,25 @@ export function App() {
     void loadSettings().then(setSettings);
     void claimWindowColour().then((index) => setColour(paletteColour(index)));
   }, []);
+
+  /**
+   * Takes up the settings file when something else writes it.
+   *
+   * A reader editing the file by hand — a cost rate, a font family — is editing
+   * the same settings this window holds in memory, and the two only agree if
+   * one of them is listening. What arrives here is adopted rather than saved
+   * back, so the file stays the reader's; and the application's own saves come
+   * back through this path as the same values, which changes nothing.
+   */
+  useEffect(
+    () =>
+      watchSettingsFile(() => {
+        void loadSettings().then((next) =>
+          setSettings((current) => (sameSettings(current, next) ? current : next)),
+        );
+      }),
+    [],
+  );
 
   useEffect(() => {
     const root = document.documentElement;

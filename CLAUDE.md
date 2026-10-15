@@ -709,11 +709,21 @@ it with the user rather than quietly changing it.
   it when the result arrives, and `applyResultEvent` records a notice instead of an error.
   Do not "simplify" this by reading a subtype off the result — there is no field
   that distinguishes the two.
-- **A message sent mid-turn is queued, and the end of the turn is what releases it.** The
-  CLI says nothing about picking a message up, so `send` marks a user entry `queued` when
-  the session was already busy, and `applyResultEvent` takes the mark off every waiting
-  message when a turn ends. That is the only signal there is; a per-message acknowledgement
-  does not exist to be read.
+- **A message sent mid-turn is queued, and the CLI acknowledges it by `command_lifecycle`.**
+  Read off the stream itself, with a probe that queued a message into a running tool: the CLI
+  sends `{type: "command_lifecycle", command_uuid, state}` three times for one message —
+  `queued` as it is put aside, `started` when it is taken up, `completed` when the turn that
+  answered it is over — and `command_uuid` is the uuid the host sent the message under, which
+  is the same one the app mints so a message can be taken back out of the queue
+  (`messageUuid.ts`). **An earlier note here said no per-message acknowledgement existed; it
+  does, and this is it.** What that costs is the difference between the badge coming off as the
+  agent starts reading the message and coming off when the whole turn ends: measured, `started`
+  arrived 200ms after the tool result of the call that was running when the message was queued —
+  the boundary the CLI absorbs a queued message at — and four seconds before the `result`, which
+  in a long turn is minutes. `withCommandLifecycle` settles on `started` and `completed` and
+  ignores `queued`, because the app marks that itself as it sends, so that the reader sees it at
+  once; and settling on the turn's end stays as the backstop for a message whose frames were
+  missed.
 - **A waiting message is drawn above the composer, not in the transcript.** While the mark
   is on, `ChatPane` filters the entry out of the rows and `PendingMessages` shows it under
   the turn's status line. It is filtered at *render* rather than taken out of `entries`, and
@@ -980,6 +990,15 @@ it with the user rather than quietly changing it.
   utterance away and told the reader the microphone had stopped, which it had not. It bit on
   one machine of two, which is what a driver-shaped discontinuity looks like from here.
   `has_stopped` in `mic.rs` is the filter, and the test beside it is why it stays.
+- **The settings file is watched, not only read at startup.** It is the one thing the window and
+  a text editor both write, and the two only agree if one of them is listening: `settings.rs`
+  polls the file's modification time and emits `settings-changed`, the frontend adopts what it
+  finds rather than saving it back, and `sameSettings` keeps an unchanged reading from
+  re-rendering the window. Do not make a reload *save* — the application's own writes come back
+  through this path as the same values, and a window that saved on reload would be fighting the
+  reader's editor, which is exactly the thing this is for. A poll rather than a filesystem
+  watcher: the file is one small object, a `stat` is nothing next to a dependency, and 750ms is
+  short enough that an edit reads as having worked.
 - **The model lives beside the settings, not beside the executable.** Session history goes
   next to the exe because the installer is per-user; a 140 MB model must not, because in
   development the exe is inside `target` and a `cargo clean` would cost a fresh download.

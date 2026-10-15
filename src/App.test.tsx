@@ -2,7 +2,17 @@ import { invoke, routeInvoke, sessionChannel } from "@test/tauriMock";
 
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
 
-import { render, screen, waitFor } from "@testing-library/react";
+/// The settings file watcher, with the callback it was given kept for the test
+/// to fire — which is how a hand-edit of the file arrives here.
+const watcher = vi.hoisted(() => ({ handler: null as null | (() => void) }));
+vi.mock("./lib/settingsWatcher", () => ({
+  watchSettingsFile: (onChange: () => void) => {
+    watcher.handler = onChange;
+    return () => undefined;
+  },
+}));
+
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -312,5 +322,39 @@ describe("walking the transcript", () => {
     await userEvent.keyboard("{Control>}{ArrowDown}{/Control}");
 
     expect(editor).toHaveFocus();
+  });
+});
+
+describe("the settings file", () => {
+  /// The file is the one thing the window and a text editor both write, so an
+  /// edit made outside the window has to be taken up rather than saved over.
+  it("takes up a settings file written by something else", async () => {
+    routeInvoke("load_settings", () => stored({ theme: "dark" }));
+    render(<App />);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+
+    routeInvoke("load_settings", () => stored({ theme: "light", inputCostPerMillion: 0.15 }));
+    await act(async () => {
+      watcher.handler?.();
+    });
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+  });
+
+  /// Adopted, not written back: the file belongs to whoever edited it, and a
+  /// window that saved on reload would be fighting the reader's editor.
+  it("does not write the file back when it takes it up", async () => {
+    routeInvoke("load_settings", () => stored({ theme: "dark" }));
+    render(<App />);
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("dark"));
+    invoke.mockClear();
+
+    routeInvoke("load_settings", () => stored({ theme: "light" }));
+    await act(async () => {
+      watcher.handler?.();
+    });
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+
+    expect(invoke.mock.calls.filter(([command]) => command === "save_settings")).toEqual([]);
   });
 });

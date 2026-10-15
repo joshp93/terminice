@@ -22,6 +22,12 @@ pub fn run() {
         .manage(claude::ClaudeSessions::default())
         .manage(voice::Voice::default())
         .manage(window_colour::WindowColours::default())
+        .setup(|app| {
+            // The settings file is the one thing the frontend and a hand-edit
+            // both write, so it is watched rather than only read at startup.
+            settings::watch_settings(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             startup::startup_directory_command,
             claude::start_claude,

@@ -192,6 +192,10 @@ Settings live in `~/.config/terminice-settings.json`, written by the settings me
 Missing or malformed values fall back to defaults, and keys from older versions are
 ignored, so a hand-edited file cannot stop the app from starting.
 
+The file is also watched: edit it while the window is open — a cost rate, a font family — and
+the window takes up what you wrote within a second, rather than holding a copy from startup and
+writing it back over yours.
+
 | Key | Values | Default | Meaning |
 |---|---|---|---|
 | `enterBehaviour` | `send` \| `newline` | `send` | What Enter does in the composer |

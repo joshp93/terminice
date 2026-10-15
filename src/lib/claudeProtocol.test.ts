@@ -16,6 +16,7 @@ import {
   withUserMessage,
 } from "./claudeProtocol";
 import type { Json } from "./json";
+import { pendingMessages } from "./pendingMessages";
 import { runningGroups } from "./runningTools";
 
 /** Applies one event, as the session hook does with a decoded line. */
@@ -1274,5 +1275,77 @@ describe("a mode the session changed without being asked", () => {
 
     expect(apply(state, { type: "result" })).not.toBe(state);
     expect(apply(createChatState(), { type: "keep_alive" })).toEqual(state);
+  });
+});
+
+describe("a message the CLI reports on", () => {
+  /** A message of the reader's own, sent while a turn was running. */
+  const sent = (uuid: string): ChatState =>
+    withUserMessage(createChatState(), "do the other thing", true, uuid);
+
+  it("comes off the queue when the CLI says it has started", () => {
+    const state = apply(sent("msg-1"), {
+      type: "command_lifecycle",
+      command_uuid: "msg-1",
+      state: "started",
+    });
+
+    const [entry] = entriesOf(state, "user");
+    expect(entry.role === "user" && entry.queued).toBe(false);
+  });
+
+  /// The acknowledgement arrives with the tool result of the call that was
+  /// running, not with the turn's end — which is the whole point of reading it.
+  it("comes off the queue before the turn it joined has finished", () => {
+    const state = apply(sent("msg-1"), {
+      type: "command_lifecycle",
+      command_uuid: "msg-1",
+      state: "started",
+    });
+
+    expect(state.busy).toBe(true);
+    expect(pendingMessages(state)).toEqual([]);
+  });
+
+  it("comes off on the completed report too, if its start was missed", () => {
+    const state = apply(sent("msg-1"), {
+      type: "command_lifecycle",
+      command_uuid: "msg-1",
+      state: "completed",
+    });
+
+    expect(pendingMessages(state)).toEqual([]);
+  });
+
+  /// Where a message waits is the app's own marking, made as it sends, so the
+  /// CLI saying so adds nothing — and a message sent while the session was idle
+  /// must not be marked as waiting by it.
+  it("leaves the queue mark to the app when the CLI says queued", () => {
+    const idle = withUserMessage(createChatState(), "just asked", false, "msg-2");
+    const state = apply(idle, {
+      type: "command_lifecycle",
+      command_uuid: "msg-2",
+      state: "queued",
+    });
+
+    expect(state).toBe(idle);
+  });
+
+  /// The uuid is the only name the CLI knows a message by, so a report about
+  /// one the app did not send addresses nothing.
+  it("leaves other messages waiting", () => {
+    const state = apply(sent("msg-1"), {
+      type: "command_lifecycle",
+      command_uuid: "someone-elses",
+      state: "started",
+    });
+
+    expect(pendingMessages(state)).toHaveLength(1);
+  });
+
+  it("reads nothing from a lifecycle line without a message", () => {
+    const state = sent("msg-1");
+
+    expect(apply(state, { type: "command_lifecycle", state: "started" })).toBe(state);
   });
 });
