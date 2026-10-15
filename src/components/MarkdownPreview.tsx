@@ -1,4 +1,5 @@
 import type { Ref } from "react";
+import { isModShortcut } from "../lib/isModShortcut";
 import { MessageBubble } from "./MessageBubble";
 
 /** Props for {@link MarkdownPreview}. */
@@ -12,7 +13,7 @@ export type MarkdownPreviewProps = {
   minHeight: number;
   /** The box itself, which the composer takes the keyboard to as it opens. */
   ref?: Ref<HTMLDivElement>;
-  /** Puts the preview away, which Escape does from inside it. */
+  /** Returns to the editor, which Escape and the preview shortcut both do. */
   onEscape: () => void;
 };
 
@@ -23,7 +24,8 @@ export type MarkdownPreviewProps = {
  * {@link MessageBubble}, inside the same bubble, standing in the same type
  * scale — so what is on screen here is the message itself rather than a second
  * opinion about it. It is a place to read, not to type: the box takes no
- * keyboard input and the way back is the button that opened it, or Escape.
+ * keyboard input and the way back is the button that opened it, the shortcut
+ * that opened it, or Escape.
  *
  * @param props - The Markdown to render and the height to stand at.
  * @returns The rendered preview.
@@ -37,7 +39,7 @@ export function MarkdownPreview({ text, minHeight, ref, onEscape }: MarkdownPrev
       tabIndex={-1}
       ref={ref}
       onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
+        if (event.key !== "Escape" && !isModShortcut(event, "p")) return;
         event.preventDefault();
         event.stopPropagation();
         onEscape();

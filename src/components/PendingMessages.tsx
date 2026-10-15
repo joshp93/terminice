@@ -23,6 +23,11 @@ export type PendingMessagesProps = {
  * was sent under, so a row that has none — a replayed message, or one the CLI
  * raised itself — has nothing to offer and is drawn without it.
  *
+ * The words are shown as they were written rather than shortened to fit a line:
+ * the box grows to two lines and stops there, so a queued sentence is readable
+ * while a queued essay does not push the composer off the window. The one-line
+ * summary is what the row is *named* by, for the button that takes it back.
+ *
  * @param props - The waiting messages and how to take one back.
  * @returns The waiting messages, or nothing when there are none.
  */
@@ -37,7 +42,7 @@ export function PendingMessages({ messages, onUnqueue }: PendingMessagesProps) {
           <div className="pending-row" key={message.id}>
             <p className="pending-message">
               <span className="queued-badge">Queued</span>
-              <span className="pending-text">{summary}</span>
+              <span className="pending-text">{message.text.trim()}</span>
             </p>
             {message.messageUuid !== undefined && (
               <button

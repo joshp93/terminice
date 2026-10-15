@@ -64,7 +64,18 @@ describe("createDefaultSettings", () => {
       appFontFamily: BUILT_IN_FONT_VALUE,
       voiceEnabled: false,
       diffSideBySide: true,
+      inputCostPerMillion: 0,
+      outputCostPerMillion: 0,
+      cacheReadCostPerMillion: 0,
+      cacheWriteCostPerMillion: 0,
     });
+  });
+
+  /// No rates rather than free: a model the CLI cannot price is reported as
+  /// unpriceable until the reader says what they are charged for it.
+  it("starts with no rates for a model the CLI cannot price", () => {
+    expect(createDefaultSettings().inputCostPerMillion).toBe(0);
+    expect(createDefaultSettings().outputCostPerMillion).toBe(0);
   });
 
   /// It changes what the space bar does, so it has to be asked for.

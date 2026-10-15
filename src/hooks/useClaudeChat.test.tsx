@@ -455,6 +455,25 @@ describe("session control", () => {
     });
   });
 
+  /// Stopping a turn releases what was queued behind it — the CLI takes the
+  /// message up as it stops — so the mark has to come off there too. Left on,
+  /// the row would still read "Queued" for a message the agent is already
+  /// answering, and the message would be missing from the transcript meanwhile.
+  it("unmarks a queued message when the turn is stopped", async () => {
+    const view = await mount();
+    act(() => view.result.current.send("first"));
+    await waitFor(() => expect(view.result.current.state.busy).toBe(true));
+
+    act(() => view.result.current.send("second"));
+    await waitFor(() => expect(entries(view.result.current.state.entries, "user")).toHaveLength(2));
+
+    act(() => view.result.current.interrupt());
+
+    const settled = entries(view.result.current.state.entries, "user");
+    expect(settled[1].role === "user" && settled[1].queued).toBe(false);
+    expect(view.result.current.state.busy).toBe(false);
+  });
+
   it("switches the model and then re-reads the context", async () => {
     const view = await mount();
     act(() => view.result.current.setModel("opus"));

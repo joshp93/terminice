@@ -209,6 +209,85 @@ it with the user rather than quietly changing it.
   carries the working directory, so the header's path and the directory `!` commands run
   in both read it from there. Do not fall back to the launch directory once a session has
   reported one.
+- **The window draws no decorations, and the bar it draws instead is load-bearing.** Tauri's
+  own caption cannot be coloured — `DWMWA_CAPTION_COLOR` is Windows 11 only and needs `unsafe`,
+  which this crate forbids — so `decorations: false` and a bar in the application is what makes
+  a per-instance colour possible at all. Three things about it are deliberate. The bar carries
+  `data-tauri-drag-region="deep"`, which since Tauri 2.12 means a press anywhere in the subtree
+  drags the window *except* on a button, link or input — so one bar can hold the settings cog,
+  the session's facts and the window controls without any of them being swallowed by the drag.
+  Double-clicking it maximises, because that is Tauri's own handler for the same attribute.
+  And the colour is claimed from the backend rather than drawn at random here, because
+  uniqueness across instances is a question only one process can answer for the others: the
+  claim is a loopback port per colour, held open for the life of the process, which costs
+  nothing to dissolve when it dies and needs no cleanup. **Giving up the Snap Layouts hover
+  flyout is part of the trade** — keeping it means answering `WM_NCHITTEST` with `HTMAXBUTTON`,
+  which is native code or a plugin built against Tauri 2.0-rc; dragging to a screen edge,
+  `Win`+arrow and `Win`+`Z` are unaffected.
+- **A background agent is not finished by the acknowledgement that starts it.** Measured over
+  110 real queued-message deliveries: the `Agent` call's result comes back in one to three
+  seconds saying "Async agent launched successfully", and the agent then works for another
+  minute or two before reporting. The structured `tool_use_result` says which this is —
+  `{isAsync: true, status: "async_launched"}` — and a frame holding two parallel results carries
+  no structured field at all, which is why that wording is the fallback. The card stays running
+  until the task notification arrives, which is the *only* thing that says the agent finished:
+  a `<task-notification>` payload addressed by `<tool-use-id>`, carrying `<status>`, `<summary>`
+  and usually `<result>`. Its frame type is the CLI's choice — its own records file it as an
+  attachment, which is not a message type the stream carries — so `taskReportIn` searches the
+  frame for the payload rather than predicting the shape. Getting this wrong is what a chip
+  dropping while its agent still ran looked like: the tracker was reading the acknowledgement
+  as the outcome. **The acknowledgement also carries the agent's own id**, and that is the other
+  name its frames arrive under — a background agent's spawning call was answered before it did
+  any work, so `parent_tool_use_id` on its frames is the agent rather than the call, and a card
+  that only answered to the call collected nothing and sat on "starting…" for the whole run.
+  `agentCardFor` therefore matches both names, and takes the one running agent as the owner of a
+  frame tagged with an id no card answers to. Two agents running is where that stops, and the
+  frame is dropped: a mistaken attribution reads as something the other agent said, which is
+  worse than a step that is not shown.
+- **A mode the agent changes itself arrives on a frame of its own.** Verified in the CLI's
+  records: `permission-mode` records carrying `permissionMode`, and `plan` among the values. It
+  is not a reply to anything the host asked for, so `applyClaudeMessage` reads the field off any
+  frame rather than off a frame *type* — the type it arrives under is the CLI's to choose — and
+  applies it to whatever that frame then means rather than in place of it, or a frame that
+  changed the mode and did something else would lose the second half. Frames from inside an
+  agent are routed before this, because the session's mode is not a subagent's to change.
+- **A queued message is taken up at a tool boundary, and never while a tool is still running.**
+  Measured across 110 deliveries in the CLI's own records — 78 of them in `sdk-cli` sessions,
+  which is this application's mode — every one arrived immediately after a tool result, with
+  nothing left open, and the CLI waits rather than interrupting: one was held for eight minutes
+  behind an `AskUserQuestion`. So a chip that disappears as a message is picked up is the tool
+  genuinely finishing, not the queue clearing it, and nothing in `send` touches an entry's
+  status. The perceptible gap is that the tracker shows work by tool, so a turn that is running
+  without a tool in flight shows nothing there at all.
+- **An interrupt ends the turn, so it settles the queue.** `interrupt` used to clear `busy` on
+  its own, and the CLI takes up what was waiting the moment it stops — which left a row reading
+  "Queued" for a message the agent was already answering, missing from the transcript the whole
+  time. It goes through `withTurnOver` now, which is what every other turn-ender does.
+- **The cost figure is the CLI's, except where the CLI says it cannot price the model.** This is
+  a deliberate exception to decision 5 above, agreed on evidence rather than convenience: the
+  CLI reports a figure for a model it has no price for and flags it (`hasUnknownModelCost` in
+  its own records), and that figure is a fallback — measured at ≈$5.60/Mtok in, ≈$25/Mtok out,
+  ≈$0.50/Mtok cache read against ~100 of them, which is no real tier. So `sessionCost` uses the
+  CLI's number for Anthropic's models and works one out here from the tokens each message
+  reported, at rates the reader enters, for anything else — and says the cost is unknown when
+  there are no rates, rather than showing a number nobody is charged. The tokens are on each
+  completed assistant message's own `usage`; a streamed delta carries none and a `result`'s
+  usage is the last call's alone, so counting either would count twice.
+- **A plan is read beside the transcript while it waits, and the panel is a view of the
+  prompt.** It appears when a plan prompt arrives and goes when the prompt is answered —
+  approving and rejecting are the same event as far as it is concerned, which is why nothing
+  closes it explicitly. Its width is a *share* of the chat area, taken from the area's own
+  measurement rather than from the window, because the window also holds the bar and the
+  composer and neither is the room a plan is read in; a drag sets pixels from the pointer to
+  the rail it stands against, and the arrow keys move the same edge for a reader without a
+  mouse. It is the one place a percentage width can be trusted as a *fallback*, drawn before
+  the measurement lands, so the panel never appears at some third size first.
+- **A queued message is shown as it was written, and the box is what bounds it.** Two lines,
+  clamped in the stylesheet rather than cut in the component: the words are the reader's own,
+  and summarising them to a character count both lost the second line and made the length of
+  the row depend on how the text was punctuated. The one-line summary is still what the row is
+  *named* by, for the button that takes it back, because a name is read out rather than laid
+  out.
 - **Changing the logo needs a `build.rs` nudge, and watching the directory is not enough.**
   Measured: after regenerating every file in `src-tauri/icons/`, `cargo build` finished in
   0.36s without compiling anything and the executable kept its old icon — `tauri-build`
@@ -236,11 +315,22 @@ it with the user rather than quietly changing it.
   into chasing that in the wrong place.
 - **The formatting toolbar's active states are `on` and `mixed`.** There is no `active`
   class on a format button; `stateClass` emits `on`, `mixed` or nothing.
-- **Shift+Tab cycles the permission mode, so indent moved to `Mod+]`.** The composer
-  intercepts Shift+Tab in the capture phase before CodeMirror sees it. `Mod+[` still
-  outdents. Likewise, while Enter is set to send, a bare Tab leaves the composer for the
-  Send button instead of inserting a tab — a key that sends should not also be the key
-  that inserts whitespace.
+- **Tab belongs to a list, and to the browser everywhere else.** The composer binds it only
+  where the caret's line is a list item, by asking `parseListLine` of that line — so a list is
+  indented and outdented as structure, and anywhere else the key is left unclaimed and moves
+  the focus: forward out of the composer, or back to the toolbar above it on Shift+Tab. Leaving
+  it unclaimed is the whole mechanism; intercepting it to focus the Send button by hand would
+  work on one line and quietly stop the browser's own order from applying. `Mod+]` and `Mod+[`
+  stay bound for everything, which is how a plain line is indented. **`Ctrl+M` is the permission
+  mode now** (`Shift+Tab` was, before Tab became a way out). It belongs to the window rather
+  than to the composer — a mode is a property of the session, and Claude changes it itself — so
+  `App` claims it and F1 in one document-level capture listener. That placement is also what
+  keeps it working *in* the composer: CodeMirror's own `defaultKeymap` binds `Ctrl-m` to
+  `toggleTabFocusMode`, and a capture-phase listener on an ancestor runs before the editor's
+  binding can, so claiming it lower down would have let the editor turn its own tab handling
+  inside out instead. `Ctrl+P` stays with the composer, since the preview is the composer's, and
+  is answered in the preview as well as in the editor — a key that opens something has to be the
+  key that closes it.
 - **A selection is the same question asked over a range, and the answer is a rewrite.**
   `planSelectionToggle` decides between three outcomes by asking how much of the selection
   already carries the style, and the first of them is the one worth stating precisely: taking

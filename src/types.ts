@@ -80,6 +80,14 @@ export type ChatEntry =
       role: "subagent";
       /** The id pairing this agent with the call that spawned it. */
       toolUseId: string;
+      /**
+       * The id the CLI gave the agent itself, when it named one.
+       *
+       * A background agent is acknowledged with this alongside the call it was
+       * started by, and it is the other name the agent's own frames can arrive
+       * under — so a frame is filed against either.
+       */
+      agentId?: string;
       /** The agent's description, as the spawning call gave it. */
       label: string;
       /** The spawning call's full input, shown when the card is opened. */
@@ -102,6 +110,18 @@ export type ChatEntry =
       running: boolean;
     };
 
+/** Tokens the session has spent, by the kind that is priced differently. */
+export type TokenUsage = {
+  /** Tokens sent, which the prompt cache did not hold. */
+  input: number;
+  /** Tokens the model produced. */
+  output: number;
+  /** Tokens read back out of the prompt cache. */
+  cacheRead: number;
+  /** Tokens written into the prompt cache. */
+  cacheWrite: number;
+};
+
 /** Everything the chat pane renders for one Claude session. */
 export type ChatState = {
   entries: ChatEntry[];
@@ -112,6 +132,15 @@ export type ChatState = {
   model: string | null;
   busy: boolean;
   costUsd: number | null;
+  /** Tokens spent so far, counted from what each message reported. */
+  tokens: TokenUsage;
+  /**
+   * True when the CLI has said it has no price for the model in use.
+   *
+   * It reports a cost anyway, and that figure is a fallback rather than a
+   * price, so it is only worth showing when we cannot work one out ourselves.
+   */
+  costUnknown: boolean;
   /** The CLI's own context reading, refreshed after each turn. */
   contextUsage: ContextUsage | null;
   /** The command, model and agent catalogue from `initialize`. */
@@ -148,6 +177,8 @@ export function createChatState(): ChatState {
     model: null,
     busy: false,
     costUsd: null,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    costUnknown: false,
     contextUsage: null,
     catalogue: null,
     mcpServers: [],
@@ -201,6 +232,21 @@ export type Settings = {
    * says.
    */
   diffSideBySide: boolean;
+  /**
+   * What a million tokens sent to a model the CLI cannot price costs, in US
+   * dollars, or zero when that is not known.
+   *
+   * A model served through a proxy has no published price, so the reader is the
+   * only one who can say what it costs — and until they do, a session on such a
+   * model is reported as unpriceable rather than being given a made-up number.
+   */
+  inputCostPerMillion: number;
+  /** What a million tokens the model produced costs, or zero when unknown. */
+  outputCostPerMillion: number;
+  /** What a million tokens read from the cache costs, or zero when unknown. */
+  cacheReadCostPerMillion: number;
+  /** What a million tokens written to the cache costs, or zero when unknown. */
+  cacheWriteCostPerMillion: number;
 };
 
 /**
@@ -220,5 +266,9 @@ export function createDefaultSettings(): Settings {
     appFontFamily: BUILT_IN_FONT_VALUE,
     voiceEnabled: false,
     diffSideBySide: true,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    cacheReadCostPerMillion: 0,
+    cacheWriteCostPerMillion: 0,
   };
 }

@@ -1,4 +1,4 @@
-import { routeInvoke, sessionChannel } from "@test/tauriMock";
+import { invoke, routeInvoke, sessionChannel } from "@test/tauriMock";
 
 vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
 
@@ -233,5 +233,44 @@ describe("App", () => {
 
     await waitFor(() => expect(saved).toEqual([stored({ theme: "light" })]));
     expect(document.documentElement.dataset.theme).toBe("light");
+  });
+});
+
+describe("the window's own keys", () => {
+  /** Every line the app has written to the session. */
+  const sentLines = (): Array<Record<string, unknown>> =>
+    invoke.mock.calls
+      .filter(([command]) => command === "send_claude_line")
+      .map(([, args]) => JSON.parse((args as { line: string }).line));
+
+  /** Every control request the app has sent, by subtype. */
+  const sentRequests = (subtype: string): Array<Record<string, unknown>> =>
+    sentLines()
+      .filter((line) => line.type === "control_request")
+      .map((line) => line.request as Record<string, unknown>)
+      .filter((request) => request?.subtype === subtype);
+
+  /// The mode is a property of the session and Claude can change it itself, so
+  /// the key that cycles it belongs to the window rather than to the box the
+  /// mode happens to be shown beside.
+  it("switches the permission mode from outside the composer", async () => {
+    render(<App />);
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+
+    screen.getByRole("button", { name: "Settings" }).focus();
+    await userEvent.keyboard("{Control>}m{/Control}");
+
+    await waitFor(() => expect(sentRequests("set_permission_mode")).toHaveLength(1));
+    expect(sentRequests("set_permission_mode")[0]).toMatchObject({ mode: "plan" });
+  });
+
+  it("does not take the key when a modifier the shortcut does not name is held", async () => {
+    render(<App />);
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+
+    screen.getByRole("button", { name: "Settings" }).focus();
+    await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
+
+    expect(sentRequests("set_permission_mode")).toHaveLength(0);
   });
 });

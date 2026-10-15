@@ -32,7 +32,11 @@ Markdown, with a rich composer that writes the Markdown for you.
   reasoning tokens have been spent so far.
 - **Plans get their own approval** — leaving plan mode is not a generic tool approval. The
   card shows the plan itself, with *Start on this plan* and *Keep planning*; declining
-  says why, so Claude revises rather than retries.
+  says why, so Claude revises rather than retries. While a plan is waiting, it is also
+  shown beside the transcript — see [Reading a plan](#reading-a-plan).
+- **One window, told apart from the others** — every instance wears its own pastel window
+  bar and names itself after its session, so several open at once are not a guessing game.
+  See [The window bar](#the-window-bar).
 - **Slash menu** — `/` opens a filterable list of all 74 commands, with real pickers for
   models, effort, permissions, MCP servers and Claude's own settings.
 - **`@` file mentions** — two characters after an `@` open a menu of matching files, built
@@ -189,10 +193,57 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `enterBehaviour` | `send` \| `newline` | `send` | What Enter does in the composer |
 | `theme` | `dark` \| `light` | `dark` | Colour scheme |
 | `voiceEnabled` | `true` \| `false` | `false` | Whether holding the space bar dictates |
+| `inputCostPerMillion` | number | `0` | Dollars per million input tokens, for a model the CLI cannot price |
+| `outputCostPerMillion` | number | `0` | Dollars per million output tokens, same model |
+| `cacheReadCostPerMillion` | number | `0` | Dollars per million tokens read from the prompt cache |
+| `cacheWriteCostPerMillion` | number | `0` | Dollars per million tokens written to the prompt cache |
 
 | Variable | Effect |
 |---|---|
 | `TERMINICE_CLAUDE_BINARY` | Full path to the `claude` executable, when it is not on `PATH` |
+
+#### What a session cost
+
+The header shows the cost Claude Code reports, which is the real cost for Anthropic's own
+models. For anything else it is not: a model served through a proxy has no published price,
+and the CLI still reports a figure for it — one it flags with `hasUnknownModelCost` in its own
+records. Measured against ~100 of those records, that fallback works out at roughly
+$5.60/Mtok in and $25/Mtok out, which is not any real tier and is not what the proxy charges.
+
+So a model the CLI cannot price is costed here instead, from the tokens each message reports,
+at the rates in the settings — and shown as `≈$1.23` rather than `$1.230` to say which of the
+two it is. With no rates given, such a session reports its cost as `cost —` rather than being
+shown a number nobody is charged.
+
+---
+
+## The window bar
+
+The window draws no decorations of its own: the bar across the top is the application's,
+which is what lets it wear a colour per instance. Every window claims a pastel when it starts,
+and the claim is exclusive across every running instance — so several projects open at once
+are told apart at a glance, in the taskbar and in a screenshot.
+
+The claim is a loopback port, one per colour, held open for the life of the process. Binding
+one is atomic across processes and the operating system releases it the moment the process
+ends, so an instance that is killed rather than closed leaves nothing to clean up. An instance
+that finds all sixteen taken is drawn in the first colour rather than unstyled.
+
+The bar carries the three window controls, and is dragged or double-clicked to move or
+maximise the window. It also names the session: `terminice - <the first thing you asked>`.
+Snap Layouts' hover flyout is the one thing this gives up — dragging to a screen edge,
+`Win`+arrow and `Win`+`Z` all still work.
+
+### Reading a plan
+
+While a plan is waiting to be approved it is shown beside the transcript as well as on the
+card, because the card has the buttons and not the room. It opens at four tenths of the width
+of the chat area and the full height of it, so it never covers the composer.
+
+Its edge can be dragged, or moved with the left and right arrow keys once it has the keyboard.
+The rail on its right is what it collapses into: one press puts the plan aside and leaves the
+icon, another brings it back. Approving or rejecting the plan takes both away, since there is
+no longer a plan waiting on anything.
 
 ---
 
@@ -203,10 +254,12 @@ ignored, so a hand-edited file cannot stop the app from starting.
 | `Enter` | Sends, unless *Enter key* is set to new line |
 | `Shift+Enter` | Inserts a newline |
 | `Ctrl+Enter` | Always sends |
-| `Tab` | With the slash menu open, puts the entry in the composer without sending it; otherwise, when Enter sends, moves focus to the Send button |
+| `Tab` | Indents a list item; anywhere else it leaves the composer for the Send button |
+| `Shift+Tab` | Outdents a list item; anywhere else it leaves for the formatting toolbar above |
+| `Ctrl+M` | **Cycles the permission mode** (Ask → Plan → Accept edits → Auto → Don't ask), from anywhere in the window |
+| `Ctrl+P` | Shows the message as Markdown, and takes you back to editing it |
 | `↑` / `↓` | At the very start or very end of the message, steps back and forward through prompts you have already sent |
 | `Ctrl+]` / `Ctrl+[` | Indent / outdent the line, and list items with it |
-| `Shift+Tab` | **Cycle the permission mode** (Ask → Plan → Accept edits → Auto → Don't ask) |
 | `Esc` | Clears the composer; pressed again, stops a running turn |
 | `Ctrl+B` | Bold |
 | `Ctrl+I` | Italic |
@@ -220,9 +273,9 @@ ignored, so a hand-edited file cannot stop the app from starting.
 (The same list is in the app, under **Settings → Keyboard shortcuts**, written for whichever
 platform it is running on.)
 
-(`⌘` in place of `Ctrl` on macOS.) Shift+Tab is the mode switch, so indenting moved to
-`Ctrl+]` — and while Enter is set to send, Tab leaves the composer rather than inserting
-one, since a keystroke that sends should not also be how you get a tab.
+(`⌘` in place of `Ctrl` on macOS.) `Ctrl+M` is the mode switch, so indenting moved to
+`Ctrl+]` — and Tab leaves the composer rather than inserting a tab, since the one place a
+tab is structure rather than whitespace is a list item, where Tab still indents it.
 
 **Prompt recall.** `↑` at the very start of a message steps back through what you have
 already sent, and `↓` steps forward again; once browsing, the arrows keep stepping

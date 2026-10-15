@@ -57,6 +57,15 @@ describe("SubagentCard", () => {
     expect(summary()).toHaveTextContent("starting…");
   });
 
+  /// An agent the CLI has already answered for was started successfully — that
+  /// is what the acknowledgement says — so it is described as running in the
+  /// background rather than as still starting minutes later.
+  it("describes an acknowledged background agent as running in the background", () => {
+    render(<Harness value={entry({ agentId: "agent-7" })} />);
+
+    expect(summary()).toHaveTextContent("running in the background…");
+  });
+
   it("does not claim a finished agent is still starting when none of its frames arrived", () => {
     const { container } = render(
       <Harness value={entry({ status: "ok", entries: [], result: "the report" })} />,

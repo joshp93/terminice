@@ -14,12 +14,14 @@ mod spawn;
 mod speech;
 mod startup;
 mod voice;
+mod window_colour;
 
 /// Starts the terminice application.
 pub fn run() {
     tauri::Builder::default()
         .manage(claude::ClaudeSessions::default())
         .manage(voice::Voice::default())
+        .manage(window_colour::WindowColours::default())
         .invoke_handler(tauri::generate_handler![
             startup::startup_directory_command,
             claude::start_claude,
@@ -40,6 +42,7 @@ pub fn run() {
             voice::start_voice_recording,
             voice::stop_voice_recording,
             voice::download_voice_model,
+            window_colour::claim_window_colour,
         ])
         .run(tauri::generate_context!())
         .expect("error while running terminice");

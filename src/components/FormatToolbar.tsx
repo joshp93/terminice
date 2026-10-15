@@ -1,6 +1,7 @@
 import type { ComposerStatus } from "../lib/createComposer";
 import { type ListKind, listShortcutLabel } from "../lib/listMarkers";
 import type { StyleState } from "../lib/markdownSpans";
+import { modifierShortcut } from "../lib/modifierShortcut";
 import {
   codeBlockShortcutLabel,
   FORMATS,
@@ -114,7 +115,11 @@ export function FormatToolbar({
       <button
         type="button"
         className={previewing ? "format-button preview-toggle on" : "format-button preview-toggle"}
-        title={previewing ? "Return to editing (Esc)" : "Preview the message as Markdown"}
+        title={
+          previewing
+            ? `Return to editing (${modifierShortcut("P")}, Esc)`
+            : `Preview the message as Markdown (${modifierShortcut("P")})`
+        }
         aria-pressed={previewing}
         onMouseDown={(event) => event.preventDefault()}
         onClick={onTogglePreview}

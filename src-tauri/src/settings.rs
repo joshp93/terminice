@@ -129,6 +129,15 @@ pub struct Settings {
     pub voice_enabled: bool,
     /// Whether a tool's patch is drawn as two columns, where there is room.
     pub diff_side_by_side: bool,
+    /// What a million tokens sent to a model the CLI cannot price costs, in US
+    /// dollars, or zero when that is not known.
+    pub input_cost_per_million: f64,
+    /// What a million tokens the model produced costs, or zero when unknown.
+    pub output_cost_per_million: f64,
+    /// What a million tokens read from the prompt cache costs, or zero.
+    pub cache_read_cost_per_million: f64,
+    /// What a million tokens written to the prompt cache costs, or zero.
+    pub cache_write_cost_per_million: f64,
 }
 
 impl Default for Settings {
@@ -142,6 +151,10 @@ impl Default for Settings {
             app_font_family: String::new(),
             voice_enabled: false,
             diff_side_by_side: true,
+            input_cost_per_million: 0.0,
+            output_cost_per_million: 0.0,
+            cache_read_cost_per_million: 0.0,
+            cache_write_cost_per_million: 0.0,
         }
     }
 }
@@ -210,6 +223,10 @@ mod tests {
             app_font_family: "Georgia".to_string(),
             voice_enabled: true,
             diff_side_by_side: false,
+            input_cost_per_million: 0.3,
+            output_cost_per_million: 1.2,
+            cache_read_cost_per_million: 0.03,
+            cache_write_cost_per_million: 0.38,
         };
         let json = serde_json::to_string(&settings).expect("serialises");
         assert!(json.contains("\"enterBehaviour\":\"newline\""), "{json}");
@@ -223,6 +240,8 @@ mod tests {
         assert!(json.contains("\"appFontFamily\":\"Georgia\""), "{json}");
         assert!(json.contains("\"voiceEnabled\":true"), "{json}");
         assert!(json.contains("\"diffSideBySide\":false"), "{json}");
+        assert!(json.contains("\"inputCostPerMillion\":0.3"), "{json}");
+        assert!(json.contains("\"outputCostPerMillion\":1.2"), "{json}");
 
         let parsed: Settings = serde_json::from_str(&json).expect("parses");
         assert_eq!(parsed.theme, Theme::Light);
@@ -232,6 +251,17 @@ mod tests {
         assert_eq!(parsed.app_font_family, "Georgia");
         assert!(parsed.voice_enabled);
         assert!(!parsed.diff_side_by_side);
+        assert_eq!(parsed.output_cost_per_million, 1.2);
+    }
+
+    /// A file written before the cost rates existed comes back with none of
+    /// them, which is what says a custom model's cost is not known rather than
+    /// pricing it at nothing.
+    #[test]
+    fn a_settings_file_written_before_the_cost_rates_has_none_of_them() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"light"}"#).expect("parses");
+        assert_eq!(parsed.input_cost_per_million, 0.0);
+        assert_eq!(parsed.cache_read_cost_per_million, 0.0);
     }
 
     /// The diff layout changes nothing but how a patch is drawn, so a file

@@ -3,6 +3,7 @@ import { readFastMode, readNames, readPlugins } from "./controlProtocol";
 import { describeToolUse } from "./describeToolUse";
 import { asArray, asNumber, asRecord, asText, type Json, parseJsonLine, prettyJson } from "./json";
 import { nextId } from "./nextId";
+import { type TaskReport, taskReportIn } from "./taskReport";
 import {
   describeToolResult,
   type HookNote,
@@ -309,28 +310,82 @@ export function applyClaudeMessage(
   message: Json,
   options: ApplyOptions = {},
 ): ChatState {
+  // A background agent reports by a notification of its own rather than by the
+  // result of the call that started it, so it is looked for before the frame is
+  // read as anything else. The frame it arrives in is the CLI's choice, and a
+  // report about a card takes precedence over whatever else that frame meant.
+  const report = taskReportIn(message);
+  if (report) {
+    const entries = withTaskReport(state.entries, report);
+    if (entries !== state.entries) return { ...state, entries };
+  }
+
   // Subagent output rides the same stream as everything else and is told apart
   // only by the call it belongs to, so it is routed before anything else can
   // mistake it for the main conversation.
   const parent = asText(message.parent_tool_use_id);
   if (parent) return withSubagentOutput(state, parent, message);
 
+  // A session's mode can change without being asked for: Claude enters plan mode
+  // itself, and the CLI reports that on a frame of its own rather than in a reply
+  // to anything. It is read from the frame rather than from a frame type,
+  // because the type it arrives under is the CLI's to choose — and it is applied
+  // to whatever the frame then means, rather than in place of it, so a frame
+  // that both changed the mode and did something else still does both.
+  const mode = asText(message.permissionMode) || asText(message.permission_mode);
+  const next =
+    mode.length > 0 && mode !== state.permissionMode ? { ...state, permissionMode: mode } : state;
+
   switch (asText(message.type)) {
     case "system":
-      return applySystemEvent(state, message);
+      return applySystemEvent(next, message);
     case "stream_event":
-      return applyStreamEvent(state, message);
+      return applyStreamEvent(next, message);
     case "assistant":
-      return applyAssistantEvent(state, message);
+      return applyAssistantEvent(next, message);
     case "user":
-      return applyUserEvent(state, message);
+      return applyUserEvent(next, message);
     case "result":
-      return applyResultEvent(state, message, options.interrupted === true);
+      return applyResultEvent(next, message, options.interrupted === true);
     case "prompt_suggestion":
-      return { ...state, suggestion: asText(message.suggestion) || null };
+      return { ...next, suggestion: asText(message.suggestion) || null };
     default:
-      return state;
+      return next;
   }
+}
+
+/**
+ * Finds the card a tagged frame belongs to.
+ *
+ * A frame from an agent is tagged with the call that spawned it, and the CLI
+ * also names the agent itself when it starts one — and which of the two arrives
+ * on a frame is the CLI's choice, so a card answers to both rather than one
+ * being predicted. An agent started in the background is the case that needs
+ * this: its spawning call was answered before it did any work, so its frames
+ * are tagged with the agent rather than with the call.
+ *
+ * When neither name matches and exactly one agent is running, that agent is
+ * taken as the owner: a frame tagged with an id no card answers to still came
+ * from somewhere, and with a single agent running there is only one place it
+ * could have come from. Two agents running is where that reasoning stops, and a
+ * frame is dropped rather than filed against the wrong one — an attributed
+ * guess would read as something the other agent said.
+ *
+ * @param entries - The transcript entries.
+ * @param parentId - The id the frame was tagged with.
+ * @returns The index of the card, or -1 when there is not one.
+ */
+function agentCardFor(entries: ChatEntry[], parentId: string): number {
+  const named = entries.findIndex(
+    (entry) =>
+      entry.role === "subagent" && (entry.toolUseId === parentId || entry.agentId === parentId),
+  );
+  if (named >= 0) return named;
+
+  const running = entries.flatMap((entry, at) =>
+    entry.role === "subagent" && entry.status === "running" ? [at] : [],
+  );
+  return running.length === 1 ? running[0] : -1;
 }
 
 /**
@@ -346,18 +401,21 @@ export function applyClaudeMessage(
  * @returns The updated chat state.
  */
 function withSubagentOutput(state: ChatState, parentId: string, message: Json): ChatState {
-  const index = state.entries.findIndex(
-    (entry) => entry.role === "subagent" && entry.toolUseId === parentId,
-  );
+  const index = agentCardFor(state.entries, parentId);
   const agent = index >= 0 ? state.entries[index] : null;
   if (agent?.role !== "subagent") return state;
 
   const kind = asText(message.type);
   let inner = agent.entries;
+  let counted = state;
 
   if (kind === "assistant") {
+    // A subagent's own calls are billed to the same session, so what it spends
+    // is counted with everything else even though its words are filed inside
+    // the card.
+    counted = withSpentTokens(state, message);
     const additions = assistantEntries(asRecord(message.message)?.content);
-    if (additions.length === 0) return state;
+    if (additions.length === 0) return counted;
     inner = [...inner, ...additions];
   } else if (kind === "user") {
     inner = withToolResults(inner, message);
@@ -367,10 +425,10 @@ function withSubagentOutput(state: ChatState, parentId: string, message: Json): 
     return state;
   }
 
-  if (inner === agent.entries) return state;
-  const entries = [...state.entries];
+  if (inner === agent.entries) return counted;
+  const entries = [...counted.entries];
   entries[index] = { ...agent, entries: inner };
-  return { ...state, entries };
+  return { ...counted, entries };
 }
 
 /** Tools that start an agent rather than doing their own work. */
@@ -482,6 +540,18 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
     }
 
     if (existing && existing.role === "subagent") {
+      // An agent started in the background is answered the moment it has been
+      // started, so this result says nothing about the agent itself. Its card
+      // stays running until the task reports, which is the only thing that says
+      // the work is over — and until then the tracker below the composer is
+      // right to keep showing it as something being waited on. What the
+      // acknowledgement does carry is the agent's own id, which is the other
+      // name its frames can arrive under.
+      if (isLaunchAcknowledgement(structured, text)) {
+        const agentId = launchedAgentId(structured);
+        if (agentId.length > 0) next[index] = { ...existing, agentId };
+        continue;
+      }
       next[index] = { ...existing, result: text, status: isError ? "error" : "ok" };
       continue;
     }
@@ -499,6 +569,61 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
     });
   }
 
+  return next;
+}
+
+/**
+ * Whether a tool result is the CLI acknowledging that an agent was started.
+ *
+ * The structured field is the answer whenever the frame carries one result,
+ * which is the ordinary case. A frame holding the results of two calls made in
+ * parallel carries no structured field at all, so the acknowledgement's own
+ * wording is the fallback — the same sentence in every one of them, and the
+ * only thing that tells those results apart from an agent's report.
+ *
+ * @param structured - The message's structured result, when it has one.
+ * @param text - The result's text.
+ * @returns True when the result is a launch acknowledgement.
+ */
+function isLaunchAcknowledgement(structured: unknown, text: string): boolean {
+  const record = asRecord(structured);
+  if (record?.isAsync === true && asText(record.status) === "async_launched") return true;
+  return text.includes("Async agent launched successfully");
+}
+
+/**
+ * The agent's own id, as the acknowledgement names it.
+ *
+ * @param structured - The message's structured result, when it has one.
+ * @returns The id, or an empty string when the acknowledgement named none.
+ */
+function launchedAgentId(structured: unknown): string {
+  return asText(asRecord(structured)?.agentId);
+}
+
+/**
+ * Records what a background agent finished with.
+ *
+ * It is addressed by the call that started the agent, which is what the card is
+ * keyed by, so no other bookkeeping is needed to find it.
+ *
+ * @param entries - The transcript entries.
+ * @param report - What the task notification said.
+ * @returns The entries, or the same array when nothing matched.
+ */
+function withTaskReport(entries: ChatEntry[], report: TaskReport): ChatEntry[] {
+  const index = entries.findIndex(
+    (entry) => entry.role === "subagent" && entry.toolUseId === report.toolUseId,
+  );
+  const agent = index >= 0 ? entries[index] : null;
+  if (agent?.role !== "subagent") return entries;
+
+  const next = [...entries];
+  next[index] = {
+    ...agent,
+    status: report.failed ? "error" : "ok",
+    result: report.report.length > 0 ? report.report : report.summary,
+  };
   return next;
 }
 
@@ -665,9 +790,48 @@ function applyStreamEvent(state: ChatState, message: Json): ChatState {
  * @returns The updated chat state.
  */
 function applyAssistantEvent(state: ChatState, message: Json): ChatState {
+  const counted = withSpentTokens(state, message);
   const additions = assistantEntries(asRecord(message.message)?.content);
-  if (additions.length === 0 && state.streaming.length === 0) return state;
-  return { ...state, entries: [...state.entries, ...additions], streaming: "" };
+  if (additions.length === 0 && counted.streaming.length === 0) return counted;
+  return { ...counted, entries: [...counted.entries, ...additions], streaming: "" };
+}
+
+/**
+ * Adds what one completed assistant message spent to the session's total.
+ *
+ * The tokens are on the message's own `usage`, which is the count for the call
+ * that produced it — the `result` frame's usage is the last call's alone, and
+ * the streamed deltas carry none at all, so a completed message is the one
+ * place a token can be counted from exactly once. A model the CLI cannot price
+ * is costed from these, which is why they are kept rather than only read.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `assistant` line.
+ * @returns The state with the message's tokens added.
+ */
+function withSpentTokens(state: ChatState, message: Json): ChatState {
+  const usage = asRecord(asRecord(message.message)?.usage);
+  if (!usage) return state;
+
+  return {
+    ...state,
+    tokens: {
+      input: state.tokens.input + (asNumber(usage.input_tokens) ?? 0),
+      output: state.tokens.output + (asNumber(usage.output_tokens) ?? 0),
+      cacheRead: state.tokens.cacheRead + (asNumber(usage.cache_read_input_tokens) ?? 0),
+      cacheWrite: state.tokens.cacheWrite + (asNumber(usage.cache_creation_input_tokens) ?? 0),
+    },
+  };
+}
+
+/**
+ * Reads whether the CLI has said it cannot price the model in use.
+ *
+ * @param message - A decoded frame that may carry the flag.
+ * @returns True when the CLI has said so.
+ */
+function readUnknownCost(message: Json): boolean {
+  return message.has_unknown_model_cost === true || message.hasUnknownModelCost === true;
 }
 
 /**
@@ -738,6 +902,7 @@ function applyResultEvent(state: ChatState, message: Json, interrupted: boolean)
     compacting: false,
     thinkingTokens: 0,
     costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
+    costUnknown: readUnknownCost(message) || state.costUnknown,
   };
 
   return withFastMode(next, message);

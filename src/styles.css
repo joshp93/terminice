@@ -121,13 +121,63 @@ body {
   height: 100%;
 }
 
+/*
+ * The window bar: the application's own, because the window draws no
+ * decorations of its own. It wears the colour this instance claimed, which is
+ * what tells one window from another, and everything on it is written in the
+ * ink that is readable on all sixteen of them.
+ *
+ * The whole bar is a drag region — `deep`, so presses on the controls inside it
+ * are still the controls' — and a double click on it maximises the window.
+ */
 .titlebar {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  border-bottom: 1px solid var(--bar-line, var(--border));
+  background: var(--bar-bg, var(--panel));
+  color: var(--bar-ink, inherit);
+}
+
+.window-session {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 10px;
+}
+
+.window-control {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.window-control:hover {
+  background: rgb(0 0 0 / 12%);
+  opacity: 1;
+}
+
+.window-control.close:hover {
+  background: #c4342c;
+  color: #fff;
 }
 
 .session {
@@ -596,9 +646,173 @@ body {
   outline-offset: -1px;
 }
 
+/*
+ * The rates a model the CLI cannot price is costed at. Four small numbers in
+ * two rows rather than four full-width fields: they are read together, and a
+ * column each would make the panel taller than the settings in it.
+ */
+.cost-rates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.cost-rate-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+
+.cost-rate {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cost-rate-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.cost-rate-input {
+  width: 100%;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.cost-rate-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The transcript and the plan share this area; the plan is only ever beside the
+   chat, so the composer below keeps the whole width of the window. */
 .workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 0;
+}
+
+/*
+ * The plan: a rail that is always there while a plan is waiting, and the plan
+ * itself beside it when it is open. The rail is what the plan collapses into,
+ * so putting it aside and coming back is the same one press.
+ */
+.plan-sidebar {
+  display: flex;
+  flex-direction: row;
+  min-height: 0;
+}
+
+.plan-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 34px;
+  padding: 8px 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.plan-rail-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.plan-rail-button:hover,
+.plan-rail-button.on {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+.plan-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* The width a plan opens at, for the moment before it is measured. */
+  width: 40%;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+/* The edge is dragged, and it is drawn a little wider than it looks so that it
+   can be caught without aiming. It is a rule rather than a box, so the borders
+   and margins one arrives with are taken off it. */
+.plan-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  margin: 0;
+  border: 0;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.plan-resizer:hover,
+.plan-resizer:focus-visible {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-heading {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.plan-hide {
+  width: 24px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plan-hide:hover {
+  color: var(--text);
+  background: var(--panel-raised);
+}
+
+/* The plan is read, so it is drawn at the size the transcript is. */
+.plan-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  font-size: var(--chat-font-size);
 }
 
 .pane {
@@ -1287,10 +1501,16 @@ body {
   margin-bottom: 0;
 }
 
+/* Two lines of the reader's own words, and no more: the box is a place to
+   recognise what is waiting rather than to read it, so it grows to two lines
+   and stops, however much was typed. The clamp is what stops there — the text
+   is in the box in full, and a word too long for the line wraps inside it. */
 .pending-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 /*
@@ -2547,4 +2767,36 @@ body {
   border-left: 1px solid var(--border);
   padding-left: 10px;
   margin-bottom: 8px;
+}
+
+/*
+ * A window that claimed a colour writes everything on its bar in the ink that
+ * goes with it. The theme's own colours are the wrong way round on a pastel —
+ * a light grey on a light colour is barely there, and so is the accent — so
+ * they are the fallback here rather than the rule. These come last because they
+ * refine the rules above rather than replacing them: the trigger and the mode
+ * chip keep their shape and their hover, and only their colour changes.
+ */
+.titlebar .settings-trigger,
+.titlebar .window-session,
+.titlebar .cwd {
+  color: var(--bar-ink, var(--text-dim));
+}
+
+.titlebar .settings-trigger,
+.titlebar .session-mode {
+  border-color: var(--bar-line, var(--border));
+}
+
+.titlebar .session-agent,
+.titlebar .session-item,
+.titlebar .session-mode {
+  color: var(--bar-ink, var(--accent));
+}
+
+.titlebar .settings-trigger:hover,
+.titlebar .settings-trigger.active,
+.titlebar .session-mode:hover {
+  color: var(--bar-ink, var(--text));
+  border-color: var(--bar-line, var(--accent-border));
 }

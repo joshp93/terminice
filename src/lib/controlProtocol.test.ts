@@ -281,7 +281,22 @@ describe("readUsage", () => {
       totalDurationMs: 9000,
       linesAdded: 12,
       linesRemoved: 3,
+      costUnknown: false,
     });
+  });
+
+  /// The CLI reports a figure for a model it has no price for, and says so
+  /// alongside it. That flag is what tells the two kinds of figure apart.
+  it("reads the CLI saying it cannot price the model", () => {
+    const usage = readUsage({
+      session: { total_cost_usd: 1.77, has_unknown_model_cost: true },
+    });
+
+    expect(usage?.costUnknown).toBe(true);
+  });
+
+  it("reads nothing said about the price as being able to price it", () => {
+    expect(readUsage({ session: { total_cost_usd: 1.77 } })?.costUnknown).toBe(false);
   });
 
   it("returns null when there is no session", () => {

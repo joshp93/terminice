@@ -38,12 +38,23 @@ describe("PendingMessages", () => {
     expect(getByText("run the tests")).toBeInTheDocument();
   });
 
-  /// The row has one line to work with, so a message written over several is
-  /// summarised rather than allowed to push the composer down the window.
-  it("summarises a message that was written over several lines", () => {
+  /// The box grows to two lines and stops there, so the words are kept as they
+  /// were written: what bounds the row is the clamp in the stylesheet rather
+  /// than anything done to the text here.
+  it("keeps a message that was written over several lines", () => {
     const { container } = renderPending([message("a", "first\nsecond")]);
 
-    expect(container.querySelector(".pending-text")?.textContent).toBe("first");
+    expect(container.querySelector(".pending-text")?.textContent).toBe("first\nsecond");
+  });
+
+  /// What the row is *named* by is still one line, because a name is read out
+  /// rather than laid out.
+  it("names a message written over several lines by its first line", () => {
+    const { getByRole } = renderPending([message("a", "first\nsecond")]);
+
+    expect(getByRole("button").getAttribute("aria-label")).toBe(
+      'Take "first" back out of the queue',
+    );
   });
 
   it("offers a way to take a waiting message back", async () => {

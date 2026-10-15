@@ -16,6 +16,7 @@ import {
   withUserMessage,
 } from "./claudeProtocol";
 import type { Json } from "./json";
+import { runningGroups } from "./runningTools";
 
 /** Applies one event, as the session hook does with a decoded line. */
 const apply = (state: ChatState, message: Json): ChatState => applyClaudeMessage(state, message);
@@ -905,6 +906,168 @@ describe("subagent output", () => {
     expect(agent.role === "subagent" && agent.status).toBe("ok");
   });
 
+  /// An agent started in the background is answered the moment it is started —
+  /// "Async agent launched successfully" — and then works for minutes. Reading
+  /// that acknowledgement as the agent's outcome is what used to drop it out of
+  /// the tracker below the composer while it was still running.
+  it("keeps a background agent running through the acknowledgement that started it", () => {
+    const state = apply(withAgent(), {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
+      tool_use_result: { isAsync: true, status: "async_launched", agentId: "a1" },
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.status).toBe("running");
+    expect(agent.role === "subagent" && agent.result).toBe("");
+    expect(runningGroups(state).map((group) => group.kind)).toEqual(["agent"]);
+  });
+
+  /// Two calls made in parallel share one frame, and that frame carries no
+  /// structured result at all — so the acknowledgement's own wording is what
+  /// tells it apart from an agent's report there.
+  it("keeps it running when the acknowledgement shares a frame with another result", () => {
+    const state = apply(withAgent(), {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "task-1",
+            content: "Async agent launched successfully. (This tool result is internal metadata.)",
+          },
+          { type: "tool_result", tool_use_id: "other", content: "output" },
+        ],
+      },
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.status).toBe("running");
+  });
+
+  it("ends a background agent on the report it sends when it is done", () => {
+    const started = apply(withAgent(), {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
+      tool_use_result: { isAsync: true, status: "async_launched" },
+    });
+
+    const state = apply(started, {
+      type: "user",
+      attachment: {
+        type: "queued_command",
+        prompt:
+          "<task-notification>\n<task-id>a1</task-id>\n" +
+          "<tool-use-id>task-1</tool-use-id>\n<status>completed</status>\n" +
+          '<summary>Agent "Explore" finished</summary>\n<result>found it</result>\n' +
+          "</task-notification>",
+      },
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.status).toBe("ok");
+    expect(agent.role === "subagent" && agent.result).toBe("found it");
+    expect(runningGroups(state)).toEqual([]);
+  });
+
+  it("records a background agent that failed as having failed", () => {
+    const started = apply(withAgent(), {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
+      tool_use_result: { isAsync: true, status: "async_launched" },
+    });
+
+    const state = apply(started, {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "text",
+            text:
+              "<task-notification>\n<tool-use-id>task-1</tool-use-id>\n" +
+              "<status>failed</status>\n<summary>it broke</summary>\n</task-notification>",
+          },
+        ],
+      },
+    });
+
+    const agent = entriesOf(state, "subagent")[0];
+    expect(agent.role === "subagent" && agent.status).toBe("error");
+    expect(agent.role === "subagent" && agent.result).toBe("it broke");
+  });
+
+  /// A watcher reports on itself with no call behind it, so there is no card to
+  /// finish and the frame is left to mean whatever it otherwise would.
+  it("leaves a report about no call alone", () => {
+    const state = withAgent();
+    const notified = apply(state, {
+      type: "user",
+      attachment: {
+        type: "queued_command",
+        prompt:
+          "<task-notification>\n<task-id>b0n</task-id>\n<summary>Monitor expired</summary></task-notification>",
+      },
+    });
+
+    expect(notified).toBe(state);
+  });
+
+  /// A background agent's spawning call was answered before it did any work, so
+  /// its frames arrive under the agent's own id rather than the call's. The
+  /// acknowledgement names it, and that is what makes the card findable.
+  it("files a background agent's frames under the agent's own id", () => {
+    const started = apply(withAgent(), {
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "task-1", content: "ack" }] },
+      tool_use_result: { isAsync: true, status: "async_launched", agentId: "agent-7" },
+    });
+
+    const state = apply(started, {
+      type: "assistant",
+      parent_tool_use_id: "agent-7",
+      message: { content: [{ type: "text", text: "looking at it" }] },
+    });
+
+    const [agent] = entriesOf(state, "subagent");
+    expect(agent.role === "subagent" && agent.entries).toHaveLength(1);
+    expect(entriesOf(state, "assistant")).toHaveLength(0);
+  });
+
+  /// A frame tagged with an id no card answers to still came from somewhere, and
+  /// with one agent running there is only one place it could have come from.
+  it("files an unrecognised tag against the only agent running", () => {
+    const state = apply(withAgent(), {
+      type: "assistant",
+      parent_tool_use_id: "some-other-name",
+      message: { content: [{ type: "text", text: "still working" }] },
+    });
+
+    const [agent] = entriesOf(state, "subagent");
+    expect(agent.role === "subagent" && agent.entries).toHaveLength(1);
+  });
+
+  /// Two agents running is where that reasoning stops: a mistaken attribution
+  /// would read as something the other agent said, which is worse than a frame
+  /// that is not shown.
+  it("drops a frame it cannot place when several agents are running", () => {
+    const second = apply(withAgent(), {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "task-2", name: "Task", input: { description: "Other" } },
+        ],
+      },
+    });
+
+    const state = apply(second, {
+      type: "assistant",
+      parent_tool_use_id: "some-other-name",
+      message: { content: [{ type: "text", text: "unplaceable" }] },
+    });
+
+    expect(state).toBe(second);
+  });
+
   it("ignores output tagged with a call it never saw", () => {
     const state = withAgent();
     expect(
@@ -915,5 +1078,149 @@ describe("subagent output", () => {
   it("leaves the state alone for a tagged event type it does not file", () => {
     const state = withAgent();
     expect(apply(state, { type: "result", parent_tool_use_id: "task-1" })).toBe(state);
+  });
+});
+
+describe("what a session has spent", () => {
+  /** One completed assistant message, reporting what the call cost in tokens. */
+  const replied = (usage: Json, extra: Json = {}): Json => ({
+    type: "assistant",
+    message: { content: [{ type: "text", text: "hi" }], usage, ...extra },
+  });
+
+  it("counts the tokens of each message as they arrive", () => {
+    const once = apply(
+      createChatState(),
+      replied({
+        input_tokens: 100,
+        output_tokens: 20,
+        cache_read_input_tokens: 1000,
+        cache_creation_input_tokens: 5,
+      }),
+    );
+
+    expect(once.tokens).toEqual({ input: 100, output: 20, cacheRead: 1000, cacheWrite: 5 });
+
+    const twice = apply(once, replied({ input_tokens: 50, output_tokens: 10 }));
+    expect(twice.tokens).toEqual({ input: 150, output: 30, cacheRead: 1000, cacheWrite: 5 });
+  });
+
+  /// A subagent's calls are billed to the same session, so what it spends is
+  /// counted with everything else even though its words go inside its card.
+  it("counts a subagent's own calls with the rest of the session", () => {
+    const withCall = apply(createChatState(), replied({ input_tokens: 10 }, {}));
+    const state = apply(
+      {
+        ...withCall,
+        entries: [
+          ...withCall.entries,
+          {
+            id: "tool:task-1",
+            role: "subagent" as const,
+            toolUseId: "task-1",
+            label: "Explore",
+            input: "",
+            result: "",
+            status: "running" as const,
+            entries: [],
+          },
+        ],
+      },
+      {
+        type: "assistant",
+        parent_tool_use_id: "task-1",
+        message: {
+          content: [{ type: "text", text: "found it" }],
+          usage: { input_tokens: 500, output_tokens: 90 },
+        },
+      },
+    );
+
+    expect(state.tokens.input).toBe(510);
+    expect(state.tokens.output).toBe(90);
+  });
+
+  /// A streamed delta is part of a message that will arrive whole later, and the
+  /// count for it is on that message. Counting both would count it twice.
+  it("counts nothing for the deltas a message is streamed in", () => {
+    const state = apply(createChatState(), {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "h" } },
+    });
+
+    expect(state.tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+  });
+
+  it("takes the CLI's word for it that the model cannot be priced", () => {
+    const state = apply(createChatState(), {
+      type: "result",
+      total_cost_usd: 1.77,
+      has_unknown_model_cost: true,
+    });
+
+    expect(state.costUnknown).toBe(true);
+    expect(state.costUsd).toBe(1.77);
+  });
+
+  it("keeps saying so once the CLI has", () => {
+    const flagged = apply(createChatState(), { type: "result", has_unknown_model_cost: true });
+
+    expect(apply(flagged, { type: "result", total_cost_usd: 2 }).costUnknown).toBe(true);
+  });
+});
+
+describe("a mode the session changed without being asked", () => {
+  /// Claude enters plan mode itself, and the CLI reports that on a frame of its
+  /// own rather than in a reply to anything — which the header's button has to
+  /// follow, since a mode that is only read back from what the host asked for
+  /// goes stale the moment the agent changes it.
+  it("follows the mode the CLI reports on its own frame", () => {
+    const state = apply(createChatState(), { type: "permission-mode", permissionMode: "plan" });
+
+    expect(state.permissionMode).toBe("plan");
+  });
+
+  it("reads the mode under either spelling of the field", () => {
+    expect(
+      apply(createChatState(), { type: "system", permission_mode: "acceptEdits" }).permissionMode,
+    ).toBe("acceptEdits");
+  });
+
+  /// The frame is read for a mode and then goes on to mean whatever it meant:
+  /// a frame that both changed the mode and did something else does both.
+  it("does not swallow the rest of the frame", () => {
+    const state = apply(createChatState(), {
+      type: "assistant",
+      permissionMode: "plan",
+      message: { content: [{ type: "text", text: "here is my plan" }] },
+    });
+
+    expect(state.permissionMode).toBe("plan");
+    expect(entriesOf(state, "assistant")).toHaveLength(1);
+  });
+
+  /// A subagent's frames are not the session's: they are filed inside the card
+  /// of the agent they came from, and the mode is not the agent's to change.
+  it("leaves the mode alone for a frame from inside an agent", () => {
+    const withAgent = apply(createChatState(), {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "task-1", name: "Task", input: {} }] },
+    });
+
+    const state = apply(withAgent, {
+      type: "assistant",
+      parent_tool_use_id: "task-1",
+      permissionMode: "plan",
+      message: { content: [{ type: "text", text: "working" }] },
+    });
+
+    expect(state.permissionMode).toBe("default");
+  });
+
+  it("says nothing when the frame carries no mode", () => {
+    const state = createChatState();
+
+    expect(apply(state, { type: "result" })).not.toBe(state);
+    expect(apply(createChatState(), { type: "keep_alive" })).toEqual(state);
   });
 });

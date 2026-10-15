@@ -305,7 +305,13 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         askMcp(backendId);
         request(backendId, { subtype: "get_usage" }, (reply) => {
           const usage = readUsage(reply.response);
-          if (usage) patchState(backendId, (state) => ({ ...state, costUsd: usage.totalCostUsd }));
+          if (usage) {
+            patchState(backendId, (state) => ({
+              ...state,
+              costUsd: usage.totalCostUsd,
+              costUnknown: usage.costUnknown || state.costUnknown,
+            }));
+          }
         });
       });
     },
@@ -633,13 +639,23 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     [patchState],
   );
 
+  /**
+   * Stops the running turn.
+   *
+   * A turn ending is what releases anything sent while it ran, and an interrupt
+   * ends the turn as surely as a `result` does — the CLI stops and takes up what
+   * was waiting. So this ends the turn the same way everything else does rather
+   * than by clearing the busy flag on its own: a message left carrying the mark
+   * would be one the agent is already answering while the row still says
+   * "Queued", and it would be missing from the transcript that whole time.
+   */
   const interrupt = useCallback(() => {
     const active = activeRef.current;
     if (active === null) return;
     const record = storeRef.current.get(active);
     if (record) storeRef.current.set(active, { ...record, interrupted: true });
     request(active, { subtype: "interrupt" });
-    patchState(active, (state) => ({ ...state, busy: false, streaming: "" }));
+    patchState(active, withTurnOver);
   }, [request, patchState]);
 
   const resolve = useCallback(

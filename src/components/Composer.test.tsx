@@ -597,25 +597,48 @@ describe("F6", () => {
 });
 
 describe("Tab", () => {
-  it("leaves the composer for the Send button rather than inserting a tab while Enter sends", () => {
+  it("leaves the composer for the Send button rather than inserting a tab", async () => {
+    const user = userEvent.setup();
     const { content, container, onSend } = renderComposer();
     paste(content, "hi");
 
-    fireEvent.keyDown(content, { key: "Tab" });
+    await user.tab();
 
     expect(screen.getByRole("button", { name: "Send" })).toHaveFocus();
     expect(onSend).not.toHaveBeenCalled();
     expect(text(container)).toBe("hi");
   });
 
-  it("cycles the permission mode on Shift+Tab when the line is not a list", () => {
-    const { content, container, onCycleMode } = renderComposer();
+  /// Nothing claims Shift+Tab on a plain line either, so the key walks back out
+  /// of the composer and into the toolbar above it.
+  it("leaves Shift+Tab to the browser on a plain line", () => {
+    const { content, onCycleMode } = renderComposer();
     paste(content, "plain line");
 
-    fireEvent.keyDown(content, { key: "Tab", shiftKey: true });
+    const event = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    content.dispatchEvent(event);
 
-    expect(onCycleMode).toHaveBeenCalledTimes(1);
-    expect(text(container)).toBe("plain line");
+    expect(event.defaultPrevented).toBe(false);
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  /// The mode switch is the window's, not the composer's: a mode is a property
+  /// of the session, and Claude can change it itself while the reader is
+  /// looking somewhere else. The window claims the key on the document in the
+  /// capture phase, which is also what stops CodeMirror's own Ctrl+M — which
+  /// turns its tab handling inside out — from being what happens instead.
+  it("leaves Ctrl+M to the window", () => {
+    const { content, onCycleMode } = renderComposer();
+    paste(content, "plain line");
+
+    fireEvent.keyDown(content, { key: "m", ctrlKey: true });
+
+    expect(onCycleMode).not.toHaveBeenCalled();
   });
 
   it("indents a list line on Tab rather than leaving the composer", () => {
@@ -1115,6 +1138,34 @@ describe("the Markdown preview", () => {
     expect(container.querySelector(".composer-host")).not.toHaveClass("previewing");
   });
 
+  /// The shortcut is the same key from both sides: it is one thing being asked
+  /// for, and it has to work from inside the box it opened as well as from the
+  /// editor it replaced.
+  it("opens the preview on Ctrl+P", async () => {
+    const user = userEvent.setup();
+    const { content, container } = renderComposer();
+    paste(content, "# heading");
+
+    await user.type(content, "{Control>}p{/Control}");
+
+    expect(container.querySelector(".composer-preview")).not.toBeNull();
+  });
+
+  it("goes back to the editor on Ctrl+P from inside the preview", async () => {
+    const user = userEvent.setup();
+    const { content, container } = renderComposer();
+    paste(content, "# heading");
+    await user.click(preview());
+
+    await user.type(
+      container.querySelector(".composer-preview") as HTMLElement,
+      "{Control>}p{/Control}",
+    );
+
+    expect(container.querySelector(".composer-preview")).toBeNull();
+    expect(content).toHaveFocus();
+  });
+
   it("keeps what was typed, and the caret in it, across the round trip", async () => {
     const user = userEvent.setup();
     const { content } = renderComposer();
@@ -1156,7 +1207,7 @@ describe("the Markdown preview", () => {
     await user.click(preview());
 
     expect(backToEdit()).toHaveAttribute("aria-pressed", "true");
-    expect(backToEdit()).toHaveAttribute("title", "Return to editing (Esc)");
+    expect(backToEdit()).toHaveAttribute("title", "Return to editing (Ctrl+P, Esc)");
   });
 });
 

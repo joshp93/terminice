@@ -72,6 +72,8 @@ export type UsageSummary = {
   totalDurationMs: number;
   linesAdded: number;
   linesRemoved: number;
+  /** True when the CLI has said it has no price for the model in use. */
+  costUnknown: boolean;
 };
 
 /** A request the host sends to the CLI. */
@@ -314,6 +316,10 @@ export function readContextUsage(payload: unknown): ContextUsage | null {
 /**
  * Reads the `get_usage` payload.
  *
+ * The flag saying the CLI has no price for the model is read here as well as
+ * from the result of a turn, because it is the CLI's own answer and the two
+ * places it can arrive are a handshake and a turn.
+ *
  * @param payload - The response body.
  * @returns The session's cost and duration, or null when absent.
  */
@@ -325,6 +331,7 @@ export function readUsage(payload: unknown): UsageSummary | null {
     totalDurationMs: asNumber(session.total_duration_ms) ?? 0,
     linesAdded: asNumber(session.total_lines_added) ?? 0,
     linesRemoved: asNumber(session.total_lines_removed) ?? 0,
+    costUnknown: session.has_unknown_model_cost === true || session.hasUnknownModelCost === true,
   };
 }
 

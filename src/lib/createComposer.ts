@@ -835,6 +835,25 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
   };
 
   /**
+   * Indents or outdents the caret's line, but only where it is a list item.
+   *
+   * A list is a structure rather than a keystroke, so Tab belongs to it there,
+   * the way it belongs to everything else that is nested. On any other line the
+   * keys are left unclaimed, which is what lets the browser take Tab as the way
+   * out of the composer and on to the next control — and Shift+Tab as the way
+   * back to the toolbar above it.
+   *
+   * @param view - The editor.
+   * @param outdent - True for Shift+Tab, which takes the item back a level.
+   * @returns True when the line was a list item and was moved.
+   */
+  const indentListLine = (view: EditorView, outdent: boolean): boolean => {
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    if (!parseListLine(line.text)) return false;
+    return handleTab(view, outdent);
+  };
+
+  /**
    * Deletes an empty pair the caret sits inside, both characters at once.
    *
    * @param view - The editor.
@@ -971,8 +990,8 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
           return true;
         },
       },
-      { key: "Tab", run: (view) => handleTab(view, false) },
-      { key: "Shift-Tab", run: (view) => handleTab(view, true) },
+      { key: "Tab", run: (view) => indentListLine(view, false) },
+      { key: "Shift-Tab", run: (view) => indentListLine(view, true) },
       { key: "Mod-[", run: (view) => handleTab(view, true) },
       { key: "Mod-]", run: (view) => handleTab(view, false) },
       { key: "Backspace", run: (view) => handleBackspace(view) },

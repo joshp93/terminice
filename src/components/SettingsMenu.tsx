@@ -3,6 +3,7 @@ import type { Voice } from "../hooks/useVoice";
 import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "../lib/fontSize";
 import type { Settings } from "../types";
 import { CogIcon } from "./CogIcon";
+import { CostRates } from "./CostRates";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { FontSizeStepper } from "./FontSizeStepper";
 import { SegmentedChoice } from "./SegmentedChoice";
@@ -171,6 +172,13 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
           <p className="settings-note">
             Two columns are used only where there is room for them. A card too narrow for this
             patch, or lines too long to give a column to, is drawn as one column whatever this says.
+          </p>
+          <CostRates settings={settings} onChange={onChange} />
+          <p className="settings-note">
+            Claude Code prices Anthropic's own models itself, and that figure is the one shown. A
+            model served through something else has no published price, so it is costed here from
+            the tokens spent — at these rates, and shown as an estimate. Left blank, such a session
+            reports its cost as unknown.
           </p>
           <VoiceSetting
             enabled={settings.voiceEnabled}

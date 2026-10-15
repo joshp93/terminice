@@ -4,6 +4,7 @@ import { type ComposerHandle, type ComposerStatus, createComposer } from "../lib
 import { openExternal } from "../lib/externalLinks";
 import { subscribeToFileDrops } from "../lib/fileDrops";
 import { recallStepFor } from "../lib/historyRecall";
+import { isModShortcut } from "../lib/isModShortcut";
 import type { ListKind } from "../lib/listMarkers";
 import { MENTION_PREFIX, mentionIn } from "../lib/mentions";
 import type { FormatId } from "../lib/richFormat";
@@ -190,6 +191,8 @@ export function Composer({
   const [editorHeight, setEditorHeight] = useState(0);
   /** True while the preview is being put away and the editor is coming back. */
   const returningRef = useRef(false);
+  /** Whether the preview is up, so the key handler can ask without a re-render. */
+  const previewingRef = useRef(previewing);
 
   menuRef.current = menu;
   sendRef.current = onSend;
@@ -199,6 +202,7 @@ export function Composer({
   cycleRef.current = onCycleMode;
   runShellRef.current = onRunShell;
   suggestFilesRef.current = onSuggestFiles;
+  previewingRef.current = previewing;
 
   const sessionSignature = menu.sessions.map((item) => `${item.id}:${item.live ? 1 : 0}`).join("|");
 
@@ -495,6 +499,18 @@ export function Composer({
   }, []);
 
   /**
+   * Swaps the editor for the preview, or the preview for the editor.
+   *
+   * One key does both because it is one thing being asked for from two sides:
+   * the shortcut reads as "show me this as Markdown" while the text is being
+   * written, and as "let me fix it" while it is being read.
+   */
+  const togglePreview = useCallback(() => {
+    if (previewingRef.current) hidePreview();
+    else showPreview();
+  }, [hidePreview, showPreview]);
+
+  /**
    * Moves the keyboard between the editor and the preview as they swap.
    *
    * Neither focus can be taken where the swap is asked for: the editor is
@@ -557,18 +573,28 @@ export function Composer({
       const handle = handleRef.current;
       if (!handle) return;
 
-      // In a list the tab keys belong to the list: they indent it and outdent
-      // it, which means letting them through to CodeMirror rather than taking
-      // them for the permission mode or for a way out to the Send button. On
-      // every other line they keep the jobs they had.
-      if (event.key === "Tab" && status.listKind !== null) return;
-
-      if (event.key === "Tab" && event.shiftKey) {
+      // The way into and out of the preview. Taken before anything else can
+      // want it: a Ctrl+P left to the webview is a print dialog. The mode
+      // switch is not here — it is a property of the session rather than of the
+      // box it is shown beside, so the window claims it instead.
+      if (isModShortcut(event, "p")) {
         event.preventDefault();
         event.stopPropagation();
-        cycleRef.current();
+        togglePreview();
         return;
       }
+
+      // The preview is a place to read rather than to write in, so while it is
+      // up it has the keyboard to itself: Escape and the way back are answered
+      // on the box itself. Nothing here may claim a key first, or clearing the
+      // composer would come before leaving the preview of what it holds.
+      if (previewingRef.current) return;
+
+      // In a list the tab keys belong to the list: they indent it and outdent
+      // it, which means letting them through to CodeMirror. On every other line
+      // they are not ours either — nothing handles them, so the browser moves
+      // the focus: Tab on to the Send button, Shift+Tab back to the toolbar.
+      if (event.key === "Tab") return;
 
       // The file menu is checked first so its keys do not fall through to the
       // slash menu's, and so Enter picks a file rather than sending the line.
@@ -668,14 +694,6 @@ export function Composer({
         recall(step);
         return;
       }
-
-      // With Enter sending, Tab is a way out of the composer rather than a
-      // keystroke the text needs.
-      if (event.key === "Tab" && submitsRef.current()) {
-        event.preventDefault();
-        event.stopPropagation();
-        sendButtonRef.current?.focus();
-      }
     },
     [
       choose,
@@ -688,8 +706,8 @@ export function Composer({
       menuOpen,
       mentionOpen,
       recall,
-      status.listKind,
       submenus,
+      togglePreview,
       writingCommand,
     ],
   );

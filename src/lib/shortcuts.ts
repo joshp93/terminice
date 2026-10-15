@@ -45,14 +45,26 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
         { keys: mod(">"), description: "Turns the line into a quote" },
         { keys: mod("L"), description: "Turns the line into a bulleted item" },
         { keys: mod("1"), description: "Turns the line into a numbered item" },
-        { keys: `${mod("]")} / ${mod("[")}`, description: "Indents and outdents, list items too" },
+        {
+          keys: `${mod("]")} / ${mod("[")}`,
+          description: "Indents and outdents, list items too",
+        },
         {
           keys: "Tab",
-          description: "Indents, or in a list always; with Enter sending it leaves for Send",
+          description: "Indents a list item; anywhere else it leaves for the Send button",
         },
         {
           keys: "Shift+Tab",
-          description: "Cycles the permission mode; outdents instead, in a list",
+          description: "Outdents a list item; anywhere else it leaves for the toolbar above",
+        },
+        {
+          keys: mod("M"),
+          description:
+            "Cycles the permission mode: Ask → Plan → Accept edits → Auto. Works anywhere",
+        },
+        {
+          keys: mod("P"),
+          description: "Shows the message as Markdown, and takes you back to editing it",
         },
         {
           keys: "Backspace",

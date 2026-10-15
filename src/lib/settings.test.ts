@@ -41,6 +41,10 @@ describe("saveSettings", () => {
       appFontFamily: "Georgia",
       voiceEnabled: true,
       diffSideBySide: false,
+      inputCostPerMillion: 0.3,
+      outputCostPerMillion: 1.2,
+      cacheReadCostPerMillion: 0.03,
+      cacheWriteCostPerMillion: 0.38,
     } as const;
 
     await saveSettings({ ...settings });

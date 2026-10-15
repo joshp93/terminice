@@ -14,8 +14,11 @@ export type SubagentCardProps = {
  * Summarises how far an agent has got.
  *
  * An agent whose frames were never forwarded records no steps at all, so an
- * empty transcript only means "starting" while the agent is still running —
- * once it has finished, saying so would be wrong.
+ * empty transcript is not the same thing in both cases. One that was never
+ * acknowledged is only being started, and that is all there is to say. One the
+ * CLI has already answered for — a background agent, named by its own id — was
+ * started successfully and has not reported since, so it is described as what
+ * it is rather than left saying it is still starting minutes later.
  *
  * @param entry - The subagent card being summarised.
  * @returns A short label for the card's summary line.
@@ -23,7 +26,8 @@ export type SubagentCardProps = {
 function progressLabel(entry: SubagentCardProps["entry"]): string {
   const steps = entry.entries.length;
   if (steps > 0) return `${steps} step${steps === 1 ? "" : "s"}`;
-  return entry.status === "running" ? "starting…" : "no steps";
+  if (entry.status !== "running") return "no steps";
+  return entry.agentId === undefined ? "starting…" : "running in the background…";
 }
 
 /**
