@@ -250,10 +250,22 @@ it with the user rather than quietly changing it.
   And the colour is claimed from the backend rather than drawn at random here, because
   uniqueness across instances is a question only one process can answer for the others: the
   claim is a loopback port per colour, held open for the life of the process, which costs
-  nothing to dissolve when it dies and needs no cleanup. **Giving up the Snap Layouts hover
+  nothing to dissolve when it dies and needs no cleanup. There are eight blocks of sixteen
+  ports, tried in order, because Windows can reserve a whole block for Hyper-V or WSL: an
+  error other than `AddrInUse` moves to the next block, while `AddrInUse` means the colour is
+  taken. An index seen in use anywhere is never claimed from a later block, so a colour cannot
+  be handed out twice. A single block was not enough — on a machine that reserved it, every
+  claim failed and the bar fell back to palette index 0. **Giving up the Snap Layouts hover
   flyout is part of the trade** — keeping it means answering `WM_NCHITTEST` with `HTMAXBUTTON`,
   which is native code or a plugin built against Tauri 2.0-rc; dragging to a screen edge,
   `Win`+arrow and `Win`+`Z` are unaffected.
+- **The titlebar gives up its title before it gives up the window controls.** `.app` has an
+  explicit `minmax(0, 1fr)` column and `.titlebar` `min-width: 0`, because a grid item's
+  min-content width otherwise lets a long session title widen the whole app and push the
+  controls off the right edge. The bar is a `container-type: inline-size` container: below
+  900px the session title is hidden, below 700px the "CLAUDE" label follows, and the remaining
+  facts ellipsize. The title is the first to go because the window's own title still carries
+  it, and the controls are `flex: 0 0 auto` so they never leave the bar.
 - **`tool_progress` is a heartbeat, not tool output.** The frame is
   `{tool_use_id, tool_name, elapsed_time_seconds, …}` and nothing else; `applyToolProgress`
   writes the seconds onto the card so a long call reads as alive. There is no stdout on it.

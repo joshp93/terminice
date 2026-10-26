@@ -117,6 +117,7 @@ body {
 
 .app {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100%;
 }
@@ -176,13 +177,21 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   padding: 8px 14px;
   border-bottom: 1px solid var(--bar-line, var(--border));
   background: var(--bar-bg, var(--panel));
   color: var(--bar-ink, inherit);
+  container-name: titlebar;
+  container-type: inline-size;
 }
 
+/* The first thing to give up its room when the bar is narrow: the title is
+   prose, and the window's own title still carries it. Taking it out of the row
+   is what lets the rest shrink without pushing the window controls off the
+   edge. */
 .window-session {
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -193,6 +202,7 @@ body {
 
 .window-controls {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 2px;
   margin-left: 10px;
@@ -224,10 +234,12 @@ body {
 
 .session {
   display: flex;
+  flex: 0 1 auto;
   align-items: baseline;
   gap: 14px;
   margin-left: auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .session-agent,
@@ -239,13 +251,22 @@ body {
   white-space: nowrap;
 }
 
+.session-agent {
+  flex: 0 0 auto;
+}
+
 .session-item {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-weight: 500;
   font-family: var(--font-mono);
   letter-spacing: 0;
 }
 
 .cwd {
+  flex: 1 1 auto;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -1833,6 +1854,9 @@ body {
 }
 
 .session-mode {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   font: inherit;
   font-size: 11px;
   font-family: var(--font-mono);
@@ -1841,6 +1865,8 @@ body {
   border: 1px solid var(--border);
   background: transparent;
   color: var(--accent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -3034,4 +3060,19 @@ body {
 .titlebar .session-mode:hover {
   color: var(--bar-ink, var(--text));
   border-color: var(--bar-line, var(--accent-border));
+}
+
+/* The title goes first because it is prose and the window's own title still
+   carries it; the agent label follows at the next step. Neither is worth
+   pushing the window controls off the edge of the bar. */
+@container titlebar (max-width: 900px) {
+  .window-session {
+    display: none;
+  }
+}
+
+@container titlebar (max-width: 700px) {
+  .session-agent {
+    display: none;
+  }
 }

@@ -7,8 +7,16 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// How many colours there are to hand out.
 const PALETTE: usize = 16;
 
-/// The first loopback port a claim is made on; one port per colour.
-const FIRST_PORT: u16 = 49_731;
+/// The first loopback port of each block a claim may use.
+///
+/// One block of sixteen, one port per colour. Windows can reserve whole port
+/// ranges for Hyper-V and WSL, so a single block is not enough: a block whose
+/// binds fail for any reason other than "already in use" is abandoned for the
+/// next. The order is fixed, so every instance on a machine maps colours to the
+/// same ports.
+const PORT_BASES: &[u16] = &[
+    41_731, 45_731, 49_731, 39_731, 43_731, 47_731, 37_731, 53_731,
+];
 
 /// The colours this process has claimed, held open for as long as it lives.
 ///
@@ -53,26 +61,44 @@ fn starting_point() -> usize {
 /// so asking twice — a reload, a second call from the frontend — does not eat a
 /// colour the window is not wearing.
 ///
-/// `first_port` is where the palette's ports begin. It is fixed for the process
+/// `bases` are where each palette's ports begin. They are fixed for the process
 /// by the command below, and a parameter only so that a test can claim in a
 /// range no other test is using: the ports are the claim, so two tests claiming
 /// in the same range would be testing each other's claims.
 ///
+/// A bind that says the address is in use means that colour is taken. Any other
+/// error is a block the machine will not let this process bind at all — a
+/// reserved range — and the next block is tried. An index seen in use anywhere
+/// is remembered, so a colour is never handed out twice across blocks.
+///
 /// # Returns
 ///
-/// The index of the colour claimed, or none when every one of them is taken.
-fn claim(held: &Mutex<Vec<(usize, TcpListener)>>, first_port: u16, start: usize) -> Option<usize> {
+/// The index of the colour claimed, or none when every one of them is taken or
+/// no block can be bound.
+fn claim(held: &Mutex<Vec<(usize, TcpListener)>>, bases: &[u16], start: usize) -> Option<usize> {
     let mut held = held.lock().ok()?;
 
     if let Some((index, _)) = held.first() {
         return Some(*index);
     }
 
-    for step in 0..PALETTE {
-        let index = (start + step) % PALETTE;
-        if let Ok(listener) = TcpListener::bind(("127.0.0.1", first_port + index as u16)) {
-            held.push((index, listener));
-            return Some(index);
+    let mut used = [false; PALETTE];
+
+    for base in bases {
+        for step in 0..PALETTE {
+            let index = (start + step) % PALETTE;
+            if used[index] {
+                continue;
+            }
+
+            match TcpListener::bind(("127.0.0.1", base.saturating_add(index as u16))) {
+                Ok(listener) => {
+                    held.push((index, listener));
+                    return Some(index);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => used[index] = true,
+                Err(_) => {}
+            }
         }
     }
 
@@ -85,7 +111,7 @@ fn claim(held: &Mutex<Vec<(usize, TcpListener)>>, first_port: u16, start: usize)
 /// the part that has to be made across processes.
 #[tauri::command]
 pub fn claim_window_colour(state: tauri::State<'_, WindowColours>) -> Option<usize> {
-    claim(&state.0, FIRST_PORT, starting_point())
+    claim(&state.0, PORT_BASES, starting_point())
 }
 
 #[cfg(test)]
@@ -105,7 +131,7 @@ mod tests {
     #[test]
     fn claims_a_colour() {
         let held = Mutex::new(Vec::new());
-        assert!(claim(&held, base_for(0), 0).is_some());
+        assert!(claim(&held, &[base_for(0)], 0).is_some());
     }
 
     /// Asking twice is not two windows: the colour already held comes back, so
@@ -113,8 +139,8 @@ mod tests {
     #[test]
     fn hands_back_the_colour_it_already_holds() {
         let held = Mutex::new(Vec::new());
-        let first = claim(&held, base_for(1), 4);
-        assert_eq!(claim(&held, base_for(1), 0), first);
+        let first = claim(&held, &[base_for(1)], 4);
+        assert_eq!(claim(&held, &[base_for(1)], 0), first);
         assert_eq!(held.lock().expect("not poisoned").len(), 1);
     }
 
@@ -126,8 +152,8 @@ mod tests {
         let second = Mutex::new(Vec::new());
         let base = base_for(2);
 
-        let taken = claim(&first, base, 0).expect("the first claim succeeds");
-        let other = claim(&second, base, 0).expect("the second claim succeeds");
+        let taken = claim(&first, &[base], 0).expect("the first claim succeeds");
+        let other = claim(&second, &[base], 0).expect("the second claim succeeds");
 
         assert_ne!(taken, other);
     }
@@ -137,7 +163,7 @@ mod tests {
     #[test]
     fn starts_looking_where_it_is_told_to() {
         let held = Mutex::new(Vec::new());
-        assert_eq!(claim(&held, base_for(3), 9), Some(9));
+        assert_eq!(claim(&held, &[base_for(3), base_for(8)], 9), Some(9));
     }
 
     /// A colour taken by something else — another instance, or any other
@@ -149,7 +175,7 @@ mod tests {
             TcpListener::bind(("127.0.0.1", base + 3)).expect("the port is free before the test");
         let held = Mutex::new(Vec::new());
 
-        assert_eq!(claim(&held, base, 3), Some(4));
+        assert_eq!(claim(&held, &[base], 3), Some(4));
 
         drop(elsewhere);
     }
@@ -164,7 +190,7 @@ mod tests {
 
         for _ in 0..PALETTE {
             let window = Mutex::new(Vec::new());
-            claimed.push(claim(&window, base, 0).expect("a colour is still free"));
+            claimed.push(claim(&window, &[base], 0).expect("a colour is still free"));
             windows.push(window);
         }
 
@@ -173,6 +199,30 @@ mod tests {
         assert!(claimed.iter().all(|index| *index < PALETTE));
 
         let one_too_many = Mutex::new(Vec::new());
-        assert_eq!(claim(&one_too_many, base, 0), None);
+        assert_eq!(claim(&one_too_many, &[base], 0), None);
+    }
+
+    /// A block that is entirely held is full, not a reason to hand the same
+    /// colours out again from a later block.
+    #[test]
+    fn a_full_block_does_not_duplicate_a_colour_in_a_later_block() {
+        let full = base_for(6);
+        let spare = base_for(7);
+        let occupied: Vec<TcpListener> = (0..PALETTE)
+            .map(|index| {
+                TcpListener::bind(("127.0.0.1", full + index as u16)).expect("a free port")
+            })
+            .collect();
+        let held = Mutex::new(Vec::new());
+
+        assert_eq!(claim(&held, &[full, spare], 0), None);
+        assert!(held.lock().expect("not poisoned").is_empty());
+
+        drop(occupied);
+    }
+
+    #[test]
+    fn no_block_means_no_colour() {
+        assert_eq!(claim(&Mutex::new(Vec::new()), &[], 0), None);
     }
 }
