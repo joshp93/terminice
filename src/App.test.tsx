@@ -12,7 +12,7 @@ vi.mock("./lib/settingsWatcher", () => ({
   },
 }));
 
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -182,12 +182,16 @@ describe("App", () => {
       }),
     });
 
-    const tool = await screen.findByRole("button", { name: /^Bash/ });
+    const tool = await waitFor(() => {
+      const summary = document.querySelector(".tool-summary");
+      if (!(summary instanceof HTMLElement)) throw new Error("the tool card has not rendered");
+      return summary;
+    });
     expect(tool).toHaveAttribute("aria-expanded", "false");
 
     await userEvent.click(screen.getByRole("button", { name: "1 shell running" }));
 
-    expect(screen.getByRole("button", { name: /^Bash/ })).toHaveAttribute("aria-expanded", "true");
+    expect(tool).toHaveAttribute("aria-expanded", "true");
   });
 
   it("offers no tracker at all while the session is idle", async () => {
@@ -282,6 +286,87 @@ describe("the window's own keys", () => {
     await userEvent.keyboard("{Control>}{Shift>}m{/Shift}{/Control}");
 
     expect(sentRequests("set_permission_mode")).toHaveLength(0);
+  });
+});
+
+describe("the composer's full screen", () => {
+  it("fills the window on F11, and gives it back on the next press", async () => {
+    const { container } = render(<App />);
+    await screen.findByText("CLAUDE");
+
+    const app = container.querySelector(".app");
+    fireEvent.keyDown(document, { key: "F11" });
+    expect(app).toHaveClass("composer-fullscreen");
+
+    fireEvent.keyDown(document, { key: "F11" });
+    expect(app).not.toHaveClass("composer-fullscreen");
+
+    fireEvent.keyDown(document, { key: "f", ctrlKey: true, shiftKey: true });
+    expect(app).toHaveClass("composer-fullscreen");
+  });
+
+  it("puts the window back after a message is sent from it", async () => {
+    const { container } = render(<App />);
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+
+    fireEvent.keyDown(document, { key: "F11" });
+    expect(container.querySelector(".app")).toHaveClass("composer-fullscreen");
+
+    const editor = await waitFor(() => {
+      const content = document.querySelector(".cm-content");
+      if (!(content instanceof HTMLElement)) throw new Error("the composer has not mounted");
+      return content;
+    });
+
+    await userEvent.type(editor, "written with room");
+    await userEvent.keyboard("{Enter}");
+
+    expect(container.querySelector(".app")).not.toHaveClass("composer-fullscreen");
+  });
+});
+
+describe("subagent navigation", () => {
+  const say = (line: unknown): void => {
+    sessionChannel<ClaudeEvent>().emit({ kind: "line", line: JSON.stringify(line) });
+  };
+
+  it("says so when there are no subagents to walk", async () => {
+    render(<App />);
+    await screen.findByText("CLAUDE");
+
+    fireEvent.keyDown(document, { key: "s", altKey: true });
+
+    expect(await screen.findByText(/no subagents found/)).toBeInTheDocument();
+  });
+
+  it("starts on Alt+S and leaves on Escape", async () => {
+    render(<App />);
+    await waitFor(() => sessionChannel<ClaudeEvent>());
+
+    say({
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "task-1",
+            name: "Task",
+            input: { description: "Explore the parser", prompt: "find things" },
+          },
+        ],
+      },
+    });
+    expect(await screen.findByText("Explore the parser")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "s", altKey: true });
+    expect(
+      await screen.findByText(/press \[up\] and \[down\] to navigate through subagents/),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByText(/press \[up\] and \[down\]/)).not.toBeInTheDocument(),
+    );
   });
 });
 

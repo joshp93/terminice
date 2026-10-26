@@ -8,8 +8,8 @@ import {
   readThinkingBlocks,
   readToolUses,
   withError,
-  withHistory,
   withNotice,
+  withReplay,
   withShellCommand,
   withShellResult,
   withTurnOver,
@@ -100,18 +100,18 @@ describe("readToolUses", () => {
 
 describe("latestAssistantText", () => {
   it("finds the most recent thing Claude said", () => {
-    const state = withHistory(createChatState(), [
-      { role: "assistant", text: "first" },
-      { role: "user", text: "question" },
-      { role: "assistant", text: "second" },
+    const state = withReplay(createChatState(), [
+      { type: "assistant", message: { content: [{ type: "text", text: "first" }] } },
+      { type: "user", message: { content: [{ type: "text", text: "question" }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "second" }] } },
     ]);
     expect(latestAssistantText(state)).toBe("second");
   });
 
   it("skips an empty assistant reply", () => {
-    const state = withHistory(createChatState(), [
-      { role: "assistant", text: "real" },
-      { role: "assistant", text: "   " },
+    const state = withReplay(createChatState(), [
+      { type: "assistant", message: { content: [{ type: "text", text: "real" }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "   " }] } },
     ]);
     expect(latestAssistantText(state)).toBe("real");
   });
@@ -180,17 +180,100 @@ describe("withShellCommand and withShellResult", () => {
   });
 });
 
-describe("withHistory", () => {
-  it("replaces the transcript with the replayed messages", () => {
+describe("withReplay", () => {
+  it("replaces the transcript with the replayed frames", () => {
     const seeded = withUserMessage(createChatState(), "live");
-    const state = withHistory(seeded, [
-      { role: "user", text: "old question" },
-      { role: "assistant", text: "old answer" },
+    const state = withReplay(seeded, [
+      { type: "user", message: { content: [{ type: "text", text: "old question" }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "old answer" }] } },
     ]);
 
     expect(state.entries).toHaveLength(2);
     expect(state.entries[0].role).toBe("user");
     expect(state.busy).toBe(false);
+  });
+
+  it("rebuilds a tool call and the result it was given", () => {
+    const state = withReplay(createChatState(), [
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }],
+        },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "out" }] },
+      },
+    ]);
+
+    const [tool] = entriesOf(state, "tool");
+    expect(tool.role === "tool" && tool.detail).toBe("ls");
+    expect(tool.role === "tool" && tool.result).toBe("out");
+    expect(tool.role === "tool" && tool.status).toBe("ok");
+  });
+
+  it("rebuilds a subagent card and its own transcript", () => {
+    const state = withReplay(createChatState(), [
+      {
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "call-1",
+              name: "Agent",
+              input: { description: "Explore the parser" },
+            },
+          ],
+        },
+      },
+      {
+        type: "assistant",
+        parent_tool_use_id: "call-1",
+        message: { content: [{ type: "text", text: "working on it" }] },
+      },
+      {
+        type: "user",
+        parent_tool_use_id: "call-1",
+        message: { content: [{ type: "text", text: "a follow-up" }] },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "call-1" }] },
+        tool_use_result: { status: "completed", handbackReport: { text: "the report" } },
+      },
+    ]);
+
+    const [agent] = entriesOf(state, "subagent");
+    if (agent.role !== "subagent") throw new Error("expected a subagent card");
+    expect(agent.label).toBe("Explore the parser");
+    expect(agent.status).toBe("ok");
+    expect(agent.result).toBe("the report");
+    expect(agent.entries.map((entry) => entry.role)).toEqual(["assistant"]);
+  });
+
+  it("restores a compaction summary and an interrupt in their own styles", () => {
+    const state = withReplay(createChatState(), [
+      { type: "user", isCompactSummary: true, message: { content: "what came before" } },
+      {
+        type: "user",
+        message: { content: [{ type: "text", text: "[Request interrupted by user]" }] },
+      },
+    ]);
+
+    expect(state.entries.map((entry) => entry.role)).toEqual(["summary", "notice"]);
+  });
+
+  it("keeps a wrapper the CLI wrote around its own reminders out of the transcript", () => {
+    const state = withReplay(createChatState(), [
+      {
+        type: "user",
+        message: { content: [{ type: "text", text: "<system-reminder>hidden</system-reminder>" }] },
+      },
+    ]);
+
+    expect(state.entries).toHaveLength(0);
   });
 });
 
@@ -648,6 +731,28 @@ describe("user tool results", () => {
     expect(
       apply(state, { type: "user", message: { content: [{ type: "text", text: "hi" }] } }),
     ).toBe(state);
+  });
+
+  it("appends the summary a compaction writes as a user line", () => {
+    const state = apply(createChatState(), {
+      type: "user",
+      isCompactSummary: true,
+      isVisibleInTranscriptOnly: true,
+      message: { role: "user", content: "This session is being continued from an earlier one." },
+    });
+
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0].role).toBe("summary");
+    expect(state.entries[0]).toMatchObject({
+      text: "This session is being continued from an earlier one.",
+    });
+  });
+
+  it("treats a malformed summary with no text as no message", () => {
+    const state = createChatState();
+    expect(apply(state, { type: "user", isCompactSummary: true, message: { content: "  " } })).toBe(
+      state,
+    );
   });
 });
 
@@ -1347,5 +1452,71 @@ describe("a message the CLI reports on", () => {
     const state = sent("msg-1");
 
     expect(apply(state, { type: "command_lifecycle", state: "started" })).toBe(state);
+  });
+});
+
+describe("tool_progress", () => {
+  const runningCall = (name = "Bash", id = "t1"): ChatState =>
+    apply(createChatState(), {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id, name, input: { command: "sleep 30" } }] },
+    });
+
+  it("records how long a running call has been going", () => {
+    const state = apply(runningCall(), {
+      type: "tool_progress",
+      tool_use_id: "t1",
+      tool_name: "Bash",
+      elapsed_time_seconds: 12,
+    });
+
+    const [tool] = entriesOf(state, "tool");
+    expect(tool.role === "tool" && tool.elapsedSeconds).toBe(12);
+  });
+
+  it("finds a call inside a subagent's own transcript", () => {
+    const withAgent = apply(createChatState(), {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "call-1", name: "Agent", input: { description: "Explore" } },
+        ],
+      },
+    });
+    const withInner = apply(withAgent, {
+      type: "assistant",
+      parent_tool_use_id: "call-1",
+      message: {
+        content: [{ type: "tool_use", id: "inner-1", name: "Bash", input: { command: "ls" } }],
+      },
+    });
+    const state = apply(withInner, {
+      type: "tool_progress",
+      tool_use_id: "inner-1",
+      elapsed_time_seconds: 7,
+    });
+
+    const [agent] = entriesOf(state, "subagent");
+    if (agent.role !== "subagent") throw new Error("expected a subagent card");
+    const [inner] = agent.entries;
+    expect(inner.role === "tool" && inner.elapsedSeconds).toBe(7);
+  });
+
+  it("ignores a heartbeat with no id or no duration", () => {
+    const state = runningCall();
+
+    expect(apply(state, { type: "tool_progress", elapsed_time_seconds: 5 })).toBe(state);
+    expect(apply(state, { type: "tool_progress", tool_use_id: "t1" })).toBe(state);
+    expect(
+      apply(state, { type: "tool_progress", tool_use_id: "t1", elapsed_time_seconds: "5" }),
+    ).toBe(state);
+  });
+
+  it("ignores a heartbeat for a call it has not seen", () => {
+    const state = runningCall();
+
+    expect(
+      apply(state, { type: "tool_progress", tool_use_id: "unknown", elapsed_time_seconds: 5 }),
+    ).toBe(state);
   });
 });

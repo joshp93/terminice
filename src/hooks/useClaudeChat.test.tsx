@@ -1,4 +1,4 @@
-import { channels, invoke, routeInvoke, sessionChannel } from "@test/tauriMock";
+import { channels, invoke, lastChannel, routeInvoke, sessionChannel } from "@test/tauriMock";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -64,6 +64,23 @@ function reply(subtype: string, response: unknown): void {
 const entries = (list: ChatEntry[], role: ChatEntry["role"]): ChatEntry[] =>
   list.filter((entry) => entry.role === role);
 
+/** Delivers one event from the local command the app started. */
+function emitShell(event: {
+  kind: "stdout" | "stderr" | "exit";
+  chunk?: string;
+  code?: number | null;
+  stopped?: boolean;
+}): void {
+  act(() => {
+    lastChannel()?.emit(event);
+  });
+}
+
+/** A command that has finished, with everything it printed already delivered. */
+function finishShell(): void {
+  emitShell({ kind: "exit", code: 0, stopped: false });
+}
+
 /** Mounts the hook and waits for the first session to be running. */
 async function mount(cwd: string | null = CWD) {
   const view = renderHook(() => useClaudeChat(cwd));
@@ -93,7 +110,7 @@ beforeEach(() => {
   routeInvoke("send_claude_line", () => null);
   routeInvoke("close_claude", () => null);
   routeInvoke("list_sessions", () => []);
-  routeInvoke("read_session_history", () => []);
+  routeInvoke("read_session_replay", () => []);
   routeInvoke("take_interrupted", () => null);
   routeInvoke("remember_interrupted", () => null);
   routeInvoke("forget_interrupted", () => null);
@@ -237,12 +254,19 @@ describe("sending a message", () => {
 
   it("holds locally run command output back until the next message", async () => {
     const view = await mount();
-    routeInvoke("run_shell_command", () => ({ stdout: "total 0", stderr: "", code: 0 }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("ls"));
     await waitFor(() =>
       expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
     );
+
+    emitShell({ kind: "stdout", chunk: "total 0" });
+    finishShell();
+    await waitFor(() => {
+      const [shell] = entries(view.result.current.state.entries, "shell");
+      expect(shell?.role === "shell" && shell.running).toBe(false);
+    });
 
     expect(lastSent("user")).toBeUndefined();
 
@@ -260,12 +284,18 @@ describe("sending a message", () => {
 
   it("does not carry command output into a session started afterwards", async () => {
     const view = await mount();
-    routeInvoke("run_shell_command", () => ({ stdout: "leftover", stderr: "", code: 0 }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("ls"));
     await waitFor(() =>
       expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
     );
+    emitShell({ kind: "stdout", chunk: "leftover" });
+    finishShell();
+    await waitFor(() => {
+      const [shell] = entries(view.result.current.state.entries, "shell");
+      expect(shell?.role === "shell" && shell.running).toBe(false);
+    });
 
     act(() => view.result.current.startNew());
     await waitFor(() => expect(view.result.current.status).toBe("running"));
@@ -283,9 +313,14 @@ describe("running a local command", () => {
   it("keeps the whole output for the transcript and caps only what the model is given", async () => {
     const view = await mount();
     const huge = "x".repeat(31_000);
-    routeInvoke("run_shell_command", () => ({ stdout: huge, stderr: "", code: 0 }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("cat big.log"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+    emitShell({ kind: "stdout", chunk: huge });
+    finishShell();
     await waitFor(() => {
       const [shell] = entries(view.result.current.state.entries, "shell");
       expect(shell?.role === "shell" && shell.running).toBe(false);
@@ -305,13 +340,14 @@ describe("running a local command", () => {
 
   it("bounds what the transcript keeps when a command floods it", async () => {
     const view = await mount();
-    routeInvoke("run_shell_command", () => ({
-      stdout: "x".repeat(MAX_DISPLAY_OUTPUT + 500),
-      stderr: "",
-      code: 0,
-    }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("cat huge.log"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+    emitShell({ kind: "stdout", chunk: "x".repeat(MAX_DISPLAY_OUTPUT + 500) });
+    finishShell();
     await waitFor(() => {
       const [shell] = entries(view.result.current.state.entries, "shell");
       expect(shell?.role === "shell" && shell.running).toBe(false);
@@ -325,13 +361,14 @@ describe("running a local command", () => {
 
   it("caps the transcript and the model independently", async () => {
     const view = await mount();
-    routeInvoke("run_shell_command", () => ({
-      stdout: "x".repeat(MAX_DISPLAY_OUTPUT + 500),
-      stderr: "",
-      code: 0,
-    }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("cat huge.log"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+    emitShell({ kind: "stdout", chunk: "x".repeat(MAX_DISPLAY_OUTPUT + 500) });
+    finishShell();
     await waitFor(() => {
       const [shell] = entries(view.result.current.state.entries, "shell");
       expect(shell?.role === "shell" && shell.running).toBe(false);
@@ -346,11 +383,62 @@ describe("running a local command", () => {
     expect(payload).not.toContain("truncated for display");
   });
 
+  it("shows output while the command is still running", async () => {
+    const view = await mount();
+    routeInvoke("run_shell_command", () => null);
+
+    act(() => view.result.current.runShell("long"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+
+    emitShell({ kind: "stdout", chunk: "halfway" });
+
+    const [shell] = entries(view.result.current.state.entries, "shell");
+    if (shell.role !== "shell") throw new Error("expected a shell entry");
+    expect(shell.running).toBe(true);
+    expect(shell.stdout).toBe("halfway");
+
+    finishShell();
+  });
+
+  it("stops a running command by the name it was started under", async () => {
+    const view = await mount();
+    routeInvoke("run_shell_command", () => null);
+    routeInvoke("stop_shell_command", () => true);
+
+    act(() => view.result.current.runShell("sleep 30"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+
+    const [shell] = entries(view.result.current.state.entries, "shell");
+    if (shell.role !== "shell") throw new Error("expected a shell entry");
+    act(() => view.result.current.stopShell(shell.id));
+
+    expect(invoke).toHaveBeenCalledWith("stop_shell_command", { id: shell.id });
+
+    emitShell({ kind: "exit", code: null, stopped: true });
+
+    await waitFor(() => {
+      const [stopped] = entries(view.result.current.state.entries, "shell");
+      if (stopped.role !== "shell") throw new Error("expected a shell entry");
+      expect(stopped.running).toBe(false);
+      expect(stopped.stopped).toBe(true);
+    });
+  });
+
   it("records the exit code of a failing command", async () => {
     const view = await mount();
-    routeInvoke("run_shell_command", () => ({ stdout: "", stderr: "not found", code: 127 }));
+    routeInvoke("run_shell_command", () => null);
 
     act(() => view.result.current.runShell("nope"));
+    await waitFor(() =>
+      expect(entries(view.result.current.state.entries, "shell")).toHaveLength(1),
+    );
+    emitShell({ kind: "stderr", chunk: "not found" });
+    emitShell({ kind: "exit", code: 127, stopped: false });
+
     await waitFor(() => {
       const [shell] = entries(view.result.current.state.entries, "shell");
       expect(shell?.role === "shell" && shell.code).toBe(127);
@@ -384,6 +472,7 @@ describe("running a local command", () => {
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("run_shell_command", expect.anything()),
     );
+    finishShell();
 
     const call = invoke.mock.calls.filter(([command]) => command === "run_shell_command").pop();
     expect(call?.[1]).toMatchObject({ cwd: "D:\\elsewhere" });
@@ -777,15 +866,28 @@ describe("the resume list", () => {
   });
 
   it("replays the transcript when resuming a stored session", async () => {
-    routeInvoke("read_session_history", () => [{ role: "user", text: "old question" }]);
+    routeInvoke("read_session_replay", () => [
+      { type: "user", message: { content: [{ type: "text", text: "old question" }] } },
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }],
+        },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "out" }] },
+      },
+    ]);
     const view = await mount();
 
     act(() => view.result.current.resume("old-1"));
 
     await waitFor(() =>
-      expect(invoke.mock.calls.some(([command]) => command === "read_session_history")).toBe(true),
+      expect(invoke.mock.calls.some(([command]) => command === "read_session_replay")).toBe(true),
     );
     await waitFor(() => expect(entries(view.result.current.state.entries, "user")).toHaveLength(1));
+    expect(entries(view.result.current.state.entries, "tool")).toHaveLength(1);
   });
 
   it("survives a session list that cannot be read", async () => {

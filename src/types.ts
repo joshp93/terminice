@@ -63,6 +63,8 @@ export type ChatEntry =
       /** The id pairing this call with its result. */
       toolUseId: string;
       name: string;
+      /** The description the call gave itself, when it gave one. */
+      description: string;
       /** A one-line summary of the input. */
       detail: string;
       /** The full input, shown when the card is expanded. */
@@ -72,8 +74,16 @@ export type ChatEntry =
       status: "running" | "ok" | "error";
       /** Hooks that ran around this call, which may have changed what ran. */
       hooks: HookNote[];
+      /** How long the CLI last said the call had been running. */
+      elapsedSeconds?: number;
     }
   | { id: string; role: "notice"; text: string }
+  | {
+      id: string;
+      role: "summary";
+      /** The summary a compaction wrote, in place of the messages it replaced. */
+      text: string;
+    }
   | { id: string; role: "error"; text: string }
   | {
       id: string;
@@ -109,6 +119,8 @@ export type ChatEntry =
       progress?: TaskUsage;
       /** What the agent said and did, in the order it happened. */
       entries: ChatEntry[];
+      /** How long the CLI last said the agent had been running. */
+      elapsedSeconds?: number;
     }
   | {
       id: string;
@@ -120,6 +132,8 @@ export type ChatEntry =
       code: number | null;
       /** True until the command has finished. */
       running: boolean;
+      /** True when the reader stopped it rather than letting it finish. */
+      stopped?: boolean;
     };
 
 /** Tokens the session has spent, by the kind that is priced differently. */

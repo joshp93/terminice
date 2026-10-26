@@ -21,6 +21,7 @@ export function describeToolUse(name: string, input: unknown): string {
 
   switch (name) {
     case "Bash":
+    case "PowerShell":
       return read("command");
     case "Read":
     case "Write":
@@ -38,6 +39,6 @@ export function describeToolUse(name: string, input: unknown): string {
     case "Agent":
       return read("description");
     default:
-      return "";
+      return read("command", "file_path", "notebook_path", "path", "pattern", "url", "query");
   }
 }

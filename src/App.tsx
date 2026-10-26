@@ -94,13 +94,20 @@ export function App() {
    * three are counts.
    */
   const [composerFocus, setComposerFocus] = useState(0);
+  /** Whether the composer fills the window instead of sharing it with the chat. */
+  const [composerFullscreen, setComposerFullscreen] = useState(false);
+  /** Whether the arrows are walking through subagents rather than the composer. */
+  const [subagentNav, setSubagentNav] = useState(false);
+  /** Bumped when Alt+S finds nothing to walk, so the notice shows for its moment. */
+  const [noSubagentsNotice, setNoSubagentsNotice] = useState(0);
 
   /**
-   * Takes the window's own keys: F1 for the settings, and the mode switch.
+   * Takes the window's own keys: F1 for the settings, F11 for the composer's
+   * full screen, and the mode switch.
    *
-   * Both are claimed on the document in the capture phase, the way the composer
+   * All are claimed on the document in the capture phase, the way the composer
    * claims F6, so that whatever happens to be holding the keyboard cannot
-   * swallow them. Neither belongs to the composer even though the mode is shown
+   * swallow them. None belongs to the composer even though the mode is shown
    * beside it: a mode is a property of the session, and Claude can change it
    * itself while the reader is looking somewhere else in the window.
    *
@@ -108,21 +115,81 @@ export function App() {
    * puts the keyboard in it; there is nothing to do here beyond opening it.
    */
   useEffect(() => {
+    if (noSubagentsNotice === 0) return;
+    const timer = setTimeout(() => setNoSubagentsNotice(0), 2000);
+    return () => clearTimeout(timer);
+  }, [noSubagentsNotice]);
+
+  const hasSubagents = useMemo(
+    () => chat.state.entries.some((entry) => entry.role === "subagent"),
+    [chat.state.entries],
+  );
+
+  /**
+   * Starts or stops the walk through subagent cards.
+   *
+   * With nothing to walk, the mode is not entered at all: it says so for a
+   * moment instead, which is a better answer than a bar that goes on claiming
+   * an empty walk is active.
+   */
+  const toggleSubagentNav = useCallback(() => {
+    if (subagentNav) {
+      setSubagentNav(false);
+      return;
+    }
+    if (!hasSubagents) {
+      setNoSubagentsNotice((count) => count + 1);
+      return;
+    }
+    setComposerFullscreen(false);
+    setSubagentNav(true);
+  }, [subagentNav, hasSubagents]);
+
+  /** Leaves the walk, which the transcript and the bar both do. */
+  const exitSubagentNav = useCallback(() => setSubagentNav(false), []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "F1") {
         event.preventDefault();
         setSettingsOpen(true);
         return;
       }
+      // WebView2 claims F11 as a browser shortcut before the page is given it,
+      // so the bound key that always arrives is the modified one. F11 is still
+      // taken when it does get through.
+      const fullscreenKey =
+        event.key.toLowerCase() === "f" &&
+        event.shiftKey &&
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey;
+      if (event.key === "F11" || fullscreenKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setComposerFullscreen((current) => !current);
+        return;
+      }
       if (isModShortcut(event, "m")) {
         event.preventDefault();
         event.stopPropagation();
         chat.cyclePermissionMode();
+        return;
+      }
+      if (
+        event.altKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.shiftKey &&
+        (event.key.toLowerCase() === "s" || event.code === "KeyS")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSubagentNav();
       }
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [chat.cyclePermissionMode]);
+  }, [chat.cyclePermissionMode, toggleSubagentNav]);
 
   /**
    * Asks the transcript to bring one entry into view.
@@ -138,6 +205,21 @@ export function App() {
   const returnToComposer = useCallback(() => {
     setComposerFocus((seq) => seq + 1);
   }, []);
+
+  /**
+   * Sends a message, putting the window back the way it was.
+   *
+   * Full screen is for writing one message with the room the chat was using, so
+   * sending is the end of it: leaving the transcript hidden would make the
+   * answer arrive somewhere the reader cannot see.
+   */
+  const sendFromComposer = useCallback(
+    (text: string) => {
+      setComposerFullscreen(false);
+      chat.send(text);
+    },
+    [chat.send],
+  );
 
   const trackers = useMemo(() => runningGroups(chat.state), [chat.state]);
   const pending = useMemo(() => pendingMessages(chat.state), [chat.state]);
@@ -217,7 +299,7 @@ export function App() {
   }, [title]);
 
   return (
-    <div className="app">
+    <div className={composerFullscreen ? "app composer-fullscreen" : "app"}>
       <header
         className="titlebar"
         data-tauri-drag-region="deep"
@@ -275,7 +357,14 @@ export function App() {
       </header>
       <main className="workspace">
         <DiffLayoutProvider sideBySide={settings.diffSideBySide}>
-          <ChatPane state={chat.state} reveal={reveal} onReturnToComposer={returnToComposer} />
+          <ChatPane
+            state={chat.state}
+            reveal={reveal}
+            onReturnToComposer={returnToComposer}
+            subagentNav={subagentNav}
+            onExitSubagentNav={exitSubagentNav}
+            onStopShell={chat.stopShell}
+          />
         </DiffLayoutProvider>
         {plan !== null && <PlanSidebar key={plan.requestId} text={plan.text} />}
       </main>
@@ -283,9 +372,20 @@ export function App() {
         className={chat.prompt ? "composer-slot hidden" : "composer-slot"}
         inert={chat.prompt !== null}
       >
+        {subagentNav && (
+          <div className="subagent-nav" role="status">
+            Subagent navigation mode - press [up] and [down] to navigate through subagents, press
+            esc to exit
+          </div>
+        )}
+        {!subagentNav && noSubagentsNotice > 0 && (
+          <div className="subagent-nav" role="status">
+            Subagent navigation mode - no subagents found
+          </div>
+        )}
         <Composer
           submitsOnEnter={() => settings.enterBehaviour === "send"}
-          onSend={chat.send}
+          onSend={sendFromComposer}
           menu={menu}
           running={chat.state.busy}
           thinkingTokens={chat.state.thinkingTokens}
@@ -304,6 +404,8 @@ export function App() {
           placeholder={placeholder}
           focusSignal={composerFocus}
           voice={voice}
+          fullscreen={composerFullscreen}
+          onToggleFullscreen={() => setComposerFullscreen((current) => !current)}
         />
       </div>
       {chat.prompt && (

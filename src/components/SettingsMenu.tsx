@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Voice } from "../hooks/useVoice";
+import { appVersion } from "../lib/appVersion";
 import { DEFAULT_CHAT_FONT_SIZE, DEFAULT_COMPOSER_FONT_SIZE } from "../lib/fontSize";
 import type { Settings } from "../types";
 import { CogIcon } from "./CogIcon";
@@ -34,6 +35,19 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void appVersion()
+      .then((value) => {
+        if (!cancelled) setVersion(value);
+      })
+      .catch(() => setVersion(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   /**
    * Shows the shortcut list, and puts the panel away behind it.
@@ -188,6 +202,7 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
           <button type="button" className="settings-open" onClick={showShortcuts}>
             Keyboard shortcuts
           </button>
+          {version !== null && <p className="settings-version">terminice {version}</p>}
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>
       )}

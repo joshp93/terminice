@@ -1,19 +1,36 @@
-import { invoke } from "@tauri-apps/api/core";
+import { type Channel, invoke } from "@tauri-apps/api/core";
 
-/** What a local command produced. */
-export type ShellOutput = {
-  stdout: string;
-  stderr: string;
-  code: number | null;
-};
+/** One event from a running local command. */
+export type ShellEvent =
+  | { kind: "stdout"; chunk: string }
+  | { kind: "stderr"; chunk: string }
+  | { kind: "exit"; code: number | null; stopped: boolean };
 
 /**
- * Runs one command in the user's shell.
+ * Runs one command in the user's shell, reporting what it prints as it goes.
  *
+ * @param id - The name to run the command under, which is also how it is stopped.
  * @param command - The command, without the leading `!`.
  * @param cwd - The directory to run it in.
- * @returns What the command printed.
+ * @param onEvent - The channel the command's output and exit arrive on.
+ * @throws When the command cannot be started.
  */
-export async function runShellCommand(command: string, cwd: string | null): Promise<ShellOutput> {
-  return invoke<ShellOutput>("run_shell_command", { command, cwd });
+export async function runShellCommand(
+  id: string,
+  command: string,
+  cwd: string | null,
+  onEvent: Channel<ShellEvent>,
+): Promise<void> {
+  return invoke("run_shell_command", { id, command, cwd, onEvent });
+}
+
+/**
+ * Stops a running command.
+ *
+ * @param id - The name the command was started under.
+ * @returns True when a command was there to stop.
+ * @throws When the backend cannot be asked.
+ */
+export async function stopShellCommand(id: string): Promise<boolean> {
+  return invoke<boolean>("stop_shell_command", { id });
 }

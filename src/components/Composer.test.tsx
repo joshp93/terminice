@@ -89,6 +89,8 @@ function renderComposer(overrides: Partial<ComposerProps> = {}) {
     voice: fakeVoice(),
     onStop,
     onSuggestFiles,
+    fullscreen: false,
+    onToggleFullscreen: vi.fn(),
     ...overrides,
   };
 
@@ -846,6 +848,25 @@ describe("the formatting toolbar", () => {
 
     expect(onSend).toHaveBeenCalledWith("- item\n**bold** and `code`");
   });
+
+  it("wraps a paste in the style that is armed", () => {
+    const { content, container } = renderComposer();
+
+    fireEvent.keyDown(content, { key: "b", ctrlKey: true });
+    paste(content, "hello world");
+
+    expect(text(container)).toBe("**hello world**");
+    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("wraps each pasted line when the style is armed", () => {
+    const { content, container } = renderComposer();
+
+    fireEvent.keyDown(content, { key: "i", ctrlKey: true });
+    paste(content, "one\ntwo");
+
+    expect(text(container)).toBe("*one*\n*two*");
+  });
 });
 
 describe("the quote button", () => {
@@ -855,10 +876,22 @@ describe("the quote button", () => {
     const { container } = renderComposer();
 
     const buttons = [
-      ...container.querySelectorAll(".format-toolbar .format-button:not(.preview-toggle)"),
+      ...container.querySelectorAll(
+        ".format-toolbar .format-button:not(.preview-toggle):not(.fullscreen-toggle)",
+      ),
     ];
 
     expect(buttons.at(-1)).toHaveAccessibleName("Quote");
+  });
+
+  it("quotes every line a selection touches", () => {
+    const { content, container } = renderComposer();
+    paste(content, "one\ntwo");
+
+    fireEvent.keyDown(content, { key: "a", ctrlKey: true });
+    fireEvent.click(quote());
+
+    expect(text(container)).toBe("> one\n> two");
   });
 
   it("prefixes the line, and takes the prefix off again", () => {
@@ -1079,7 +1112,9 @@ describe("the Markdown preview", () => {
   it("sits at the far end of the toolbar, away from the editing buttons", () => {
     const { container } = renderComposer();
 
-    const buttons = [...container.querySelectorAll(".format-toolbar .format-button")];
+    const buttons = [
+      ...container.querySelectorAll(".format-toolbar .format-button:not(.fullscreen-toggle)"),
+    ];
 
     expect(buttons.at(-1)).toHaveClass("preview-toggle");
   });

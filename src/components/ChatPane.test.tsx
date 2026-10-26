@@ -15,6 +15,7 @@ const toolEntry = (id: string, name: string): ChatEntry => ({
   role: "tool",
   toolUseId: id,
   name,
+  description: "",
   detail: name.toLowerCase(),
   input: '{"a":1}',
   result: "out",
@@ -27,7 +28,13 @@ const stateWith = (overrides: Partial<ChatState>): ChatState => ({
   ...overrides,
 });
 
-const summaryFor = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}`) });
+const summaryFor = (name: string): HTMLElement => {
+  const found = [...document.querySelectorAll(".tool-summary")].find((button) =>
+    button.textContent?.includes(name),
+  );
+  if (!(found instanceof HTMLElement)) throw new Error(`no summary for ${name}`);
+  return found;
+};
 
 /**
  * Stands in for the browser's own scrolling, which jsdom does not do.
@@ -890,5 +897,94 @@ describe("walking through the user's own messages", () => {
     });
 
     expect(flashOn(container)).toBe("u1");
+  });
+
+  const subagent = (id: string): ChatEntry => ({
+    id,
+    role: "subagent",
+    toolUseId: id,
+    label: "Explore",
+    input: "",
+    result: "",
+    status: "ok",
+    entries: [],
+  });
+
+  const pressArrow = (key: "ArrowUp" | "ArrowDown"): KeyboardEvent => {
+    const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+    return event;
+  };
+
+  it("leaves the arrows alone until subagent navigation is on", () => {
+    const { container } = render(<ChatPane state={stateWith({ entries: [subagent("s1")] })} />);
+    place(container, [-500]);
+
+    const event = pressArrow("ArrowUp");
+
+    expect(flashOn(container)).toBeNull();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("walks through subagent cards with a bare arrow", () => {
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: [subagent("s1"), subagent("s2"), subagent("s3")] })}
+        subagentNav
+      />,
+    );
+    place(container, [-500, 120, 200]);
+
+    pressArrow("ArrowUp");
+    expect(flashOn(container)).toBe("s1");
+
+    pressArrow("ArrowDown");
+    expect(flashOn(container)).toBe("s2");
+  });
+
+  it("takes the arrows from the composer while the mode is on", () => {
+    const { container } = render(
+      <ChatPane state={stateWith({ entries: [subagent("s1")] })} subagentNav />,
+    );
+    place(container, [-500]);
+
+    const event = pressArrow("ArrowUp");
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("steps over the rows that are not subagents", () => {
+    const { container } = render(
+      <ChatPane
+        state={stateWith({ entries: [userEntry("u1"), subagent("s1"), userEntry("u2")] })}
+        subagentNav
+      />,
+    );
+    place(container, [-500, -100, 120]);
+
+    pressArrow("ArrowUp");
+
+    expect(flashOn(container)).toBe("s1");
+  });
+
+  it("leaves the mode on Escape", () => {
+    const onExitSubagentNav = vi.fn();
+    render(
+      <ChatPane
+        state={stateWith({ entries: [subagent("s1")] })}
+        subagentNav
+        onExitSubagentNav={onExitSubagentNav}
+      />,
+    );
+
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => {
+      document.body.dispatchEvent(event);
+    });
+
+    expect(onExitSubagentNav).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(true);
   });
 });

@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 import { describeToolUse } from "./describeToolUse";
 
 describe("describeToolUse", () => {
-  it("shows the command for Bash", () => {
+  it("shows the command for Bash and PowerShell", () => {
     expect(describeToolUse("Bash", { command: "pnpm test" })).toBe("pnpm test");
+    expect(describeToolUse("PowerShell", { command: "Get-ChildItem" })).toBe("Get-ChildItem");
+  });
+
+  it("shows a common input field for a tool it does not know", () => {
+    expect(describeToolUse("SomeMcpTool", { path: "src/main.tsx" })).toBe("src/main.tsx");
   });
 
   it("shows the file path for the file tools", () => {

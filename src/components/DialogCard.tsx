@@ -6,6 +6,7 @@ import type {
   PromptResolution,
   QuestionModel,
 } from "../lib/dialogModels";
+import { MarkdownField, type MarkdownFieldHandle } from "./MarkdownField";
 
 /** Props for {@link DialogCard}. */
 export type DialogCardProps = {
@@ -163,8 +164,8 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
       ? { kind: "option", question: 0, option: 0 }
       : { kind: "choice", index: 0 },
   );
-  const notesRef = useRef<HTMLTextAreaElement | null>(null);
-  const customRef = useRef<HTMLTextAreaElement | null>(null);
+  const notesRef = useRef<MarkdownFieldHandle | null>(null);
+  const customRef = useRef<MarkdownFieldHandle | null>(null);
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const hover = useHoverIntent(setFocus);
 
@@ -350,8 +351,12 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
         return true;
       };
 
-      const writingCustom = event.target === customRef.current;
-      if (writingCustom || event.target === notesRef.current) {
+      const target =
+        event.target instanceof HTMLElement
+          ? event.target.closest<HTMLElement>("[data-dialog-field]")?.dataset.dialogField
+          : undefined;
+      const writingCustom = target === "custom";
+      if (writingCustom || target === "notes") {
         const box = writingCustom ? customRef.current : notesRef.current;
 
         if (event.key === "Escape") {
@@ -615,14 +620,14 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                 <span className="dialog-notes-title">{customQuestion.question}</span>
                 <span className="dialog-notes-hint">Enter sends · at least one character</span>
               </div>
-              <textarea
+              <MarkdownField
+                key={customQuestion.question}
                 ref={customRef}
-                className="dialog-notes-input"
-                value={customValue}
+                field="custom"
+                initialValue={customValue}
                 placeholder="Answer in your own words…"
-                aria-label={`Your own answer to ${customQuestion.question}`}
-                onChange={(event) => {
-                  const text = event.target.value;
+                label={`Your own answer to ${customQuestion.question}`}
+                onChange={(text) => {
                   setCustom((current) => ({ ...current, [customQuestion.question]: text }));
                   setSelections((current) => ({
                     ...current,
@@ -639,15 +644,14 @@ export function DialogCard({ prompt, onResolve }: DialogCardProps) {
                 <span className="dialog-notes-title">{focusedOption?.option.label}</span>
                 <span className="dialog-notes-hint">Enter sends · Ctrl+Enter for a new line</span>
               </div>
-              <textarea
+              <MarkdownField
+                key={notesId}
                 ref={notesRef}
-                className="dialog-notes-input"
-                value={notesValue}
+                field="notes"
+                initialValue={notesValue}
                 placeholder="Add notes for this choice…"
-                aria-label={`Notes for ${focusedOption?.option.label ?? "this choice"}`}
-                onChange={(event) =>
-                  setNotes((current) => ({ ...current, [notesId]: event.target.value }))
-                }
+                label={`Notes for ${focusedOption?.option.label ?? "this choice"}`}
+                onChange={(text) => setNotes((current) => ({ ...current, [notesId]: text }))}
               />
             </>
           )}

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { InboundRequest } from "../lib/controlProtocol";
 import {
@@ -290,14 +291,15 @@ describe("a question card", () => {
     });
   });
 
-  it("sends the notes typed for an option along with the answer", () => {
+  it("sends the notes typed for an option along with the answer", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={onResolve} />);
 
     fireEvent.keyDown(document, { key: "n" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Notes for Postgres" }), {
-      target: { value: "use the pool" },
-    });
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Notes for Postgres" }),
+      "use the pool",
+    );
     fireEvent.click(screen.getByRole("button", { name: /Postgres/ }));
 
     expect(onResolve).toHaveBeenCalledWith({
@@ -403,6 +405,17 @@ describe("answering in your own words", () => {
     expect(box()).toHaveFocus();
   });
 
+  it("highlights the Markdown in the box the way the composer does", async () => {
+    render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
+
+    fireEvent.keyDown(document, { key: "n" });
+    const box = screen.getByRole("textbox", { name: "Notes for Postgres" });
+    await userEvent.type(box, "**bold** and `code`");
+
+    expect(box).toHaveClass("cm-content");
+    expect(box.querySelector(".cm-code")).not.toBeNull();
+  });
+
   it("puts the keyboard in the box when the row is clicked rather than reached", () => {
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
 
@@ -421,21 +434,21 @@ describe("answering in your own words", () => {
     expect(screen.getByRole("button", { name: /SQLite/ })).toHaveClass("focused");
   });
 
-  it("selects the row like any other, as soon as something is typed", () => {
+  it("selects the row like any other, as soon as something is typed", async () => {
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
     reachTypedRow();
 
-    fireEvent.change(box(), { target: { value: "MySQL" } });
+    await userEvent.type(box(), "MySQL");
 
     expect(typedRow()).toHaveClass("selected");
   });
 
-  it("sends what was typed as the answer, not as a note", () => {
+  it("sends what was typed as the answer, not as a note", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={onResolve} />);
     reachTypedRow();
 
-    fireEvent.change(box(), { target: { value: "SQL Server, if you must" } });
+    await userEvent.type(box(), "SQL Server, if you must");
     fireEvent.keyDown(box(), { key: "Enter" });
 
     expect(onResolve).toHaveBeenCalledWith({
@@ -455,12 +468,12 @@ describe("answering in your own words", () => {
     expect(onResolve).not.toHaveBeenCalled();
   });
 
-  it("counts whitespace as no answer at all", () => {
+  it("counts whitespace as no answer at all", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={onResolve} />);
     reachTypedRow();
 
-    fireEvent.change(box(), { target: { value: "   " } });
+    await userEvent.type(box(), "   ");
     fireEvent.keyDown(box(), { key: "Enter" });
 
     expect(onResolve).not.toHaveBeenCalled();
@@ -512,22 +525,22 @@ describe("answering in your own words", () => {
     expect(typedRow()).toHaveClass("focused");
   });
 
-  it("keeps what was typed while the keyboard moves off the row and back", () => {
+  it("keeps what was typed while the keyboard moves off the row and back", async () => {
     render(<DialogCard prompt={questionPrompt(singleSelect)} onResolve={vi.fn()} />);
     reachTypedRow();
-    fireEvent.change(box(), { target: { value: "MySQL" } });
+    await userEvent.type(box(), "MySQL");
 
     fireEvent.keyDown(document, { key: "ArrowUp" });
     fireEvent.keyDown(document, { key: "ArrowDown" });
 
-    expect(box()).toHaveValue("MySQL");
+    expect(box()).toHaveTextContent("MySQL");
   });
 
-  it("abandons what was typed once a suggested option is picked", () => {
+  it("abandons what was typed once a suggested option is picked", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={onResolve} />);
     reachTypedRow();
-    fireEvent.change(boxFor("First?"), { target: { value: "my own" } });
+    await userEvent.type(boxFor("First?"), "my own");
 
     fireEvent.click(screen.getByRole("button", { name: "A1" }));
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
@@ -539,11 +552,11 @@ describe("answering in your own words", () => {
     });
   });
 
-  it("stands in for a suggested option when it is the row that was picked", () => {
+  it("stands in for a suggested option when it is the row that was picked", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={onResolve} />);
     reachTypedRow();
-    fireEvent.change(boxFor("First?"), { target: { value: "my own" } });
+    await userEvent.type(boxFor("First?"), "my own");
 
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
 
@@ -554,12 +567,12 @@ describe("answering in your own words", () => {
     });
   });
 
-  it("waits for every question, as picking an option does", () => {
+  it("waits for every question, as picking an option does", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={onResolve} />);
     reachTypedRow();
 
-    fireEvent.change(boxFor("First?"), { target: { value: "my own" } });
+    await userEvent.type(boxFor("First?"), "my own");
     fireEvent.keyDown(boxFor("First?"), { key: "Enter" });
 
     expect(onResolve).not.toHaveBeenCalled();
@@ -687,15 +700,13 @@ describe("which row the notes belong to", () => {
     expect(notes("A1")).toHaveFocus();
   });
 
-  it("keeps a note against the option it was written for", () => {
+  it("keeps a note against the option it was written for", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(twoQuestions)} onResolve={onResolve} />);
 
     fireEvent.click(screen.getByRole("button", { name: "A1" }));
     fireEvent.keyDown(document, { key: "n" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Notes for A1" }), {
-      target: { value: "the first one" },
-    });
+    await userEvent.type(screen.getByRole("textbox", { name: "Notes for A1" }), "the first one");
 
     fireEvent.click(screen.getByRole("button", { name: "B1" }));
 
@@ -730,14 +741,15 @@ describe("notes on a multi-select question", () => {
     expect(notes("Bash")).toBeInTheDocument();
   });
 
-  it("sends a note with the box it was written against", () => {
+  it("sends a note with the box it was written against", async () => {
     const onResolve = vi.fn();
     render(<DialogCard prompt={questionPrompt(multiSelect)} onResolve={onResolve} />);
 
     fireEvent.keyDown(document, { key: "n" });
-    fireEvent.change(screen.getByRole("textbox", { name: "Notes for Bash" }), {
-      target: { value: "only in the sandbox" },
-    });
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Notes for Bash" }),
+      "only in the sandbox",
+    );
     fireEvent.keyDown(document, { key: " " });
     fireEvent.click(screen.getByRole("button", { name: /Send answer/ }));
 

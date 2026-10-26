@@ -141,6 +141,23 @@ it with the user rather than quietly changing it.
   draining past the cap rather than closing the pipe, because a process left running that finds
   its reader gone blocks the moment the pipe fills — and killing what the reader started is not
   this application's business.
+- **A local command streams, and Stop is a poll rather than a second handle on the child.** Every
+  chunk of stdout and stderr arrives over a `Channel<ShellEvent>` as the reader threads read it,
+  and an `exit` event ends the card. That is what makes a command that prints a URL and then waits
+  — `aws sso login` is the one that found this — readable while it is stuck rather than only after
+  it is killed. Stopping cannot come from another thread holding the `Child`: `wait()` borrows it
+  mutably and blocks, so the runner polls `try_wait` every 50ms and kills the child itself when the
+  flag `stop_shell_command` set is seen. The flag lives in `ShellCommands`, keyed by the id the
+  frontend minted, and the entry is removed when the command ends. A reader thread stops *sending*
+  once the shell has exited and the grace has passed, but keeps draining the pipe, for the same
+  reason the old collector did: a background child that finds its reader gone blocks on a full
+  pipe. A stopped command reports `stopped: true` and no code, because the code a killed shell
+  hands back is an artefact of the kill.
+- **The model and the card are fed differently, and the hook is where they part.** The card is
+  updated per chunk through `withShellOutput`, which caps at `MAX_DISPLAY_OUTPUT` as it goes. The
+  text handed to Claude is accumulated raw in the hook and capped with `capForModel` when the exit
+  arrives, so the display cap cannot eat the model's 30,000 characters. Do not read the model's
+  copy back out of the transcript entry.
 
 ## Code style
 
@@ -237,6 +254,13 @@ it with the user rather than quietly changing it.
   flyout is part of the trade** — keeping it means answering `WM_NCHITTEST` with `HTMAXBUTTON`,
   which is native code or a plugin built against Tauri 2.0-rc; dragging to a screen edge,
   `Win`+arrow and `Win`+`Z` are unaffected.
+- **`tool_progress` is a heartbeat, not tool output.** The frame is
+  `{tool_use_id, tool_name, elapsed_time_seconds, …}` and nothing else; `applyToolProgress`
+  writes the seconds onto the card so a long call reads as alive. There is no stdout on it.
+  The CLI's internal `bash_progress`/`powershell_progress` are only bridged into
+  `tool_progress` for remote/container sessions, and even then carry elapsed time rather than
+  output. The stream-json protocol has no host→tool stdin at all, so a tool or subagent
+  cannot be fed input from here — do not add a UI that pretends otherwise.
 - **A background agent is ended by the CLI's own task events, and by nothing else.** Read off the
   stream itself, with a probe that reproduced one (see below): the CLI has a whole task lifecycle,
   and every one of these is a `system` subtype the app used to drop —
@@ -263,6 +287,18 @@ it with the user rather than quietly changing it.
   the task events name and the same id the card is keyed by. `agentCardFor` matches either that
   or the agent's own id, and takes the one running agent as the owner of a frame tagged with an
   id no card answers to, but with the task events in place the tag is no longer load-bearing.
+- **A resumed subagent card is rebuilt from a second transcript file.** The parent JSONL has the
+  `Agent`/`Task` tool_use and its result, but the agent's conversation is **not** in it: the CLI
+  writes that to `<project>/<session-id>/subagents/agent-<agentId>.jsonl`, and the parent
+  result's `toolUseResult.agentId` is the only link. `read_session_replay` reads that file and
+  emits its `assistant`/`user` records tagged with the spawning call's `tool_use_id`, so the
+  same `withSubagentOutput` reducer files them into the card rather than the main conversation.
+  A foreground result carries the report in `toolUseResult.handbackReport.text`; a background
+  launch only says `async_launched`, so a terminal `SubagentHandback` result in the agent file
+  produces a synthetic completion frame. The parent's tool_use/result records are replayed too,
+  which is what restores every other tool card — the old text-only history dropped all of them.
+  The transcript's `toolUseResult` is camelCase; the frame the reducer reads is
+  `tool_use_result`.
 - **A probe is how to ask this CLI a question, and it must not answer approval prompts.**
   `claude.exe` driven with the app's own `--input-format stream-json` arguments and one narrow
   `--allowedTools Agent` reproduces a background agent end to end in under a minute and prints
@@ -419,6 +455,15 @@ it with the user rather than quietly changing it.
   nodes whose name ends in `Mark`, which is every marker there is, and it asks whether a node lies
   *strictly* between the positions — a marker that merely starts at the far end is the closing
   marker being moved, and counting it refuses every move there is.
+- **A quote is a block decision, and a paste is not a typed character.** Quoting a selection
+  applies to every line it touches, the same way a list does: `planQuoteToggleAll` removes the
+  quote when every line carries one and otherwise adds it only to the lines that do not, so a
+  mixed block is not double-quoted. Quoting just the caret's line is the one-line case of the
+  same rule. A paste never reaches `EditorView.inputHandler`, so an armed style would otherwise
+  be skipped entirely; `handleFormattedPaste` claims the `paste` event, wraps each non-empty
+  line with `planPastedText`, keeps edge whitespace outside the markers and clears the arming.
+  A multi-line paste becomes one styled run per line because Markdown cannot close emphasis
+  across a blank line.
 - **The quote button continues the quote on Enter, and a list inside it keeps being a list.**
   `planQuoteEnter` peels the quote off, plans the rest of the line as whatever it is, and puts the
   quote back — so `> - item` continues as `> - `. One divergence worth knowing: **a list carries
@@ -445,6 +490,14 @@ it with the user rather than quietly changing it.
   keyboard cannot swallow it. With a card open the composer's slot is `inert`, so the focus
   call is refused by the browser and F6 does nothing — which is the wanted behaviour rather
   than a case to special-case.
+- **Full screen belongs to the composer, and F11 alone cannot be relied on.** WebView2 keeps
+  F11 among its browser accelerator keys and does not hand it to the page, so `Ctrl+Shift+F`
+  is the binding that always arrives; F11 is still claimed when it does get through, and both
+  are listed. The mode is a class on `.app`: the grid drops to two rows, `.workspace` is
+  hidden rather than unmounted so the transcript keeps its scroll and open cards, the
+  composer's height cap is lifted, and the Send button is hidden by CSS but not disabled by
+  it. Sending clears the flag in `App` before the message goes, so the answer cannot land in
+  a window that is still hiding the chat.
 - **The recall history is the reader's own typing, and it is written beside the
   application.** One file per session, at
   `<install folder>/sessions/<session id>/user-message-history.json`, resolved from
@@ -507,6 +560,19 @@ it with the user rather than quietly changing it.
   percentage to draw. The bar therefore slides rather than filling, and the label carries
   the token count from the last context reading — do not animate it as though it were
   completing, which is a progress bar impersonating knowledge it does not have.
+- **The summary a compaction leaves behind arrives as a `user` frame, not as the boundary.**
+  It is `{type: "user", isCompactSummary: true, isVisibleInTranscriptOnly: true}` with the
+  summary as a bare string in `message.content`. The boundary frame carries only
+  "Conversation compacted" and the token metadata, so nothing in that event can render it.
+  `applyUserEvent` reads the flag and appends a `summary` entry, and `ContextSummary` draws
+  it as a folded block of rendered Markdown. The old user handler dropped it because it
+  only looked for `tool_result` blocks — a bare string yields no blocks, which is why the
+  summary was invisible live but appeared on resume: the replay accepted it as ordinary user
+  text. `read_session_replay` now emits it as the same `isCompactSummary` frame, and
+  `withReplay` applies it through `applyUserEvent`; an interrupt marker is turned into a
+  `notice` in the same pass. The replay is frames of the live shapes rather than a role-only
+  history payload — that is what lets tool and subagent cards come back too. Do not collapse
+  the frames back into `{role, text}`.
 - **`ExitPlanMode` carries no plan.** Its input is effectively empty — `allowedPrompts` is
   marked deprecated and ignored — and the plan comes back as the tool's *output*, which
   only exists once the call has run, i.e. after it was approved. So the plan shown on the
@@ -583,14 +649,24 @@ it with the user rather than quietly changing it.
   the same reason. The child still gets a console and its streams are pipes either way, so
   output capture is unaffected — the shell tests cover that and fail if the flag ever
   breaks it.
-- **Local command output has three caps, one per consumer, and they are not
+- **Local command output has three consumer caps, one per consumer, and they are not
   interchangeable.** All live in `src/lib/outputLimits.ts`: `capForModel` (30,000
   characters) is applied where the output is wrapped in `<bash-stdout>` and handed to
   Claude, `capForDisplay` (1,000,000) where it is stored in the transcript entry, and
-  `capForCard` (20,000) where an expanded tool card renders it. `shell.rs` returns output
-  in full on purpose — capping it there, as it once did, applies the model's limit to the
-  card as well and loses the output everywhere. No number should be moved to a single
-  choke point; they bound different things.
+  `capForCard` (20,000) where an expanded tool card renders it. `shell.rs` streams output
+  in full on purpose — capping it there would apply the model's limit to the card as well
+  and lose the output everywhere. No number should be moved to a single choke point; they
+  bound different things. `MAX_STREAMED_BYTES` in `shell.rs` is not a fourth consumer cap:
+  it bounds what one runaway command can push through the channel, and sits above the
+  display cap so it is never what truncates a card.
+- **A tool card's heading is the tool's own name followed by what the call said it was for.**
+  `describeToolDescription` reads the `description` a tool may have put on its input, and that is
+  the title after the name; the one-line input from `describeToolUse` is the subtitle underneath.
+  With no description the input is the title, and with neither only the name is shown. The name
+  stays first because a reader scanning cards needs to know what kind of thing ran — `PowerShell`
+  was the case that showed it, having no arm in `describeToolUse` at all, so its card said only
+  "PowerShell". The unknown-tool fallback now reads the common input fields rather than returning
+  nothing, which is what gives an MCP tool a title too.
 - **A collapsed card has to cap the length of a line, not only the number of them.**
   `clipLine` exists because output with no line breaks in it — a minified document, one
   long JSON result — is a single line however long it runs, so a two-line preview of it
@@ -708,7 +784,10 @@ it with the user rather than quietly changing it.
   does not: `interrupt` sets `interrupted` on the session record, `settleInterrupt` spends
   it when the result arrives, and `applyResultEvent` records a notice instead of an error.
   Do not "simplify" this by reading a subtype off the result — there is no field
-  that distinguishes the two.
+  that distinguishes the two. The transcript has no flag either: it records the stop as
+  plain user text, `[Request interrupted by user]` or `[Request interrupted by user for
+  tool use]`, so the resume path recognises the marker by its text and returns a `notice`
+  role. That text match is the only thing that keeps the styling across a reopen.
 - **A message sent mid-turn is queued, and the CLI acknowledges it by `command_lifecycle`.**
   Read off the stream itself, with a probe that queued a message into a running tool: the CLI
   sends `{type: "command_lifecycle", command_uuid, state}` three times for one message —
@@ -753,9 +832,9 @@ it with the user rather than quietly changing it.
   handle on it, and a `user` line sent without a uuid is unreachable for the rest of the
   turn. So `send` mints one per message (`messageUuid.ts`) and puts it on both the entry and
   the line. A message with no uuid therefore offers no button rather than a button that
-  cannot work, which is what a replayed transcript is: `read_session_history` returns text
-  and a role, so a message restored from a previous session is not addressable and the row
-  draws as words alone. The answer is `{cancelled: boolean}` and the two values mean
+  cannot work, which is what a replayed transcript is: `read_session_replay` returns the
+  message's text and no uuid, so a message restored from a previous session is not
+  addressable and the row draws as words alone. The answer is `{cancelled: boolean}` and the two values mean
   different things. `true` means the CLI still had it, so it is removed outright —
   `withoutEntry`, not a settled mark, because a message that never ran never entered the
   conversation and leaving it in the transcript would claim a turn that never happened.
@@ -787,6 +866,14 @@ it with the user rather than quietly changing it.
   Notes work on multi-select options too, which the annotations in `resolveQuestions` always
   carried — nothing there needed changing. Permission and plan cards keep the hover-to-focus
   they have always had, because they have no pane for a stray hover to disturb.
+- **The answer and notes boxes are Markdown editors, not textareas.** `MarkdownField` is a small
+  CodeMirror editor sharing the composer's `urlMarks`, `codeTint` and `editorTheme`, so what is
+  written in an `AskUserQuestion` box is highlighted the same way as the composer — without the
+  toolbar, slash menu or send behaviour. It is seeded once and deliberately not controlled after
+  that; the card remounts it under a key naming the question or option it belongs to, which is
+  how a different subject gets a different text. The card's document-capture handler identifies
+  the boxes by `[data-dialog-field]` rather than by comparing element references, and still owns
+  Enter, Escape and the arrow keys at capture, so those behave exactly as they did on a textarea.
 - **Both boxes take the keyboard as they open, and take it again as they move.** Reaching
   the free-text row or pressing `n` puts the caret in the box, so neither needs a click
   before it can be typed into; the card's own key handler, which listens on the document,
@@ -886,6 +973,16 @@ it with the user rather than quietly changing it.
   the reveal uses, because asking twice has to be two requests. The walk is dropped as it hands
   over, since the reader has left the transcript — so the next press up starts from the newest
   message, which is what the geometry says for a transcript with nothing past the top.
+- **Subagent navigation is the same walk over a different set of rows.** `Alt+S` toggles it from
+  `App`, which owns the bar and the no-subagents notice, and `ChatPane` owns the cursor and the
+  keys — the arrows move by `viewportStep`, the function the user-message walk uses, over rows
+  whose role is `subagent`. One press moves one card, the geometry decides where a walk that has
+  not started lands, and any reader scroll forgets the cursor exactly as it does for the
+  message walk. Escape leaves the mode and is taken at capture so the composer's own Escape
+  cannot also clear a draft. With no subagents the mode is not entered at all: `App` shows the
+  green bar for two seconds instead, counting each press so a second one restarts the timer.
+  Entering the mode leaves full screen, since the chat the walk is about would otherwise be
+  hidden.
 - **The preview swaps the editor rather than replacing it.** `.composer-host` stays mounted
   and is hidden with a class, so the text, the caret, the selection and the undo history
   all survive the round trip; the preview is drawn in the same field, at least as tall as
@@ -990,6 +1087,12 @@ it with the user rather than quietly changing it.
   utterance away and told the reader the microphone had stopped, which it had not. It bit on
   one machine of two, which is what a driver-shaped discontinuity looks like from here.
   `has_stopped` in `mic.rs` is the filter, and the test beside it is why it stays.
+- **The version in the settings is the build's own, and nothing retypes it.** `app_version` in
+  `src-tauri/src/version.rs` returns `app.package_info().version`, which Tauri reads from
+  `tauri.conf.json` at compile time — the same number the installer is cut with. The settings
+  menu asks for it directly rather than keeping a constant, so a build cannot report a version
+  it is not. The `Bump to …` commit still edits the four files together; that is the release
+  process, not a second place this display has to be kept in step.
 - **The settings file is watched, not only read at startup.** It is the one thing the window and
   a text editor both write, and the two only agree if one of them is listening: `settings.rs`
   polls the file's modification time and emits `settings-changed`, the frontend adopts what it

@@ -3,13 +3,15 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { PERMISSION_MODES } from "../lib/claudeConfig";
 import {
   applyClaudeMessage,
+  finishShell,
   latestAssistantText,
   withError,
-  withHistory,
   withNotice,
   withoutEntry,
+  withReplay,
   withSettledMessage,
   withShellCommand,
+  withShellOutput,
   withShellResult,
   withTurnOver,
   withUserMessage,
@@ -34,16 +36,16 @@ import { type Prompt, type PromptResolution, readPrompt } from "../lib/dialogMod
 import { asRecord, asText, type Json, parseJsonLine } from "../lib/json";
 import { messageUuid } from "../lib/messageUuid";
 import { nextId } from "../lib/nextId";
-import { capForDisplay, capForModel } from "../lib/outputLimits";
+import { capForModel } from "../lib/outputLimits";
 import {
   forgetInterrupted,
   listSessions,
-  readSessionHistory,
+  readSessionReplay,
   rememberInterrupted,
   type SessionSummary,
   takeInterrupted,
 } from "../lib/sessions";
-import { runShellCommand } from "../lib/shell";
+import { runShellCommand, type ShellEvent, stopShellCommand } from "../lib/shell";
 import { suggestionQuery } from "../lib/suggestionQuery";
 import { type ChatState, type ClaudeEvent, createChatState } from "../types";
 
@@ -72,6 +74,8 @@ export type ClaudeSession = {
   /** Takes a message back out of the CLI's queue, before it has run. */
   unqueue: (id: string) => void;
   runShell: (command: string) => void;
+  /** Stops a local command that is still running. */
+  stopShell: (id: string) => void;
   interrupt: () => void;
   resolve: (resolution: PromptResolution) => void;
   setPermissionMode: (mode: string) => void;
@@ -436,8 +440,8 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
           handshake(id);
 
           if (options.resume && options.replay) {
-            void readSessionHistory(dir, options.resume, HISTORY_LIMIT).then((messages) => {
-              if (messages.length > 0) patchState(id, (state) => withHistory(state, messages));
+            void readSessionReplay(dir, options.resume, HISTORY_LIMIT).then((frames) => {
+              if (frames.length > 0) patchState(id, (state) => withReplay(state, frames));
             });
           }
 
@@ -613,28 +617,62 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       // changed directory, `!pwd` should agree with it.
       const liveCwd = record.state.cwd ?? cwdRef.current;
 
-      void runShellCommand(command, liveCwd)
-        .then((output) => {
+      // The model is handed the output once the command is over, so it is kept
+      // whole here rather than being read back out of a transcript that is
+      // capped for display.
+      let stdout = "";
+      let stderr = "";
+
+      const channel = new Channel<ShellEvent>();
+      channel.onmessage = (event) => {
+        if (event.kind === "stdout") {
+          stdout += event.chunk;
+          patchState(active, (state) => withShellOutput(state, id, "stdout", event.chunk));
+          return;
+        }
+        if (event.kind === "stderr") {
+          stderr += event.chunk;
+          patchState(active, (state) => withShellOutput(state, id, "stderr", event.chunk));
+          return;
+        }
+
+        patchState(active, (state) => finishShell(state, id, event.code, event.stopped));
+        shellContextRef.current = [
+          ...shellContextRef.current,
+          `<bash-input> ${command}</bash-input>`,
+          `<bash-stdout>${capForModel(stdout)}</bash-stdout>` +
+            `<bash-stderr>${capForModel(stderr)}</bash-stderr>` +
+            `<bash-exit-code>${event.stopped ? "stopped" : (event.code ?? "unknown")}</bash-exit-code>`,
+        ];
+      };
+
+      void runShellCommand(id, command, liveCwd, channel).catch((error: unknown) => {
+        patchState(active, (state) =>
+          withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
+        );
+      });
+    },
+    [patchState],
+  );
+
+  /**
+   * Stops a local command the reader no longer wants to wait for.
+   *
+   * The card settles when the backend reports the exit, which is the same path
+   * a command that finishes on its own takes.
+   *
+   * @param id - The entry's id, which is the name the command was started under.
+   */
+  const stopShell = useCallback(
+    (id: string) => {
+      void stopShellCommand(id).catch((error: unknown) => {
+        const active = activeRef.current;
+        if (active !== null) {
           patchState(active, (state) =>
-            withShellResult(state, id, {
-              stdout: capForDisplay(output.stdout),
-              stderr: capForDisplay(output.stderr),
-              code: output.code,
-            }),
+            withNotice(state, `Could not stop the command: ${String(error)}`),
           );
-          shellContextRef.current = [
-            ...shellContextRef.current,
-            `<bash-input> ${command}</bash-input>`,
-            `<bash-stdout>${capForModel(output.stdout)}</bash-stdout>` +
-              `<bash-stderr>${capForModel(output.stderr)}</bash-stderr>` +
-              `<bash-exit-code>${output.code ?? "unknown"}</bash-exit-code>`,
-          ];
-        })
-        .catch((error: unknown) => {
-          patchState(active, (state) =>
-            withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
-          );
-        });
+        }
+      });
     },
     [patchState],
   );
@@ -824,6 +862,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
     send,
     unqueue,
     runShell,
+    stopShell,
     interrupt,
     resolve,
     setPermissionMode,

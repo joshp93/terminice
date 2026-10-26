@@ -201,6 +201,47 @@ export function planTypedCharacter(char: string, state: InlineState): TypingPlan
   };
 }
 
+/**
+ * Plans wrapping pasted text in the styles that are armed.
+ *
+ * The styles apply to the whole line rather than to the first character, since
+ * a paste is already a finished word or sentence. Whitespace at each edge stays
+ * outside the markers, and a blank line is left as it is, so a multi-line paste
+ * becomes one styled run per non-empty line rather than one run that Markdown
+ * cannot close across paragraphs.
+ *
+ * @param text - The pasted text.
+ * @param state - The current inline state.
+ * @returns The text to insert and where the caret lands, or null to paste
+ *   plainly.
+ */
+export function planPastedText(text: string, state: InlineState): TypingPlan | null {
+  if (state.armed.size === 0) return null;
+
+  const markers = formatMarkers(state.armed);
+  let changed = false;
+  const lines = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => {
+      const offsets = wrapOffsets(line);
+      if (!offsets) return line;
+      changed = true;
+      return (
+        line.slice(0, offsets.start) +
+        markers +
+        line.slice(offsets.start, offsets.end) +
+        markers +
+        line.slice(offsets.end)
+      );
+    });
+
+  if (!changed) return null;
+
+  const insert = lines.join("\n");
+  return { insert, caretOffset: insert.length, state: createInlineState() };
+}
+
 /** Offsets into a selection of the text its markers should enclose. */
 export type WrapOffsets = {
   start: number;

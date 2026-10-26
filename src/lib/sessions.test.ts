@@ -6,14 +6,14 @@ vi.mock("@tauri-apps/api/core", () => import("@test/tauriMock"));
 import {
   forgetInterrupted,
   listSessions,
-  readSessionHistory,
+  readSessionReplay,
   rememberInterrupted,
   takeInterrupted,
 } from "./sessions";
 
 beforeEach(() => {
   routeInvoke("list_sessions", () => []);
-  routeInvoke("read_session_history", () => []);
+  routeInvoke("read_session_replay", () => []);
   routeInvoke("remember_interrupted", () => null);
   routeInvoke("forget_interrupted", () => null);
   routeInvoke("take_interrupted", () => null);
@@ -41,17 +41,19 @@ describe("listSessions", () => {
   });
 });
 
-describe("readSessionHistory", () => {
-  it("returns the replayed messages", async () => {
-    routeInvoke("read_session_history", () => [{ role: "user", text: "hi" }]);
-    await expect(readSessionHistory("D:\\apps", "a", 200)).resolves.toEqual([
-      { role: "user", text: "hi" },
+describe("readSessionReplay", () => {
+  it("returns the replayed frames", async () => {
+    routeInvoke("read_session_replay", () => [
+      { type: "user", message: { content: [{ type: "text", text: "hi" }] } },
+    ]);
+    await expect(readSessionReplay("D:\\apps", "a", 200)).resolves.toEqual([
+      { type: "user", message: { content: [{ type: "text", text: "hi" }] } },
     ]);
   });
 
   it("asks for the session and the limit", async () => {
-    await readSessionHistory("D:\\apps", "a", 200);
-    expect(invoke).toHaveBeenCalledWith("read_session_history", {
+    await readSessionReplay("D:\\apps", "a", 200);
+    expect(invoke).toHaveBeenCalledWith("read_session_replay", {
       cwd: "D:\\apps",
       id: "a",
       limit: 200,
@@ -59,10 +61,10 @@ describe("readSessionHistory", () => {
   });
 
   it("returns nothing when the transcript cannot be read", async () => {
-    routeInvoke("read_session_history", () => {
+    routeInvoke("read_session_replay", () => {
       throw new Error("unreadable transcript");
     });
-    await expect(readSessionHistory("D:\\apps", "a", 200)).resolves.toEqual([]);
+    await expect(readSessionReplay("D:\\apps", "a", 200)).resolves.toEqual([]);
   });
 });
 

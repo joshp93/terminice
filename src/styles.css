@@ -122,6 +122,48 @@ body {
 }
 
 /*
+ * The composer filling the window. The chat is hidden rather than unmounted, so
+ * the transcript keeps its scroll position, its open cards and its walk, and the
+ * only thing that changes is which row of the grid has the room.
+ */
+.app.composer-fullscreen {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.app.composer-fullscreen .workspace {
+  display: none;
+}
+
+.app.composer-fullscreen .composer-slot {
+  grid-row: 2;
+  min-height: 0;
+}
+
+.app.composer-fullscreen .composer {
+  height: 100%;
+}
+
+.app.composer-fullscreen .composer-row {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app.composer-fullscreen .composer-field {
+  height: 100%;
+}
+
+.app.composer-fullscreen .composer-host {
+  height: 100%;
+  max-height: none;
+}
+
+.app.composer-fullscreen .send {
+  display: none;
+}
+
+/*
  * The window bar: the application's own, because the window draws no
  * decorations of its own. It wears the colour this instance claimed, which is
  * what tells one window from another, and everything on it is written in the
@@ -312,6 +354,14 @@ body {
 .settings-note {
   margin: 8px 0 0;
   max-width: 244px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* The build the window is running, read from the bundle rather than written
+   here, so it cannot drift from the installers it sits beside. */
+.settings-version {
+  margin: 10px 0 0;
   font-size: 11.5px;
   color: var(--text-dim);
 }
@@ -1137,6 +1187,38 @@ body {
   border-left-color: var(--danger-border);
 }
 
+.shell-header {
+  display: flex;
+  align-items: center;
+}
+
+.shell-header .shell-summary {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+}
+
+/* Stops a command the reader does not want to wait for. It sits outside the
+   summary button so pressing it cannot also open the card. */
+.shell-stop {
+  flex: 0 0 auto;
+  margin-right: 8px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.786em;
+  cursor: pointer;
+}
+
+.shell-stop:hover {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+/* biome-ignore lint/style/noDescendingSpecificity: the header's rule above narrows this same element, and the two never compete. */
 .shell-summary {
   display: flex;
   align-items: baseline;
@@ -1195,6 +1277,15 @@ body {
   border-top: 1px solid var(--border);
   padding: 7px 11px;
   cursor: pointer;
+}
+
+.shell-output.open {
+  cursor: default;
+}
+
+.shell-output a {
+  color: var(--accent);
+  text-decoration: underline;
 }
 
 /* biome-ignore lint/style/noDescendingSpecificity: a failed tool preview and a shell output are different elements, so the rules never compete. */
@@ -1466,9 +1557,38 @@ body {
   padding: 0 20px;
 }
 
+/* The tool's own name, then the title it gave itself, and underneath that the
+   input when the title came from a description. The heading takes the room so
+   the disclosure stays at the far end and a long command truncates rather than
+   pushing it out of the card. */
+.tool-heading {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tool-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .tool-name {
+  flex: 0 0 auto;
   color: var(--accent);
   font-weight: 600;
+}
+
+.tool-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
 }
 
 .tool-detail {
@@ -1478,6 +1598,15 @@ body {
   white-space: nowrap;
 }
 
+/* The CLI's heartbeat: how long a call has been running, not what it printed. */
+.tool-elapsed,
+.subagent-elapsed {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: 0.786em;
+  font-variant-numeric: tabular-nums;
+}
+
 .notice {
   margin: 0 0 10px;
   padding: 7px 11px;
@@ -1485,6 +1614,31 @@ body {
   border: 1px dashed var(--border);
   color: var(--text-dim);
   font-size: 0.893em;
+}
+
+/* The summary a compaction wrote in place of the messages it condensed. It is
+   folded because it is long, and its body scrolls rather than growing the
+   transcript without bound. */
+.context-summary {
+  margin: 0 0 10px;
+  padding: 8px 11px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 0.925em;
+}
+
+.context-summary-title {
+  color: var(--text);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.context-summary-body {
+  max-height: 60vh;
+  margin-top: 8px;
+  overflow-y: auto;
+  color: var(--text);
 }
 
 .error-banner {
@@ -1593,6 +1747,17 @@ body {
   .working-mark {
     animation: none;
   }
+}
+
+/* Says the arrow keys belong to the subagent cards rather than to whatever has
+   the keyboard. It is green because it is a mode being announced, not a
+   message. */
+.subagent-nav {
+  padding: 6px 14px;
+  background: var(--accent-fill);
+  color: var(--accent-on-fill);
+  font-size: 12px;
+  text-align: center;
 }
 
 .composer {
@@ -2043,11 +2208,13 @@ body {
   font-size: 11px;
 }
 
+/* The box is the editor's frame; the editor inside owns its own padding and
+   paints the Markdown the way the composer does. */
 .dialog-notes-input {
   flex: 1 1 auto;
   min-height: 120px;
-  resize: none;
-  padding: 9px 11px;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid var(--accent-border);
   border-radius: 8px;
   background: var(--bg);
@@ -2056,8 +2223,17 @@ body {
   font-size: 12.5px;
 }
 
-.dialog-notes-input:focus {
+.dialog-notes-input:focus-within {
   outline: none;
+  border-color: var(--accent);
+}
+
+:where(.dialog-notes-input) .cm-editor {
+  height: 100%;
+}
+
+:where(.dialog-notes-input) .cm-scroller {
+  overflow: auto;
 }
 
 .format-toolbar {
@@ -2110,6 +2286,12 @@ body {
   margin-left: auto;
   padding: 0 12px;
   font-size: 12px;
+}
+
+.fullscreen-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .glyph-bold {

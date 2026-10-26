@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseQuoteLine, planQuoteEnter, planQuoteToggle } from "./quoteMarkers";
+import {
+  parseQuoteLine,
+  planQuoteEnter,
+  planQuoteToggle,
+  planQuoteToggleAll,
+} from "./quoteMarkers";
 
 describe("parseQuoteLine", () => {
   it("splits a quoted line at the quote", () => {
@@ -50,6 +55,33 @@ describe("planQuoteToggle", () => {
 
   it("takes a nested quote off in one go", () => {
     expect(planQuoteToggle("> > deep")).toEqual({ offset: 0, remove: 4, insert: "" });
+  });
+});
+
+describe("planQuoteToggleAll", () => {
+  it("quotes every line of a plain block", () => {
+    expect(planQuoteToggleAll(["one", "two", "three"])).toEqual([
+      { index: 0, edit: { offset: 0, remove: 0, insert: "> " } },
+      { index: 1, edit: { offset: 0, remove: 0, insert: "> " } },
+      { index: 2, edit: { offset: 0, remove: 0, insert: "> " } },
+    ]);
+  });
+
+  it("takes the quote off every line when the whole block carries one", () => {
+    expect(planQuoteToggleAll(["> one", "> two"])).toEqual([
+      { index: 0, edit: { offset: 0, remove: 2, insert: "" } },
+      { index: 1, edit: { offset: 0, remove: 2, insert: "" } },
+    ]);
+  });
+
+  it("leaves lines that are already quoted alone when quoting a mixed block", () => {
+    expect(planQuoteToggleAll(["> one", "two"])).toEqual([
+      { index: 1, edit: { offset: 0, remove: 0, insert: "> " } },
+    ]);
+  });
+
+  it("does nothing to an empty block", () => {
+    expect(planQuoteToggleAll([])).toEqual([]);
   });
 });
 

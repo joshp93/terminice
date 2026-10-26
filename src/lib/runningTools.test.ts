@@ -13,6 +13,7 @@ const tool = (
   role: "tool",
   toolUseId: "t1",
   name: "Bash",
+  description: "",
   detail: "pnpm test",
   input: "{}",
   result: "",

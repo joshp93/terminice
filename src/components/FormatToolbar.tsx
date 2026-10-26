@@ -9,6 +9,7 @@ import {
   formatShortcutLabel,
   quoteShortcutLabel,
 } from "../lib/richFormat";
+import { FullscreenIcon } from "./FullscreenIcon";
 
 /** Props for {@link FormatToolbar}. */
 export type FormatToolbarProps = {
@@ -20,6 +21,9 @@ export type FormatToolbarProps = {
   /** Whether the composer is showing the preview instead of the editor. */
   previewing: boolean;
   onTogglePreview: () => void;
+  /** Whether the composer is filling the window. */
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
 };
 
 const LISTS: readonly { kind: ListKind; label: string; glyph: string }[] = [
@@ -52,6 +56,8 @@ export function FormatToolbar({
   onToggleCodeBlock,
   previewing,
   onTogglePreview,
+  fullscreen,
+  onToggleFullscreen,
 }: FormatToolbarProps) {
   return (
     <div className="format-toolbar">
@@ -125,6 +131,23 @@ export function FormatToolbar({
         onClick={onTogglePreview}
       >
         {previewing ? "Edit" : "Preview markdown"}
+      </button>
+      <button
+        type="button"
+        className={
+          fullscreen ? "format-button fullscreen-toggle on" : "format-button fullscreen-toggle"
+        }
+        title={
+          fullscreen
+            ? `Exit full screen (F11 or ${modifierShortcut("Shift+F")})`
+            : `Full screen (F11 or ${modifierShortcut("Shift+F")})`
+        }
+        aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+        aria-pressed={fullscreen}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onToggleFullscreen}
+      >
+        <FullscreenIcon expanded={fullscreen} />
       </button>
     </div>
   );

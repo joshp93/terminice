@@ -1,5 +1,6 @@
 import { capForCard, clipLine } from "../lib/outputLimits";
 import { useExpansion } from "./ExpansionContext";
+import { LinkifiedText } from "./LinkifiedText";
 
 /** Props for {@link ShellCard}. */
 export type ShellCardProps = {
@@ -12,6 +13,10 @@ export type ShellCardProps = {
   code: number | null;
   /** True until the command has finished. */
   running: boolean;
+  /** True when the reader stopped it rather than letting it finish. */
+  stopped?: boolean;
+  /** Stops the command, while it is still running. */
+  onStop?: () => void;
 };
 
 /** How many lines of output a collapsed card shows. */
@@ -23,7 +28,16 @@ const PREVIEW_LINES = 4;
  * @param props - The command and what it produced.
  * @returns The rendered card.
  */
-export function ShellCard({ id, command, stdout, stderr, code, running }: ShellCardProps) {
+export function ShellCard({
+  id,
+  command,
+  stdout,
+  stderr,
+  code,
+  running,
+  stopped = false,
+  onStop,
+}: ShellCardProps) {
   const { isOpen, toggle } = useExpansion();
   const open = isOpen(id);
   const output = [stdout.replace(/\s+$/, ""), stderr.replace(/\s+$/, "")]
@@ -51,39 +65,56 @@ export function ShellCard({ id, command, stdout, stderr, code, running }: ShellC
 
   return (
     <div className={failed ? "shell-card failed" : "shell-card"}>
-      <button
-        type="button"
-        className="shell-summary"
-        aria-expanded={open}
-        disabled={hidden === 0}
-        onClick={() => toggle(id)}
-      >
-        <span className={running ? "tool-status running" : "tool-status"} aria-hidden="true" />
-        <span className="shell-prefix">!</span>
-        <span className="shell-command">{command}</span>
-        {running ? (
-          <span className="shell-exit">running…</span>
-        ) : (
-          failed && <span className="shell-exit">exit {code}</span>
-        )}
-        {hidden > 0 && (
-          <span className="tool-disclosure">{open ? "hide" : `show ${hidden} more`}</span>
-        )}
-      </button>
-      {shown.length > 0 && (
+      <div className="shell-header">
         <button
           type="button"
-          className="shell-output"
-          aria-label={`Expand ${command} output`}
-          disabled={hidden === 0}
-          onClick={revealAll}
+          className="shell-summary"
+          aria-expanded={open}
+          disabled={lines.length === 0}
+          onClick={() => toggle(id)}
         >
-          <pre>
-            {shown}
-            {!open && hidden > 0 ? "\n…" : ""}
-          </pre>
+          <span className={running ? "tool-status running" : "tool-status"} aria-hidden="true" />
+          <span className="shell-prefix">!</span>
+          <span className="shell-command">{command}</span>
+          {running ? (
+            <span className="shell-exit">running…</span>
+          ) : stopped ? (
+            <span className="shell-exit">stopped</span>
+          ) : (
+            failed && <span className="shell-exit">exit {code}</span>
+          )}
+          {lines.length > 0 && (
+            <span className="tool-disclosure">
+              {open ? "hide" : hidden > 0 ? `show ${hidden} more` : "show"}
+            </span>
+          )}
         </button>
-      )}
+        {running && onStop && (
+          <button type="button" className="shell-stop" onClick={onStop}>
+            Stop
+          </button>
+        )}
+      </div>
+      {shown.length > 0 &&
+        (open ? (
+          <div className="shell-output open">
+            <pre>
+              <LinkifiedText text={shown} />
+            </pre>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="shell-output"
+            aria-label={`Expand ${command} output`}
+            onClick={revealAll}
+          >
+            <pre>
+              {shown}
+              {hidden > 0 ? "\n…" : ""}
+            </pre>
+          </button>
+        ))}
     </div>
   );
 }

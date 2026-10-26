@@ -13,6 +13,7 @@ mod shell;
 mod spawn;
 mod speech;
 mod startup;
+mod version;
 mod voice;
 mod window_colour;
 
@@ -20,6 +21,7 @@ mod window_colour;
 pub fn run() {
     tauri::Builder::default()
         .manage(claude::ClaudeSessions::default())
+        .manage(shell::ShellCommands::default())
         .manage(voice::Voice::default())
         .manage(window_colour::WindowColours::default())
         .setup(|app| {
@@ -30,15 +32,17 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             startup::startup_directory_command,
+            version::app_version,
             claude::start_claude,
             claude::send_claude_line,
             claude::close_claude,
             sessions::list_sessions,
-            sessions::read_session_history,
+            sessions::read_session_replay,
             sessions::remember_interrupted,
             sessions::forget_interrupted,
             sessions::take_interrupted,
             shell::run_shell_command,
+            shell::stop_shell_command,
             browser::open_external_url,
             history::load_user_history,
             history::save_user_history,

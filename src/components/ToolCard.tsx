@@ -1,4 +1,5 @@
 import { looksLikePatch } from "../lib/diffLines";
+import { elapsedLabel } from "../lib/elapsedLabel";
 import { capForCard, clipLine } from "../lib/outputLimits";
 import type { HookNote } from "../lib/toolResults";
 import { DiffView } from "./DiffView";
@@ -9,6 +10,8 @@ export type ToolCardProps = {
   /** The entry's id, which is how the pane tracks which cards are open. */
   id: string;
   name: string;
+  /** The description the call gave itself, when it gave one. */
+  description: string;
   /** A one-line summary of the input. */
   detail: string;
   /** The full input, shown when expanded. */
@@ -18,6 +21,8 @@ export type ToolCardProps = {
   status: "running" | "ok" | "error";
   /** Hooks that ran around this call, which may have changed what ran. */
   hooks: HookNote[];
+  /** How long the CLI last said the call had been running. */
+  elapsedSeconds?: number;
 };
 
 /** How many lines of output a collapsed card shows. */
@@ -53,8 +58,21 @@ function previewOf(text: string, count: number): { lines: string[]; hidden: numb
  * @param props - The call and its result.
  * @returns The rendered tool card.
  */
-export function ToolCard({ id, name, detail, input, result, status, hooks }: ToolCardProps) {
+export function ToolCard({
+  id,
+  name,
+  description,
+  detail,
+  input,
+  result,
+  status,
+  hooks,
+  elapsedSeconds,
+}: ToolCardProps) {
   const { isOpen, toggle } = useExpansion();
+  const title = description.length > 0 ? description : detail;
+  const subtitle =
+    description.length > 0 && detail.length > 0 && detail !== description ? detail : "";
   const expandable = input.length > 0 || result.length > 0;
   const open = expandable && isOpen(id);
   const preview = previewOf(result, PREVIEW_LINES);
@@ -74,8 +92,16 @@ export function ToolCard({ id, name, detail, input, result, status, hooks }: Too
         onClick={() => toggle(id)}
       >
         <span className={`tool-status ${status}`} aria-hidden="true" />
-        <span className="tool-name">{name}</span>
-        {detail.length > 0 && <span className="tool-detail">{detail}</span>}
+        <span className="tool-heading">
+          <span className="tool-title-line">
+            <span className="tool-name">{name}</span>
+            {title.length > 0 && <span className="tool-title">{title}</span>}
+          </span>
+          {subtitle.length > 0 && <span className="tool-detail">{subtitle}</span>}
+        </span>
+        {status === "running" && elapsedSeconds !== undefined && (
+          <span className="tool-elapsed">{elapsedLabel(elapsedSeconds)}</span>
+        )}
         {expandable && (
           <span className="tool-disclosure">
             {open ? "hide" : preview.hidden > 0 ? `show ${preview.hidden} more` : "show"}

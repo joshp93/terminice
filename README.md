@@ -276,12 +276,16 @@ no longer a plan waiting on anything.
 | `Ctrl+>` | Quote |
 | `Hold Space` | Dictates, while dictation is switched on |
 | `F6` | Puts the keyboard in the composer, from anywhere |
+| `F11` / `Ctrl+Shift+F` | Gives the composer the whole window, hiding the chat; sending puts it back |
 | `Ctrl+↑` / `Ctrl+↓` | Steps through the messages you sent; past the last one it goes to the end of the chat and puts the caret back in the composer |
+| `Alt+S` | Turns on subagent navigation; `↑` and `↓` step through the subagents and `Esc` leaves it |
 
 (The same list is in the app, under **Settings → Keyboard shortcuts**, written for whichever
 platform it is running on.)
 
-(`⌘` in place of `Ctrl` on macOS.) `Ctrl+M` is the mode switch, so indenting moved to
+(`⌘` in place of `Ctrl` on macOS.) The browser keeps F11 for its own full screen, so
+`Ctrl+Shift+F` is the binding that always reaches the page; F11 works where it gets through.
+`Ctrl+M` is the mode switch, so indenting moved to
 `Ctrl+]` — and Tab leaves the composer rather than inserting a tab, since the one place a
 tab is structure rather than whitespace is a list item, where Tab still indents it.
 
@@ -370,7 +374,9 @@ without a code change.
 
 ### Sessions
 
-`/resume` reopens a past transcript and replays what was said. A session that was left
+`/resume` reopens a past transcript and replays it — messages, tool cards, and subagent
+cards with the agents' own transcripts, read from the files the CLI keeps beside the
+session. A session that was left
 **waiting on a prompt** is kept alive rather than closed, and reopening it re-sends
 `initialize`, which makes the CLI hand the outstanding request back — so the card
 reappears and can still be answered. Resuming from a transcript after the app has

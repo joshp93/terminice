@@ -55,7 +55,12 @@ import {
   styleNodesInRange,
   styleStateInRange,
 } from "./markdownSpans";
-import { parseQuoteLine, planQuoteEnter, planQuoteToggle } from "./quoteMarkers";
+import {
+  parseQuoteLine,
+  planQuoteEnter,
+  planQuoteToggle,
+  planQuoteToggleAll,
+} from "./quoteMarkers";
 import {
   CODE_BLOCK_SHORTCUT_KEY,
   createInlineState,
@@ -65,6 +70,7 @@ import {
   type FormatId,
   type InlineState,
   MARKER_CHARACTERS,
+  planPastedText,
   planTypedCharacter,
   QUOTE_SHORTCUT_KEY,
   toggleArmedFormat,
@@ -211,7 +217,8 @@ function urlDecorations(view: EditorView): DecorationSet {
   return Decoration.set(ranges);
 }
 
-const urlMarks = ViewPlugin.fromClass(
+/** Highlights bare URLs in an editor, as the composer does. */
+export const urlMarks = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
 
@@ -274,7 +281,8 @@ function codeDecorations(view: EditorView): DecorationSet {
   return Decoration.set(ranges);
 }
 
-const codeTint = ViewPlugin.fromClass(
+/** Tints code spans and code blocks, as the composer does. */
+export const codeTint = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
 
@@ -289,7 +297,8 @@ const codeTint = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-const editorTheme = EditorView.theme({
+/** The editor theme the composer uses, so a second editor reads the same. */
+export const editorTheme = EditorView.theme({
   "&": {
     backgroundColor: "transparent",
     color: "inherit",
@@ -661,9 +670,35 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     report(view);
   };
 
+  /**
+   * Applies the quote to the caret's line, or to every line a selection touches.
+   *
+   * @param view - The editor.
+   */
   const toggleQuote = (view: EditorView): void => {
-    const cursor = view.state.selection.main.head;
-    applyLineEdit(view, planQuoteToggle(view.state.doc.lineAt(cursor).text), cursor);
+    const range = view.state.selection.main;
+    const first = view.state.doc.lineAt(range.from);
+    const last = view.state.doc.lineAt(range.to);
+
+    if (first.number === last.number) {
+      applyLineEdit(view, planQuoteToggle(first.text), range.head);
+      report(view);
+      return;
+    }
+
+    const texts: string[] = [];
+    for (let number = first.number; number <= last.number; number += 1) {
+      texts.push(view.state.doc.line(number).text);
+    }
+
+    const changes: { from: number; to: number; insert: string }[] = [];
+    for (const { index, edit } of planQuoteToggleAll(texts)) {
+      const line = view.state.doc.line(first.number + index);
+      const from = line.from + edit.offset;
+      changes.push({ from, to: Math.min(from + edit.remove, line.to), insert: edit.insert });
+    }
+
+    if (changes.length > 0) view.dispatch({ changes });
     report(view);
   };
 
@@ -1090,6 +1125,27 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
     return true;
   });
 
+  /**
+   * Wraps a paste in the armed styles.
+   *
+   * CodeMirror handles a paste as a normal transaction, which a character input
+   * handler never sees, so the styles have to claim it here. Plain pastes are
+   * left to the editor.
+   */
+  const handleFormattedPaste = EditorView.domEventHandlers({
+    paste: (event, view) => {
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      const plan = planPastedText(text, inline);
+      if (!plan) return false;
+
+      event.preventDefault();
+      inline = plan.state;
+      const range = view.state.selection.main;
+      replaceRange(view, range.from, range.to, plan.insert, range.from + plan.caretOffset);
+      return true;
+    },
+  });
+
   const openLink = EditorView.domEventHandlers({
     mousedown: (event, view) => {
       if (!event.ctrlKey && !event.metaKey) return false;
@@ -1121,6 +1177,7 @@ export function createComposer(options: ComposerOptions): ComposerHandle {
         shortcuts,
         renumberDeleted,
         handleTypedCharacter,
+        handleFormattedPaste,
         trackStatus,
         shellPrefix,
         urlMarks,

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { ChatEntry } from "../types";
+import { ContextSummary } from "./ContextSummary";
 import { MessageBubble } from "./MessageBubble";
 import { ShellCard } from "./ShellCard";
 import { SubagentCard } from "./SubagentCard";
@@ -9,6 +10,8 @@ import { ToolCard } from "./ToolCard";
 /** Props for {@link TranscriptItem}. */
 export type TranscriptItemProps = {
   entry: ChatEntry;
+  /** Stops a local command that is still running. */
+  onStopShell?: (id: string) => void;
 };
 
 /**
@@ -23,18 +26,23 @@ export type TranscriptItemProps = {
  * @param props - The entry to render.
  * @returns The rendered row.
  */
-export const TranscriptItem = memo(function TranscriptItem({ entry }: TranscriptItemProps) {
+export const TranscriptItem = memo(function TranscriptItem({
+  entry,
+  onStopShell,
+}: TranscriptItemProps) {
   switch (entry.role) {
     case "tool":
       return (
         <ToolCard
           id={entry.id}
           name={entry.name}
+          description={entry.description}
           detail={entry.detail}
           input={entry.input}
           result={entry.result}
           status={entry.status}
           hooks={entry.hooks}
+          elapsedSeconds={entry.elapsedSeconds}
         />
       );
     case "subagent":
@@ -47,6 +55,8 @@ export const TranscriptItem = memo(function TranscriptItem({ entry }: Transcript
       );
     case "notice":
       return <div className="notice">{entry.text}</div>;
+    case "summary":
+      return <ContextSummary text={entry.text} />;
     case "thinking":
       return <ThinkingBlock id={entry.id} text={entry.text} />;
     case "shell":
@@ -58,6 +68,8 @@ export const TranscriptItem = memo(function TranscriptItem({ entry }: Transcript
           stderr={entry.stderr}
           code={entry.code}
           running={entry.running}
+          stopped={entry.stopped}
+          onStop={onStopShell ? () => onStopShell(entry.id) : undefined}
         />
       );
     case "error":

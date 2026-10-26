@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { elapsedLabel } from "../lib/elapsedLabel";
 import { capForCard } from "../lib/outputLimits";
 import type { ChatEntry } from "../types";
 import { useExpansion } from "./ExpansionContext";
@@ -66,6 +67,9 @@ export function SubagentCard({ entry, children }: SubagentCardProps) {
         <span className="subagent-name">Subagent</span>
         {entry.label.length > 0 && <span className="subagent-label">{entry.label}</span>}
         <span className="subagent-steps">{progressLabel(entry)}</span>
+        {entry.status === "running" && entry.elapsedSeconds !== undefined && (
+          <span className="subagent-elapsed">{elapsedLabel(entry.elapsedSeconds)}</span>
+        )}
         <span className="tool-disclosure">{open ? "hide" : "show"}</span>
       </button>
 

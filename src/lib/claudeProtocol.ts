@@ -1,8 +1,10 @@
 import type { ChatEntry, ChatState, TaskUsage } from "../types";
 import { readFastMode, readNames, readPlugins } from "./controlProtocol";
+import { describeToolDescription } from "./describeToolDescription";
 import { describeToolUse } from "./describeToolUse";
 import { asArray, asNumber, asRecord, asText, type Json, parseJsonLine, prettyJson } from "./json";
 import { nextId } from "./nextId";
+import { capForDisplay, MAX_DISPLAY_OUTPUT } from "./outputLimits";
 import {
   describeToolResult,
   type HookNote,
@@ -244,7 +246,16 @@ export function withShellCommand(state: ChatState, id: string, command: string):
     ...state,
     entries: [
       ...state.entries,
-      { id, role: "shell", command, stdout: "", stderr: "", code: null, running: true },
+      {
+        id,
+        role: "shell",
+        command,
+        stdout: "",
+        stderr: "",
+        code: null,
+        running: true,
+        stopped: false,
+      },
     ],
   };
 }
@@ -271,22 +282,136 @@ export function withShellResult(
 }
 
 /**
- * Replaces the transcript with messages replayed from a stored session.
+ * Adds what a running local command printed to one of its streams.
+ *
+ * Output is kept up to the display cap and dropped past it, so a command that
+ * prints without end cannot grow the transcript without bound while it runs.
  *
  * @param state - The current chat state.
- * @param messages - The exchanges to show, oldest first.
+ * @param id - The entry's id.
+ * @param stream - Which stream the output came from.
+ * @param chunk - What arrived for it.
  * @returns The updated chat state.
  */
-export function withHistory(
+export function withShellOutput(
   state: ChatState,
-  messages: Array<{ role: string; text: string }>,
+  id: string,
+  stream: "stdout" | "stderr",
+  chunk: string,
 ): ChatState {
-  const entries: ChatEntry[] = messages.map((message) => ({
-    id: nextId(message.role),
-    role: message.role === "assistant" ? "assistant" : "user",
-    text: message.text,
-  }));
-  return { ...state, entries, streaming: "", busy: false };
+  return {
+    ...state,
+    entries: state.entries.map((entry) => {
+      if (entry.id !== id || entry.role !== "shell") return entry;
+      if (entry[stream].length >= MAX_DISPLAY_OUTPUT) return entry;
+      return { ...entry, [stream]: capForDisplay(entry[stream] + chunk) };
+    }),
+  };
+}
+
+/**
+ * Records that a local command is over.
+ *
+ * @param state - The current chat state.
+ * @param id - The entry's id.
+ * @param code - What the command exited with.
+ * @param stopped - True when the reader stopped it.
+ * @returns The updated chat state.
+ */
+export function finishShell(
+  state: ChatState,
+  id: string,
+  code: number | null,
+  stopped: boolean,
+): ChatState {
+  return {
+    ...state,
+    entries: state.entries.map((entry) =>
+      entry.id === id && entry.role === "shell"
+        ? { ...entry, code, stopped, running: false }
+        : entry,
+    ),
+  };
+}
+
+/**
+ * Whether a message's content carries tool results.
+ *
+ * @param content - The message's content blocks.
+ * @returns True when at least one block is a tool result.
+ */
+function hasToolResults(content: unknown): boolean {
+  return asArray(content).some((block) => asText(asRecord(block)?.type) === "tool_result");
+}
+
+/**
+ * Rebuilds the transcript from frames replayed out of a stored session.
+ *
+ * The frames are the shapes the live stream uses, so tool calls, subagent cards
+ * and their contents are rebuilt by the same reducers rather than by a second
+ * interpretation of a transcript. The one thing the live path has no frame for
+ * is a message the reader typed — it echoes those locally — so those are the
+ * one kind this has to add itself.
+ *
+ * @param state - The current chat state.
+ * @param frames - The frames to replay, oldest first.
+ * @returns The updated chat state.
+ */
+export function withReplay(state: ChatState, frames: Json[]): ChatState {
+  let next: ChatState = {
+    ...state,
+    entries: [],
+    streaming: "",
+    busy: false,
+    compacting: false,
+    thinkingTokens: 0,
+    suggestion: null,
+  };
+
+  for (const frame of frames) {
+    const parent = asText(frame.parent_tool_use_id);
+    if (asText(frame.type) !== "user" || parent.length > 0) {
+      next = applyClaudeMessage(next, frame);
+      continue;
+    }
+
+    const content = asRecord(frame.message)?.content;
+    if (frame.isCompactSummary === true || hasToolResults(content)) {
+      next = applyClaudeMessage(next, frame);
+      continue;
+    }
+
+    const text = readTextBlocks(content);
+    if (text.trim().length === 0 || text.startsWith("<")) continue;
+    if (text.startsWith("[Request interrupted by user")) {
+      next = withNotice(next, "You interrupted the turn.");
+      continue;
+    }
+
+    next = {
+      ...next,
+      entries: [...next.entries, { id: nextId("user"), role: "user", text }],
+    };
+  }
+
+  return next;
+}
+
+/**
+ * Reads a compaction summary out of a user frame.
+ *
+ * The CLI writes the summary as a `user` message rather than as a frame of its
+ * own, and marks it so a transcript reader can tell it from something the
+ * reader typed. Without this branch the frame is dropped, because the user
+ * handler otherwise only fills in tool results.
+ *
+ * @param message - A decoded `user` frame.
+ * @returns The summary text, or null when the frame is an ordinary message.
+ */
+function readCompactSummary(message: Json): string | null {
+  if (message.isCompactSummary !== true) return null;
+  const text = readTextBlocks(asRecord(message.message)?.content);
+  return text.trim().length > 0 ? text : null;
 }
 
 /** What the caller knows about an event that the event itself does not say. */
@@ -331,6 +456,11 @@ export function applyClaudeMessage(
   message: Json,
   options: ApplyOptions = {},
 ): ChatState {
+  // A heartbeat is about a call already in the transcript, wherever that call
+  // sits, so it is applied before the subagent routing rather than being filed
+  // as a frame *from* an agent instead of about one of its tools.
+  if (asText(message.type) === "tool_progress") return applyToolProgress(state, message);
+
   // Subagent output rides the same stream as everything else and is told apart
   // only by the call it belongs to, so it is routed before anything else can
   // mistake it for the main conversation.
@@ -480,6 +610,63 @@ function withSubagentOutput(state: ChatState, parentId: string, message: Json): 
   return { ...counted, entries };
 }
 
+/**
+ * Records how long a call has been running, wherever its card sits.
+ *
+ * A heartbeat names the call's tool-use id and no card position, and the call
+ * may be inside a subagent's transcript, so the whole tree is searched.
+ *
+ * @param entries - The transcript entries to search.
+ * @param toolUseId - The id of the call being timed.
+ * @param seconds - How long the CLI says it has been running.
+ * @returns The updated entries, or the same array when no card matched.
+ */
+function withToolProgress(entries: ChatEntry[], toolUseId: string, seconds: number): ChatEntry[] {
+  let changed = false;
+
+  const next = entries.map((entry) => {
+    const isTool = entry.role === "tool" && entry.toolUseId === toolUseId;
+    const isAgent =
+      entry.role === "subagent" && (entry.toolUseId === toolUseId || entry.agentId === toolUseId);
+    if (isTool || isAgent) {
+      changed = true;
+      return { ...entry, elapsedSeconds: seconds };
+    }
+
+    if (entry.role === "subagent") {
+      const inner = withToolProgress(entry.entries, toolUseId, seconds);
+      if (inner !== entry.entries) {
+        changed = true;
+        return { ...entry, entries: inner };
+      }
+    }
+
+    return entry;
+  });
+
+  return changed ? next : entries;
+}
+
+/**
+ * Applies one `tool_progress` heartbeat.
+ *
+ * The frame carries the tool's name and how long it has been running — not what
+ * it has printed, which the protocol does not stream. It is dropped when either
+ * the id or the duration is missing, since there is then nothing to show.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `tool_progress` line.
+ * @returns The updated chat state.
+ */
+function applyToolProgress(state: ChatState, message: Json): ChatState {
+  const toolUseId = asText(message.tool_use_id);
+  const seconds = asNumber(message.elapsed_time_seconds);
+  if (toolUseId.length === 0 || seconds === null) return state;
+
+  const entries = withToolProgress(state.entries, toolUseId, seconds);
+  return entries === state.entries ? state : { ...state, entries };
+}
+
 /** Tools that start an agent rather than doing their own work. */
 const SUBAGENT_TOOLS = ["Task", "Agent"];
 
@@ -512,6 +699,7 @@ function toolEntry(tool: { id: string; name: string; input: unknown }): ChatEntr
     role: "tool",
     toolUseId: tool.id,
     name: tool.name,
+    description: describeToolDescription(tool.input),
     detail: describeToolUse(tool.name, tool.input),
     input: prettyJson(tool.input ?? {}),
     result: "",
@@ -601,7 +789,19 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
         if (agentId.length > 0) next[index] = { ...existing, agentId };
         continue;
       }
-      next[index] = { ...existing, result: text, status: isError ? "error" : "ok" };
+
+      // A transcript records a foreground agent's result as a note saying the
+      // report was delivered elsewhere; the report itself is on the structured
+      // field. Prefer it when it is there, so a replayed card reads like the
+      // live one did.
+      const structuredRecord = asRecord(structured);
+      const report = asText(asRecord(structuredRecord?.handbackReport)?.text);
+      const reported = asText(structuredRecord?.status);
+      next[index] = {
+        ...existing,
+        result: report.length > 0 ? report : text,
+        status: isError || reported === "failed" ? "error" : "ok",
+      };
       continue;
     }
 
@@ -610,6 +810,7 @@ function withToolResults(entries: ChatEntry[], message: Json): ChatEntry[] {
       role: "tool",
       toolUseId,
       name: "Tool result",
+      description: "",
       detail: "",
       input: "",
       result: text,
@@ -962,6 +1163,11 @@ function readUnknownCost(message: Json): boolean {
  * @returns The updated chat state.
  */
 function applyUserEvent(state: ChatState, message: Json): ChatState {
+  const summary = readCompactSummary(message);
+  if (summary !== null) {
+    return appendEntry(state, { id: nextId("summary"), role: "summary", text: summary });
+  }
+
   const entries = withToolResults(state.entries, message);
   return entries === state.entries ? state : { ...state, entries };
 }

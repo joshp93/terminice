@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ExpansionProvider } from "./ExpansionContext";
 import { ShellCard, type ShellCardProps } from "./ShellCard";
 
@@ -93,7 +93,7 @@ describe("ShellCard", () => {
 
     await user.click(summary());
 
-    const output = screen.getByRole("button", { name: "Expand ls output" });
+    const output = document.querySelector(".shell-output");
     expect(output).toHaveTextContent("line 6");
     expect(output).not.toHaveTextContent("…");
     expect(summary()).toHaveTextContent("hide");
@@ -107,7 +107,7 @@ describe("ShellCard", () => {
     await user.click(screen.getByRole("button", { name: "Expand ls output" }));
 
     expect(summary()).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("button", { name: "Expand ls output" })).toHaveTextContent("line 6");
+    expect(document.querySelector(".shell-output")).toHaveTextContent("line 6");
   });
 
   it("collapses again when the summary is clicked a second time", async () => {
@@ -123,10 +123,55 @@ describe("ShellCard", () => {
     );
   });
 
-  it("disables both controls when there is nothing hidden to reveal", () => {
+  it("opens a short output, so the links in it can be followed", async () => {
+    const user = userEvent.setup();
     render(<Shell command="ls" stdout={numberedLines(3)} stderr="" code={0} running={false} />);
-    expect(summary()).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Expand ls output" })).toBeDisabled();
+
+    expect(summary()).toBeEnabled();
+    await user.click(summary());
+
+    expect(summary()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("offers Stop while the command is running", async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    render(<Shell command="sleep 5" stdout="" stderr="" code={null} running onStop={onStop} />);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers no Stop once the command is over", () => {
+    render(<Shell command="ls" stdout="a" stderr="" code={0} running={false} />);
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("says that a command was stopped rather than finished", () => {
+    render(<Shell command="sleep 5" stdout="" stderr="" code={null} running={false} stopped />);
+    expect(summary()).toHaveTextContent("stopped");
+    expect(summary()).not.toHaveTextContent("exit");
+  });
+
+  it("turns a URL in the expanded output into a link", async () => {
+    const user = userEvent.setup();
+    render(
+      <Shell
+        command="aws sso login"
+        stdout="open https://example.com/device and sign in"
+        stderr=""
+        code={0}
+        running={false}
+      />,
+    );
+
+    await user.click(summary());
+
+    expect(screen.getByRole("link", { name: "https://example.com/device" })).toHaveAttribute(
+      "href",
+      "https://example.com/device",
+    );
   });
 
   it("renders no output preview when the command produced nothing", () => {

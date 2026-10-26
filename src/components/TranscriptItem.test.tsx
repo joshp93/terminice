@@ -55,6 +55,7 @@ describe("TranscriptItem", () => {
       role: "tool",
       toolUseId: "t1",
       name: "Bash",
+      description: "",
       detail: "ls",
       input: "",
       result: "",
@@ -94,6 +95,12 @@ describe("TranscriptItem", () => {
   it("renders a notice as a notice", () => {
     const container = renderEntry({ id: "n1", role: "notice", text: "heads up" });
     expect(container.querySelector(".notice")).toHaveTextContent("heads up");
+  });
+
+  it("renders a compaction summary as its own folded block", () => {
+    const container = renderEntry({ id: "s1", role: "summary", text: "what came before" });
+    expect(container.querySelector(".context-summary")).toHaveTextContent("Context summary");
+    expect(container.querySelector(".context-summary")).toHaveTextContent("what came before");
   });
 
   it("renders an error as an error banner", () => {

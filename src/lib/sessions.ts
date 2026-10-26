@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { Json } from "./json";
 
 /** A past session, as offered by the resume menu. */
 export type SessionSummary = {
@@ -12,11 +13,8 @@ export type SessionSummary = {
   live: boolean;
 };
 
-/** One exchange replayed from a stored transcript. */
-export type HistoryMessage = {
-  role: string;
-  text: string;
-};
+/** One frame replayed from a stored transcript, shaped like a live one. */
+export type ReplayFrame = Json;
 
 /**
  * Lists past sessions for a working directory.
@@ -35,20 +33,23 @@ export async function listSessions(cwd: string, limit: number): Promise<SessionS
 }
 
 /**
- * Reads what was said in a stored session.
+ * Reads a stored session as frames the chat can replay.
+ *
+ * The frames are the same shapes the live stream uses, so the transcript is
+ * rebuilt by the same reducers — including its tool and subagent cards.
  *
  * @param cwd - The directory the session ran in.
  * @param id - The session id.
- * @param limit - The most recent messages to return.
- * @returns The messages, oldest first.
+ * @param limit - The most recent prompts to include.
+ * @returns The frames, oldest first.
  */
-export async function readSessionHistory(
+export async function readSessionReplay(
   cwd: string,
   id: string,
   limit: number,
-): Promise<HistoryMessage[]> {
+): Promise<ReplayFrame[]> {
   try {
-    return await invoke<HistoryMessage[]>("read_session_history", { cwd, id, limit });
+    return await invoke<ReplayFrame[]>("read_session_replay", { cwd, id, limit });
   } catch {
     return [];
   }

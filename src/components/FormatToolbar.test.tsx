@@ -27,10 +27,30 @@ const toolbarProps = (overrides: Partial<FormatToolbarProps> = {}): FormatToolba
   onToggleCodeBlock: vi.fn(),
   previewing: false,
   onTogglePreview: vi.fn(),
+  fullscreen: false,
+  onToggleFullscreen: vi.fn(),
   ...overrides,
 });
 
 describe("FormatToolbar", () => {
+  it("offers a full screen toggle that says which way it will go", async () => {
+    const onToggleFullscreen = vi.fn();
+    render(<FormatToolbar {...toolbarProps({ onToggleFullscreen })} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Full screen" }));
+
+    expect(onToggleFullscreen).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the way out once the composer is full screen", () => {
+    render(<FormatToolbar {...toolbarProps({ fullscreen: true })} />);
+
+    expect(screen.getByRole("button", { name: "Exit full screen" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("keeps its own quiet treatment rather than the green fill", () => {
     render(<FormatToolbar {...toolbarProps()} />);
 

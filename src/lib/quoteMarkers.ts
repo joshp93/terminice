@@ -50,6 +50,32 @@ export function planQuoteToggle(line: string): LineEdit {
 }
 
 /**
+ * Plans applying a quote across a block of lines.
+ *
+ * The block is one decision rather than one per line, matching how a list is
+ * applied to a selection: when every line is already quoted the quote comes off
+ * all of them, and otherwise it goes on the lines that do not carry one. A line
+ * that is already quoted is left alone, so quoting a block does not turn a
+ * quoted line into a doubly quoted one.
+ *
+ * @param lines - The block of line texts, in document order.
+ * @returns One entry per line that has to change, naming the line by its index.
+ */
+export function planQuoteToggleAll(lines: readonly string[]): { index: number; edit: LineEdit }[] {
+  const removing = lines.every((line) => parseQuoteLine(line) !== null);
+
+  const planned: { index: number; edit: LineEdit }[] = [];
+  lines.forEach((line, index) => {
+    if (!removing && parseQuoteLine(line) !== null) return;
+
+    const edit = planQuoteToggle(line);
+    if (edit.remove === 0 && edit.insert.length === 0) return;
+    planned.push({ index, edit });
+  });
+  return planned;
+}
+
+/**
  * Plans Enter on a quoted line.
  *
  * The quote carries on to the next line, and so does anything inside it: the

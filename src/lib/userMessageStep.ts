@@ -9,28 +9,27 @@ export type UserMessagePlacement = {
 };
 
 /**
- * Chooses which of the user's messages the keyboard should land on next.
+ * Chooses which of a set of visible rows the keyboard should land on next.
  *
- * Once the walk has landed on something it steps to the message beside it, so
- * every message is reached by one press each — including the ones already on
- * screen, which the press before it is what brought there. What that needs is
- * where the walk was: `current` is the message the last press landed on, and the
- * caller forgets it as soon as the reader scrolls, which is what makes a press
- * after scrolling start from what is on screen instead.
+ * Once the walk has landed on something it steps to the row beside it, so every
+ * row is reached by one press each — including the ones already on screen,
+ * which the press before it is what brought there. What that needs is where the
+ * walk was: `current` is the row the last press landed on, and the caller
+ * forgets it as soon as the reader scrolls, which is what makes a press after
+ * scrolling start from what is on screen instead.
  *
  * Without that anchor the answer comes from the geometry. Going up lands on the
- * nearest message whose last line has gone past the top of the view; going down,
+ * nearest row whose last line has gone past the top of the view; going down,
  * the nearest whose first line is past the bottom. What is already on screen is
  * never the answer — and a transcript with nothing past the top is one the reader
- * is at the top of, so the message to go back to is the newest one, which is what
+ * is at the top of, so the row to go back to is the newest one, which is what
  * lets a walk start at all.
  *
- * @param input - Where the messages are, how tall the view is, which way to move,
- *   and which message the walk is standing on.
- * @returns The id of the message to land on, or null when there is nothing that
- *   way.
+ * @param input - Where the rows are, how tall the view is, which way to move, and
+ *   which row the walk is standing on.
+ * @returns The id of the row to land on, or null when there is nothing that way.
  */
-export function userMessageStep(input: {
+export function viewportStep(input: {
   placements: UserMessagePlacement[];
   viewportHeight: number;
   direction: -1 | 1;
@@ -57,4 +56,21 @@ export function userMessageStep(input: {
   }
 
   return null;
+}
+
+/**
+ * Chooses which of the user's messages the keyboard should land on next.
+ *
+ * @param input - Where the messages are, how tall the view is, which way to move,
+ *   and which message the walk is standing on.
+ * @returns The id of the message to land on, or null when there is nothing that
+ *   way.
+ */
+export function userMessageStep(input: {
+  placements: UserMessagePlacement[];
+  viewportHeight: number;
+  direction: -1 | 1;
+  current: string | null;
+}): string | null {
+  return viewportStep(input);
 }

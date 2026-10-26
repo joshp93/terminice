@@ -57,6 +57,16 @@ describe("SubagentCard", () => {
     expect(summary()).toHaveTextContent("starting…");
   });
 
+  it("shows how long a running agent has been going", () => {
+    render(<Harness value={entry({ elapsedSeconds: 65 })} />);
+    expect(summary()).toHaveTextContent("1m 05s");
+  });
+
+  it("stops showing the heartbeat once the agent is over", () => {
+    render(<Harness value={entry({ status: "ok", elapsedSeconds: 65 })} />);
+    expect(summary()).not.toHaveTextContent("1m 05s");
+  });
+
   /// An agent started in the background outlives the call that started it, so
   /// it is described as running in the background rather than as still starting
   /// minutes later.

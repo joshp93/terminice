@@ -105,6 +105,13 @@ describe("SettingsMenu", () => {
     expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("shows the version the build reports", async () => {
+    routeInvoke("app_version", () => "1.2.2");
+    render(<SettingsMenu {...menuProps()} />);
+
+    expect(await screen.findByText("terminice 1.2.2")).toBeInTheDocument();
+  });
+
   it("reports a theme change, leaving the Enter behaviour alone", async () => {
     const onChange = vi.fn();
     render(

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isPending } from "../lib/pendingMessages";
 import { compactLabel, turnLabel } from "../lib/turnStatus";
-import { type UserMessagePlacement, userMessageStep } from "../lib/userMessageStep";
+import { type UserMessagePlacement, userMessageStep, viewportStep } from "../lib/userMessageStep";
 import type { ChatState } from "../types";
 import { EmptyChat } from "./EmptyChat";
 import { type Expansion, ExpansionProvider } from "./ExpansionContext";
@@ -28,6 +28,12 @@ export type ChatPaneProps = {
    * below it, which is the moment the keyboard is handed back to the composer.
    */
   onReturnToComposer?: () => void;
+  /** True while the subagent walk is active, so the arrows move through agents. */
+  subagentNav?: boolean;
+  /** Called when Escape leaves the subagent walk. */
+  onExitSubagentNav?: () => void;
+  /** Stops a local command that is still running. */
+  onStopShell?: (id: string) => void;
 };
 
 /** How long a revealed entry stays lit. */
@@ -91,7 +97,14 @@ const FOLLOW_THRESHOLD_PX = 32;
  * @param props - The chat state, and the entry the tracker has asked to see.
  * @returns The rendered chat pane.
  */
-export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneProps) {
+export function ChatPane({
+  state,
+  reveal = null,
+  onReturnToComposer,
+  subagentNav = false,
+  onExitSubagentNav,
+  onStopShell,
+}: ChatPaneProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const frameRef = useRef<number | null>(null);
@@ -119,6 +132,8 @@ export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneP
    * Forgetting it is what re-anchors the walk to what is on screen.
    */
   const walkRef = useRef<string | null>(null);
+  /** The subagent the subagent walk is standing on, forgotten the same way. */
+  const subagentWalkRef = useRef<string | null>(null);
   /** Where the walk last left the scroll, so its own scroll is not read as the reader's. */
   const walkScrollRef = useRef<number | null>(null);
   /** Read by the reveal effect, which must not run again when it changes. */
@@ -161,7 +176,10 @@ export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneP
     // A scroll the walk made is not the reader going anywhere — the walk is
     // still standing on the message it landed on. Any other scroll is the reader
     // taking over, and the next press starts again from what is on screen.
-    if (scroller.scrollTop !== walkScrollRef.current) walkRef.current = null;
+    if (scroller.scrollTop !== walkScrollRef.current) {
+      walkRef.current = null;
+      subagentWalkRef.current = null;
+    }
 
     if (followingRef.current && scroller.scrollTop === settledRef.current) {
       if (distance > FOLLOW_THRESHOLD_PX) scrollToEnd();
@@ -306,6 +324,20 @@ export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneP
     });
   }, [state.entries]);
 
+  /** Where each subagent card sits relative to the visible transcript. */
+  const subagentPlacements = useCallback((): UserMessagePlacement[] => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return [];
+    const viewport = scroller.getBoundingClientRect();
+    return state.entries.flatMap((entry) => {
+      if (entry.role !== "subagent") return [];
+      const row = rowFor(scroller, entry.id);
+      if (!row) return [];
+      const rect = row.getBoundingClientRect();
+      return [{ id: entry.id, top: rect.top - viewport.top, bottom: rect.bottom - viewport.top }];
+    });
+  }, [state.entries]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!event.ctrlKey && !event.metaKey) return;
@@ -355,6 +387,54 @@ export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneP
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [jumpToEnd, onReturnToComposer, userPlacements, revealNow]);
+
+  /**
+   * Walks the arrows through the subagent cards while that mode is on.
+   *
+   * The walk itself is the same one the reader's messages use, over a different
+   * set of rows: one press moves one card, and the geometry decides where a
+   * walk that has not started yet lands. Escape leaves the mode, and the arrows
+   * are taken even when there is nothing that way, so the composer does not
+   * also move its caret while the transcript has the keyboard.
+   */
+  useEffect(() => {
+    if (!subagentNav) {
+      subagentWalkRef.current = null;
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        subagentWalkRef.current = null;
+        onExitSubagentNav?.();
+        return;
+      }
+
+      const direction = event.key === "ArrowUp" ? -1 : event.key === "ArrowDown" ? 1 : 0;
+      if (direction === 0 || event.ctrlKey || event.metaKey || event.altKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const scroller = scrollerRef.current;
+      if (!scroller) return;
+      const id = viewportStep({
+        placements: subagentPlacements(),
+        viewportHeight: scroller.clientHeight,
+        direction,
+        current: subagentWalkRef.current,
+      });
+      if (id === null) return;
+
+      subagentWalkRef.current = id;
+      revealNow(id, "top");
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [subagentNav, onExitSubagentNav, subagentPlacements, revealNow]);
 
   useEffect(() => {
     if (flash === null) return;
@@ -406,7 +486,7 @@ export function ChatPane({ state, reveal = null, onReturnToComposer }: ChatPaneP
                 className={flash?.id === entry.id ? "transcript-row flash" : "transcript-row"}
                 data-entry-id={entry.id}
               >
-                <TranscriptItem entry={entry} />
+                <TranscriptItem entry={entry} onStopShell={onStopShell} />
               </div>
             ))}
           {state.streaming.length > 0 && (

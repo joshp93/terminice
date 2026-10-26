@@ -19,6 +19,7 @@ function Harness(props: Omit<ToolCardProps, "id">) {
 
 const base: Omit<ToolCardProps, "id"> = {
   name: "Bash",
+  description: "",
   detail: "ls -la",
   input: '{"command":"ls -la"}',
   result: "",
@@ -36,7 +37,11 @@ const hook = (overrides: Partial<HookNote>): HookNote => ({
   ...overrides,
 });
 
-const summary = () => screen.getByRole("button", { name: /^Bash/ });
+const summary = (): HTMLElement => {
+  const button = document.querySelector(".tool-summary");
+  if (!(button instanceof HTMLElement)) throw new Error("the card has no summary");
+  return button;
+};
 
 const numberedLines = (count: number) =>
   Array.from({ length: count }, (_, index) => `line ${index + 1}`).join("\n");
@@ -48,6 +53,31 @@ describe("ToolCard", () => {
     expect(summary()).toHaveTextContent("ls -la");
   });
 
+  it("uses a description as the title, with the input underneath it", () => {
+    render(
+      <Harness {...base} name="PowerShell" description="Sign in to AWS" detail="aws sso login" />,
+    );
+
+    expect(summary()).toHaveTextContent("Sign in to AWS");
+    expect(summary()).toHaveTextContent("aws sso login");
+    expect(summary()).toHaveTextContent("PowerShell");
+  });
+
+  it("puts the tool's own name before the title, as it always has", () => {
+    render(
+      <Harness {...base} name="PowerShell" description="Sign in to AWS" detail="aws sso login" />,
+    );
+
+    expect(summary().textContent?.startsWith("PowerShell")).toBe(true);
+  });
+
+  it("shows the input as the title when there is no description", () => {
+    render(<Harness {...base} name="PowerShell" detail="Get-ChildItem" />);
+
+    expect(summary()).toHaveTextContent("Get-ChildItem");
+    expect(summary()).toHaveTextContent("PowerShell");
+  });
+
   it("omits the detail when there is none", () => {
     render(<Harness {...base} detail="" />);
     expect(summary()).toHaveTextContent("Bash");
@@ -57,6 +87,16 @@ describe("ToolCard", () => {
   it("marks a running call on the status dot", () => {
     const { container } = render(<Harness {...base} status="running" />);
     expect(container.querySelector(".tool-status.running")).not.toBeNull();
+  });
+
+  it("shows how long a running call has been going", () => {
+    render(<Harness {...base} status="running" elapsedSeconds={65} />);
+    expect(summary()).toHaveTextContent("1m 05s");
+  });
+
+  it("stops showing the heartbeat once the call is over", () => {
+    render(<Harness {...base} status="ok" elapsedSeconds={65} />);
+    expect(summary()).not.toHaveTextContent("1m 05s");
   });
 
   it("marks a successful call on the status dot", () => {
@@ -241,7 +281,7 @@ describe("a tool that changed a file", () => {
     result: "@@ -1,3 +1,3 @@\n kept\n-gone\n+arrived",
   };
 
-  const editSummary = () => screen.getByRole("button", { name: /^Edit/ });
+  const editSummary = summary;
 
   it("draws the patch a line at a time in the preview", () => {
     const { container } = render(<Harness {...edit} />);

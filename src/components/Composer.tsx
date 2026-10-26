@@ -72,6 +72,9 @@ export type ComposerProps = {
   focusSignal: number;
   /** The microphone, the speech engine and the model behind hold-to-talk. */
   voice: Voice;
+  /** Whether the composer is filling the window. */
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
 };
 
 const INITIAL_STATUS: ComposerStatus = {
@@ -151,6 +154,8 @@ export function Composer({
   placeholder,
   focusSignal,
   voice,
+  fullscreen,
+  onToggleFullscreen,
 }: ComposerProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
@@ -874,6 +879,8 @@ export function Composer({
         onToggleCodeBlock={toggleCodeBlock}
         previewing={previewing}
         onTogglePreview={previewing ? hidePreview : showPreview}
+        fullscreen={fullscreen}
+        onToggleFullscreen={onToggleFullscreen}
       />
       <div className="composer-row" ref={rowRef}>
         {menuOpen && (

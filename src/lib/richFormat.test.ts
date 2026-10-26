@@ -6,6 +6,7 @@ import {
   FORMATS,
   formatMarkers,
   formatShortcutLabel,
+  planPastedText,
   planTypedCharacter,
   quoteShortcutLabel,
   toggleArmedFormat,
@@ -135,6 +136,41 @@ describe("planTypedCharacter", () => {
     const armed = armFormat("italic", createInlineState());
     expect(planTypedCharacter("\t", armed)).toBeNull();
     expect(planTypedCharacter("\n", armed)).toBeNull();
+  });
+});
+
+describe("planPastedText", () => {
+  it("pastes plainly when nothing is armed", () => {
+    expect(planPastedText("words", createInlineState())).toBeNull();
+  });
+
+  it("wraps a pasted word in both markers and clears the arming", () => {
+    const armed = armFormat("bold", createInlineState());
+    const plan = planPastedText("hello", armed);
+
+    expect(plan?.insert).toBe("**hello**");
+    expect(plan?.caretOffset).toBe(9);
+    expect(plan?.state.armed.size).toBe(0);
+  });
+
+  it("leaves whitespace at the edge outside the markers", () => {
+    const armed = armFormat("italic", createInlineState());
+    expect(planPastedText("  hello  ", armed)?.insert).toBe("  *hello*  ");
+  });
+
+  it("wraps each non-empty line on its own", () => {
+    const armed = armFormat("bold", createInlineState());
+    expect(planPastedText("one\n\ntwo", armed)?.insert).toBe("**one**\n\n**two**");
+  });
+
+  it("normalises Windows line endings", () => {
+    const armed = armFormat("bold", createInlineState());
+    expect(planPastedText("one\r\ntwo", armed)?.insert).toBe("**one**\n**two**");
+  });
+
+  it("pastes whitespace only plainly rather than writing empty markers", () => {
+    const armed = armFormat("bold", createInlineState());
+    expect(planPastedText("   \n ", armed)).toBeNull();
   });
 });
 

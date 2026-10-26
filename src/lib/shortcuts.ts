@@ -95,6 +95,11 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
           description:
             "Steps through the messages you sent; past the last one it goes to the end of the chat and back to the composer",
         },
+        {
+          keys: "Alt+S",
+          description:
+            "Turns on subagent navigation; ↑ and ↓ step through the subagents and Esc leaves it",
+        },
       ],
     },
     {
@@ -112,6 +117,10 @@ export function shortcutGroups(): readonly ShortcutGroup[] {
       shortcuts: [
         { keys: "F1", description: "Opens the settings, with the keyboard already in them" },
         { keys: "F6", description: "Puts the keyboard in the composer, from anywhere" },
+        {
+          keys: `F11 / ${mod("Shift+F")}`,
+          description: "Gives the composer the whole window, hiding the chat; sending puts it back",
+        },
         { keys: "Esc", description: "Leaves the Markdown preview, while it is open" },
       ],
     },
