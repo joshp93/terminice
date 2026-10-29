@@ -136,6 +136,16 @@ describe("mounting", () => {
     expect(call?.[1]).toMatchObject({ cwd: CWD, resume: null });
   });
 
+  /// The lookup is the reader's to turn off, so the backend is told per session
+  /// rather than deciding for itself.
+  it("tells the backend whether it may look for node", async () => {
+    const view = renderHook(() => useClaudeChat(CWD, false));
+    await waitFor(() => expect(view.result.current.status).toBe("running"));
+
+    const call = invoke.mock.calls.find(([command]) => command === "start_claude");
+    expect(call?.[1]).toMatchObject({ detectNode: false });
+  });
+
   it("handshakes without waiting to be asked", async () => {
     await mount();
     expect(sentRequests("initialize")).toHaveLength(1);

@@ -107,13 +107,16 @@ const EMPTY_STATE = createChatState();
  * travels over the control channel carried by the same stdin and stdout.
  *
  * @param cwd - Directory sessions run in; the hook stays inert until it is set.
+ * @param nodeVersionManager - Whether a session may ask fnm or nvm where node
+ *   is, when it was not inherited on `PATH`.
  * @returns The active session, and the operations the UI needs.
  */
-export function useClaudeChat(cwd: string | null): ClaudeSession {
+export function useClaudeChat(cwd: string | null, nodeVersionManager = true): ClaudeSession {
   const storeRef = useRef(new Map<string, SessionRecord>());
   const activeRef = useRef<string | null>(null);
   const repliesRef = useRef(new Map<string, (envelope: ControlEnvelope) => void>());
   const cwdRef = useRef<string | null>(null);
+  const nodeVersionManagerRef = useRef(nodeVersionManager);
   const transcriptsRef = useRef<SessionSummary[]>([]);
   const handlerRef = useRef<(backendId: string, event: ClaudeEvent) => void>(() => undefined);
   /**
@@ -125,6 +128,13 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
    */
   const shellContextRef = useRef<string[]>([]);
   const [, bump] = useReducer((count: number) => count + 1, 0);
+
+  // The setting is read through a ref rather than a dependency: it changes what
+  // the *next* process is started with, and rebuilding the spawn callback would
+  // restart the session that is already running.
+  useEffect(() => {
+    nodeVersionManagerRef.current = nodeVersionManager;
+  }, [nodeVersionManager]);
 
   /** Loads the transcript list for this directory into the resume menu. */
   const loadTranscripts = useCallback(() => {
@@ -428,6 +438,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         cwd: dir,
         resume: options.resume ?? null,
         permissionMode: null,
+        detectNode: nodeVersionManagerRef.current,
       })
         .then((id) => {
           backendId = id;
@@ -661,12 +672,14 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         ];
       };
 
-      void runShellCommand(id, command, liveCwd, channel).catch((error: unknown) => {
-        logMessage("error", `local command ${id} could not run: ${String(error)}`);
-        patchState(active, (state) =>
-          withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
-        );
-      });
+      void runShellCommand(id, command, liveCwd, channel, nodeVersionManagerRef.current).catch(
+        (error: unknown) => {
+          logMessage("error", `local command ${id} could not run: ${String(error)}`);
+          patchState(active, (state) =>
+            withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
+          );
+        },
+      );
     },
     [patchState],
   );

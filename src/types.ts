@@ -280,6 +280,16 @@ export type Settings = {
    */
   diffSideBySide: boolean;
   /**
+   * Whether to ask a node version manager where node is, when it is not on
+   * `PATH`.
+   *
+   * A Start-menu launch inherits Explorer's environment rather than a shell
+   * profile, so node can be missing even though fnm or nvm is installed. This
+   * does nothing on a machine where node is already on `PATH`, and can be
+   * turned off for one that would rather it never looked.
+   */
+  nodeVersionManager: boolean;
+  /**
    * What a million tokens sent to a model the CLI cannot price costs, in US
    * dollars, or zero when that is not known.
    *
@@ -313,6 +323,7 @@ export function createDefaultSettings(): Settings {
     appFontFamily: BUILT_IN_FONT_VALUE,
     voiceEnabled: false,
     diffSideBySide: true,
+    nodeVersionManager: true,
     inputCostPerMillion: 0,
     outputCostPerMillion: 0,
     cacheReadCostPerMillion: 0,

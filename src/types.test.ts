@@ -64,6 +64,7 @@ describe("createDefaultSettings", () => {
       appFontFamily: BUILT_IN_FONT_VALUE,
       voiceEnabled: false,
       diffSideBySide: true,
+      nodeVersionManager: true,
       inputCostPerMillion: 0,
       outputCostPerMillion: 0,
       cacheReadCostPerMillion: 0,

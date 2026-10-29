@@ -6,6 +6,7 @@ mod history;
 mod home;
 mod logging;
 mod mic;
+mod node;
 mod path;
 mod resample;
 mod sessions;
@@ -24,6 +25,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(claude::ClaudeSessions::default())
+        .manage(node::NodeEnvironment::default())
         .manage(shell::ShellCommands::default())
         .manage(voice::Voice::default())
         .manage(window_colour::WindowColours::default())

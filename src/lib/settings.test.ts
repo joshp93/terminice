@@ -41,6 +41,7 @@ describe("saveSettings", () => {
       appFontFamily: "Georgia",
       voiceEnabled: true,
       diffSideBySide: false,
+      nodeVersionManager: true,
       inputCostPerMillion: 0.3,
       outputCostPerMillion: 1.2,
       cacheReadCostPerMillion: 0.03,

@@ -201,6 +201,7 @@ writing it back over yours.
 | `enterBehaviour` | `send` \| `newline` | `send` | What Enter does in the composer |
 | `theme` | `dark` \| `light` | `dark` | Colour scheme |
 | `voiceEnabled` | `true` \| `false` | `false` | Whether holding the space bar dictates |
+| `nodeVersionManager` | `true` \| `false` | `true` | Ask fnm or nvm where node is, when it is not on `PATH` |
 | `inputCostPerMillion` | number | `0` | Dollars per million input tokens, for a model the CLI cannot price |
 | `outputCostPerMillion` | number | `0` | Dollars per million output tokens, same model |
 | `cacheReadCostPerMillion` | number | `0` | Dollars per million tokens read from the prompt cache |
@@ -228,6 +229,27 @@ accepted as well. The file is appended to and rotated to `terminice.1.log` once 
 Every error in the transcript has an **Open logs** button, and **Settings → View logs**
 opens the same folder. The window's own lines travel to the same file as the backend's, so
 one log covers a whole session.
+
+### Node and version managers
+
+A Start-menu launch inherits Explorer's environment, which has never run your shell
+profile — so `node` can be missing even though a version manager is installed. When node is
+not already on `PATH`, terminice asks the manager:
+
+- **fnm** — `fnm env --json`; its multishell goes at the front of `PATH`.
+- **nvm for Windows** — the symlink its `settings.txt` names, which is the directory
+  `nvm use` repoints. A normal install needs nothing here: that symlink is already on the
+  system `PATH`, so a Start-menu launch sees whichever version is selected.
+- **nvm (macOS/Linux)** — `$NVM_DIR/alias/default` and the matching directory under
+  `versions/node`. The original nvm changes only the shell's own `PATH` and uses no
+  symlink, so another process has to rebuild the path from what is on disk.
+
+What is found goes to Claude's tools and to `!` commands alike. A launch from a terminal
+already has node, and is left exactly as it was. A per-project `.nvmrc`/`.node-version` is
+not applied — select the version with your manager and it applies to the whole app.
+
+The lookup can be turned off under **Settings → Node lookup**; a machine that would rather
+the app never went looking keeps exactly the environment it was launched with.
 
 #### What a session cost
 

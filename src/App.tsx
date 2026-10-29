@@ -95,7 +95,7 @@ export function App() {
     settings.appFontFamily,
   ]);
 
-  const chat = useClaudeChat(cwd);
+  const chat = useClaudeChat(cwd, settings.nodeVersionManager);
   const voice = useVoice(settings.voiceEnabled);
   const [reveal, setReveal] = useState<RevealTarget | null>(null);
   /**

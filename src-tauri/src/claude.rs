@@ -50,10 +50,12 @@ pub struct ClaudeSessions(Mutex<HashMap<String, Session>>);
 #[tauri::command]
 pub fn start_claude(
     state: tauri::State<'_, ClaudeSessions>,
+    node: tauri::State<'_, crate::node::NodeEnvironment>,
     on_event: Channel<ClaudeEvent>,
     cwd: Option<String>,
     resume: Option<String>,
     permission_mode: Option<String>,
+    detect_node: bool,
 ) -> Result<String, String> {
     let program = claude_binary()?;
     log::info!(
@@ -74,6 +76,15 @@ pub fn start_claude(
         command.current_dir(dir);
     }
     hide_console(&mut command);
+    // A session started from the Start menu inherits Explorer's environment, so
+    // whatever a version manager would have put on `PATH` is added here — when
+    // the reader has left that lookup on.
+    let environment = node.vars(detect_node);
+    command.envs(
+        environment
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

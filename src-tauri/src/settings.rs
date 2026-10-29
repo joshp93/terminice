@@ -130,6 +130,10 @@ pub struct Settings {
     pub voice_enabled: bool,
     /// Whether a tool's patch is drawn as two columns, where there is room.
     pub diff_side_by_side: bool,
+    /// Whether to ask a node version manager where node is, when it is not on
+    /// `PATH`. A launch from the Start menu inherits Explorer's environment,
+    /// which has never run a shell profile.
+    pub node_version_manager: bool,
     /// What a million tokens sent to a model the CLI cannot price costs, in US
     /// dollars, or zero when that is not known.
     pub input_cost_per_million: f64,
@@ -152,6 +156,7 @@ impl Default for Settings {
             app_font_family: String::new(),
             voice_enabled: false,
             diff_side_by_side: true,
+            node_version_manager: true,
             input_cost_per_million: 0.0,
             output_cost_per_million: 0.0,
             cache_read_cost_per_million: 0.0,
@@ -291,6 +296,7 @@ mod tests {
             app_font_family: "Georgia".to_string(),
             voice_enabled: true,
             diff_side_by_side: false,
+            node_version_manager: false,
             input_cost_per_million: 0.3,
             output_cost_per_million: 1.2,
             cache_read_cost_per_million: 0.03,
@@ -308,6 +314,7 @@ mod tests {
         assert!(json.contains("\"appFontFamily\":\"Georgia\""), "{json}");
         assert!(json.contains("\"voiceEnabled\":true"), "{json}");
         assert!(json.contains("\"diffSideBySide\":false"), "{json}");
+        assert!(json.contains("\"nodeVersionManager\":false"), "{json}");
         assert!(json.contains("\"inputCostPerMillion\":0.3"), "{json}");
         assert!(json.contains("\"outputCostPerMillion\":1.2"), "{json}");
 
@@ -319,6 +326,7 @@ mod tests {
         assert_eq!(parsed.app_font_family, "Georgia");
         assert!(parsed.voice_enabled);
         assert!(!parsed.diff_side_by_side);
+        assert!(!parsed.node_version_manager);
         assert_eq!(parsed.output_cost_per_million, 1.2);
     }
 
@@ -338,6 +346,15 @@ mod tests {
     fn a_settings_file_written_before_the_diff_layout_has_it_on() {
         let parsed: Settings = serde_json::from_str(r#"{"theme":"light"}"#).expect("parses");
         assert!(parsed.diff_side_by_side);
+    }
+
+    /// The node lookup is for a launch that inherited no shell profile; a file
+    /// written before it existed comes back with it on, which is what fixes
+    /// that launch.
+    #[test]
+    fn a_settings_file_written_before_the_node_lookup_has_it_on() {
+        let parsed: Settings = serde_json::from_str(r#"{"theme":"light"}"#).expect("parses");
+        assert!(parsed.node_version_manager);
     }
 
     /// A file written before the app font existed still loads, with that one

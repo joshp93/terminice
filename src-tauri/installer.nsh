@@ -80,6 +80,24 @@
   !insertmacro TERMINICE_EDIT_PATH "-Remove"
 !macroend
 
+; The data the "delete app data" checkbox would otherwise miss.
+;
+; Tauri's checkbox removes $APPDATA\${BUNDLEID} and $LOCALAPPDATA\${BUNDLEID}
+; and nothing else. This application keeps its settings and the speech model
+; under ~/.config, and its logs and session history inside the install folder —
+; and the uninstaller's own RMDir of that folder is not recursive, so a folder
+; still holding them is left behind. Without this, a ticked box would leave all
+; of it on disk. The checkbox state is a global variable the uninstaller reads,
+; and this macro body is expanded after it has been set.
+!macro NSIS_HOOK_POSTUNINSTALL
+  ${If} $DeleteAppDataCheckboxState = 1
+    RMDir /r "$INSTDIR\sessions"
+    RMDir /r "$INSTDIR\logs"
+    Delete "$PROFILE\.config\terminice-settings.json"
+    RMDir /r "$PROFILE\.config\terminice"
+  ${EndIf}
+!macroend
+
 ; Finish page defaults.
 ;
 ; Tauri renders "Create a desktop shortcut" and "Run terminice" as the finish

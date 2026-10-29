@@ -25,6 +25,19 @@ describe("runShellCommand", () => {
       command: "ls -la",
       cwd: "D:\\apps",
       onEvent: events,
+      detectNode: true,
+    });
+  });
+
+  it("passes the node lookup setting through", async () => {
+    await runShellCommand("shell-1", "pwd", null, channel(), false);
+
+    expect(invoke).toHaveBeenCalledWith("run_shell_command", {
+      id: "shell-1",
+      command: "pwd",
+      cwd: null,
+      onEvent: expect.any(Channel),
+      detectNode: false,
     });
   });
 
@@ -36,6 +49,7 @@ describe("runShellCommand", () => {
       command: "pwd",
       cwd: null,
       onEvent: expect.any(Channel),
+      detectNode: true,
     });
   });
 

@@ -13,6 +13,8 @@ export type ShellEvent =
  * @param command - The command, without the leading `!`.
  * @param cwd - The directory to run it in.
  * @param onEvent - The channel the command's output and exit arrive on.
+ * @param detectNode - Whether the command may be given a version manager's
+ *   environment, so node is found when the window was started without a shell.
  * @throws When the command cannot be started.
  */
 export async function runShellCommand(
@@ -20,8 +22,9 @@ export async function runShellCommand(
   command: string,
   cwd: string | null,
   onEvent: Channel<ShellEvent>,
+  detectNode = true,
 ): Promise<void> {
-  return invoke("run_shell_command", { id, command, cwd, onEvent });
+  return invoke("run_shell_command", { id, command, cwd, onEvent, detectNode });
 }
 
 /**

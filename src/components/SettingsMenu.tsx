@@ -200,6 +200,20 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
             onEnabledChange={(voiceEnabled) => onChange({ ...settings, voiceEnabled })}
             voice={voice}
           />
+          <SegmentedChoice
+            label="Node lookup"
+            value={settings.nodeVersionManager ? "on" : "off"}
+            options={[
+              { value: "off", label: "PATH only" },
+              { value: "on", label: "Ask fnm/nvm" },
+            ]}
+            onSelect={(choice) => onChange({ ...settings, nodeVersionManager: choice === "on" })}
+          />
+          <p className="settings-note">
+            Started from the Start menu, the app inherits Windows' environment rather than your
+            shell profile, so node can be missing even when fnm or nvm is installed. This asks that
+            manager where node is, and does nothing when node is already on PATH.
+          </p>
           <button type="button" className="settings-open" onClick={showShortcuts}>
             Keyboard shortcuts
           </button>

@@ -256,6 +256,8 @@ fn capture(
 /// * `command` - The command, without its leading `!`.
 /// * `cwd` - The directory to run it in, or none for this process's own.
 /// * `stop` - Set when the reader has asked for the command to stop.
+/// * `environment` - Variables a version manager supplied, so the command can
+///   find node when the window was started without a shell.
 /// * `emit` - Where each event goes.
 ///
 /// # Returns
@@ -269,6 +271,7 @@ fn run(
     command: String,
     cwd: Option<String>,
     stop: Arc<AtomicBool>,
+    environment: &[(String, String)],
     emit: Emit,
 ) -> Result<Option<i32>, String> {
     let program = shell_program().ok_or_else(|| {
@@ -304,6 +307,11 @@ fn run(
         process.current_dir(directory);
     }
     hide_console(&mut process);
+    process.envs(
+        environment
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str())),
+    );
 
     let mut child = process.spawn().map_err(|error| {
         log::error!("could not run the command with {program}: {error}");
@@ -410,9 +418,11 @@ pub fn stop_shell_command(state: State<'_, ShellCommands>, id: String) -> bool {
 #[tauri::command]
 pub async fn run_shell_command(
     state: State<'_, ShellCommands>,
+    node: State<'_, crate::node::NodeEnvironment>,
     id: String,
     command: String,
     cwd: Option<String>,
+    detect_node: bool,
     on_event: Channel<ShellEvent>,
 ) -> Result<(), String> {
     let commands = Arc::clone(&state.0);
@@ -421,13 +431,16 @@ pub async fn run_shell_command(
         running.insert(id.clone(), Arc::clone(&stop));
     }
 
+    let environment = node.vars(detect_node);
+
     let emit: Emit = Arc::new(move |event| {
         let _ = on_event.send(event);
     });
 
-    let result = tauri::async_runtime::spawn_blocking(move || run(command, cwd, stop, emit))
-        .await
-        .map_err(|error| error.to_string())?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || run(command, cwd, stop, &environment, emit))
+            .await
+            .map_err(|error| error.to_string())?;
 
     if let Ok(mut running) = commands.lock() {
         running.remove(&id);
@@ -477,7 +490,7 @@ fn execute(command: String, cwd: Option<String>) -> Result<ShellOutput, String> 
         ShellEvent::Exit { .. } => {}
     });
 
-    let code = run(command, cwd, Arc::new(AtomicBool::new(false)), emit)?;
+    let code = run(command, cwd, Arc::new(AtomicBool::new(false)), &[], emit)?;
 
     let text = |held: &Arc<Mutex<Vec<u8>>>| {
         held.lock()
@@ -522,6 +535,7 @@ mod tests {
             command.to_string(),
             None,
             Arc::new(AtomicBool::new(false)),
+            &[],
             emit,
         )
         .expect("the command runs");
@@ -708,7 +722,7 @@ mod tests {
         });
 
         let started = Instant::now();
-        let code = super::run("sleep 30".to_string(), None, stop, Arc::new(|_| {}))
+        let code = super::run("sleep 30".to_string(), None, stop, &[], Arc::new(|_| {}))
             .expect("the command stops");
 
         assert_eq!(code, None);

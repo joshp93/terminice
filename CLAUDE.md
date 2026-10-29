@@ -382,6 +382,28 @@ it with the user rather than quietly changing it.
   the log names the program that was chosen, which is the first thing to read there.
   A command's `!` shell is still not Claude's shell: it is a fresh `bash -c`, not the CLI's
   own long-lived one.
+- **A Start-menu launch inherits Explorer's environment, and a profile never ran.** That is
+  the whole reason node can be missing in the installed app while a terminal finds it: the
+  shell profile is what puts a version manager's node on `PATH`. `node.rs` fills the gap
+  only when `node` is not already on `PATH` — from a terminal launch nothing changes — and
+  it asks the managers rather than running a profile: `fnm env --json` for fnm (its
+  multishell is prepended to `PATH`), the symlink `nvm use` repoints for nvm-windows, and
+  `alias/default` plus `versions/node` for the original nvm. The variables are applied with
+  `Command::envs` at the two spawn sites, `claude.rs` and `shell.rs`, so Claude's own tools
+  and `!` commands both see them. **It is the reader's setting, not a default behaviour**:
+  `nodeVersionManager` is passed per spawn from the frontend (through a ref, so changing it
+  does not rebuild the spawn callback and restart the session), and `NodeEnvironment::vars`
+  returns nothing when it is off. The lookup itself runs at most once, the first time a
+  session asks for it, and the answer is cached — a launch that has node on `PATH` never
+  runs a manager at all. **nvm for Windows needs no help in a normal install**:
+  it keeps one symlink, its target is what `nvm use` changes, and the system `PATH` points
+  at it — a Start-menu launch already sees the current version. The fallback is only for an
+  install whose symlink the process did not inherit. The original nvm is the opposite: it
+  rewrites the shell's `PATH` in `nvm.sh` and uses no symlink, so another process has to
+  read `alias/default` and build the path itself, which is what `nvm_posix_environment`
+  does. None of the three follows a per-project `.nvmrc` or `.node-version` — that needs
+  `nvm use`/`fnm use` for the directory, and the Bash tool's own shell never loads the
+  profile that would do it.
 - **Local command output is delivered with the next message, not sent immediately.** A
   user message is what starts a turn, so sending `!ls` output on its own would make Claude
   reply to a command the user ran for their own benefit. `shellContextRef` holds it until
