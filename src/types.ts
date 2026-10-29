@@ -191,6 +191,14 @@ export type ChatState = {
   permissionMode: string;
   /** True while the CLI is summarising the conversation. */
   compacting: boolean;
+  /**
+   * True when a compaction boundary has arrived and its summary has not.
+   *
+   * The live stream sends the summary as an ordinary user line with none of the
+   * flags the transcript carries, so the boundary is what says the next one is
+   * a summary rather than something the reader typed.
+   */
+  summaryPending: boolean;
   /** Reasoning tokens spent so far on the running turn. */
   thinkingTokens: number;
   /** The CLI's predicted next prompt, when it offers one. */
@@ -224,6 +232,7 @@ export function createChatState(): ChatState {
     skills: [],
     permissionMode: "default",
     compacting: false,
+    summaryPending: false,
     thinkingTokens: 0,
     suggestion: null,
     fastMode: "off",

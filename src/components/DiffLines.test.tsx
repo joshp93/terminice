@@ -46,4 +46,23 @@ describe("DiffLines", () => {
 
     expect(container.textContent).not.toContain("…");
   });
+
+  /// A line that differs by one character marks that character, not the line:
+  /// the line's own tint already says which side of the edit it is on.
+  it("marks only the characters that changed", () => {
+    const { container } = render(
+      <DiffLines lines={["@@ -1 +1 @@", "-const a = 1;", "+const a = 2;"]} />,
+    );
+
+    const marks = [...container.querySelectorAll("mark.diff-mark")].map((mark) => mark.textContent);
+    expect(marks).toEqual(["1", "2"]);
+  });
+
+  it("draws a patch in the language its file names", () => {
+    const { container } = render(
+      <DiffLines lines={["+++ b/src/app.ts", "@@ -1 +1 @@", "-const a = 1;", "+const a = 2;"]} />,
+    );
+
+    expect(container.querySelector(".diff-line.addition .hljs-keyword")).toHaveTextContent("const");
+  });
 });

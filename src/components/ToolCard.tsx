@@ -1,6 +1,7 @@
 import { looksLikePatch } from "../lib/diffLines";
 import { elapsedLabel } from "../lib/elapsedLabel";
 import { capForCard, clipLine } from "../lib/outputLimits";
+import { toolFilePath } from "../lib/toolFilePath";
 import type { HookNote } from "../lib/toolResults";
 import { DiffView } from "./DiffView";
 import { useExpansion } from "./ExpansionContext";
@@ -78,6 +79,7 @@ export function ToolCard({
   const preview = previewOf(result, PREVIEW_LINES);
   const shownResult = open ? capForCard(result) : "";
   const patch = looksLikePatch(result);
+  const filePath = patch ? toolFilePath(input) : null;
   const notable = hooks.filter(
     (hook) => (hook.exitCode !== null && hook.exitCode !== 0) || hook.output.trim().length > 0,
   );
@@ -134,7 +136,7 @@ export function ToolCard({
           onClick={() => toggle(id)}
         >
           {patch ? (
-            <DiffView lines={preview.lines} hidden={preview.hidden} />
+            <DiffView lines={preview.lines} hidden={preview.hidden} filePath={filePath} />
           ) : (
             <pre>
               {preview.lines.join("\n")}
@@ -156,7 +158,7 @@ export function ToolCard({
             <div className="tool-section">
               <span className="tool-section-title">Output</span>
               {patch ? (
-                <DiffView lines={shownResult.split("\n")} />
+                <DiffView lines={shownResult.split("\n")} filePath={filePath} />
               ) : (
                 <pre className={status === "error" ? "failed" : ""}>{shownResult}</pre>
               )}

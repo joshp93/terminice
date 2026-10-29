@@ -34,6 +34,18 @@ describe("MessageLink", () => {
     await waitFor(() => expect(opened).toEqual(["https://example.com"]));
   });
 
+  /// The opener is handed exactly what the message wrote: a query string, its
+  /// ampersands and a fragment all belong to the address.
+  it("passes a query string and a fragment through whole", async () => {
+    const opened = recordOpens();
+    const address = "https://example.com/a?b=1&c=2#frag";
+    render(<MessageLink href={address}>search</MessageLink>);
+
+    await userEvent.click(screen.getByRole("link", { name: "search" }));
+
+    await waitFor(() => expect(opened).toEqual([address]));
+  });
+
   it("refuses the click, so the webview never navigates away from the app", () => {
     render(<MessageLink href="https://example.com">docs</MessageLink>);
     const link = screen.getByRole("link", { name: "docs" });

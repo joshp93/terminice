@@ -367,11 +367,21 @@ it with the user rather than quietly changing it.
   logo is invisible to the build system and restarting the app changes nothing at all. The
   icon is embedded at compile time, so a running process also keeps the old one until it
   is restarted.
-- **bash is usually not on `PATH`, even where Git is installed.** Measured on this
-  machine: `Get-Command bash` finds nothing, but `C:\Program Files\Git\bin\bash.exe` runs
-  fine. `shell::shell_program` therefore checks `PATH` and then the usual Git for Windows
-  locations, and that fallback is the path that actually gets used — do not remove it on
-  the assumption that `PATH` covers it.
+- **bash is usually not on `PATH`, even where Git is installed, and the `bash.exe` that is
+  there may not be bash.** `shell::shell_program` searches `PATH` first and then the
+  installer locations — `%LOCALAPPDATA%\Programs\Git`, Scoop, and all three Program Files
+  roots — because a per-user Git install is the usual work-machine case and is never on
+  `PATH`. Two deliberate exclusions. Windows ships a `bash.exe` in `System32` when WSL is
+  enabled; it runs `-c` inside the default Linux distribution, translates the Windows
+  working directory, and can wait indefinitely when the machine is not allowed to start
+  that virtual machine. It is not a shell for a Windows command and is passed over even
+  when it is first on `PATH`. And `BASH_ENV` is removed for the child: bash runs that file
+  before every non-interactive command, it is set by login scripts rather than by the
+  reader, and a startup file that waits is a `!` command that prints nothing and never
+  ends. This machine is not the one that hangs, so the work machine's cause is not proven —
+  the log names the program that was chosen, which is the first thing to read there.
+  A command's `!` shell is still not Claude's shell: it is a fresh `bash -c`, not the CLI's
+  own long-lived one.
 - **Local command output is delivered with the next message, not sent immediately.** A
   user message is what starts a turn, so sending `!ls` output on its own would make Claude
   reply to a command the user ran for their own benefit. `shellContextRef` holds it until
@@ -573,18 +583,23 @@ it with the user rather than quietly changing it.
   the token count from the last context reading — do not animate it as though it were
   completing, which is a progress bar impersonating knowledge it does not have.
 - **The summary a compaction leaves behind arrives as a `user` frame, not as the boundary.**
-  It is `{type: "user", isCompactSummary: true, isVisibleInTranscriptOnly: true}` with the
-  summary as a bare string in `message.content`. The boundary frame carries only
-  "Conversation compacted" and the token metadata, so nothing in that event can render it.
-  `applyUserEvent` reads the flag and appends a `summary` entry, and `ContextSummary` draws
-  it as a folded block of rendered Markdown. The old user handler dropped it because it
-  only looked for `tool_result` blocks — a bare string yields no blocks, which is why the
-  summary was invisible live but appeared on resume: the replay accepted it as ordinary user
-  text. `read_session_replay` now emits it as the same `isCompactSummary` frame, and
-  `withReplay` applies it through `applyUserEvent`; an interrupt marker is turned into a
-  `notice` in the same pass. The replay is frames of the live shapes rather than a role-only
-  history payload — that is what lets tool and subagent cards come back too. Do not collapse
-  the frames back into `{role, text}`.
+  In the transcript it is `{type: "user", isCompactSummary: true,
+  isVisibleInTranscriptOnly: true}` with the summary as a bare string in `message.content`.
+  **The live stream carries neither flag** — verified with a probe that sent `/compact` over
+  the app's own arguments: the frames are `system/status compacting`, `system/status
+  compact_result`, `system/init`, `system/compact_boundary`, and then a `user` line that
+  looks ordinary (`isReplay: true`, no `isCompactSummary`) holding the same string. That is
+  why the summary was invisible live and appeared on resume: the replay read a flag the live
+  frame does not have. `readLiveCompactSummary` therefore reads `summaryPending`, set by
+  `applyCompactBoundary`, and takes the next bare user line that is not a
+  `<local-command-…>` wrapper and not the interrupt marker; the known opening of the
+  summary is a fallback for a boundary that was missed. `applyUserEvent` appends a
+  `summary` entry and clears the flag. Do not go back to requiring `isCompactSummary`
+  live — it is not sent. `ContextSummary` draws it as folded rendered Markdown.
+  `read_session_replay` emits the transcript's flagged frame and `withReplay` applies it
+  through `applyUserEvent`; an interrupt marker becomes a `notice` in the same pass. The
+  replay is frames of the live shapes rather than a role-only payload — that is what lets
+  tool and subagent cards come back too. Do not collapse the frames back into `{role, text}`.
 - **`ExitPlanMode` carries no plan.** Its input is effectively empty — `allowedPrompts` is
   marked deprecated and ignored — and the plan comes back as the tool's *output*, which
   only exists once the call has run, i.e. after it was approved. So the plan shown on the
@@ -605,6 +620,9 @@ it with the user rather than quietly changing it.
   `estimated_tokens_delta` — hundreds of them per turn, and they are estimates, not the
   model's own count. How much text a block holds is the provider's business: the same
   session can return a full chain of thought on one turn and an empty block on the next.
+  **A thought block is rendered Markdown**, through the same `MessageBubble` a reply uses —
+  reasoning carries lists, code and emphasis, and a `<pre>` showed the markers as
+  punctuation. It is sanitised first for the same reason every other message is.
 - **`--forward-subagent-text` only adds frames; it does not change the ones already there.**
   A subagent's `assistant`, `user` and hook events arrive tagged with the `tool_use_id` of
   the call that spawned them, and the main conversation is untouched — verified with the
@@ -690,10 +708,17 @@ it with the user rather than quietly changing it.
   application with the page and there is no way back, so `MessageLink` refuses the click
   whichever button made it — the middle button opens a window of its own, which is the
   same trap by another route — and hands the address to `open_external_url` instead. That
-  command takes `explorer.exe` on Windows rather than the `start` builtin because it needs
-  no shell, and it refuses anything that is not `http` or `https` so a link in model output
-  cannot ask the system to run a local file or a custom protocol handler. `mailto:` links
-  are therefore inert: that is deliberate, and better than the alternative.
+  command runs `rundll32.exe url.dll,FileProtocolHandler` on Windows and refuses anything
+  that is not `http` or `https`, so a link in model output cannot ask the system to run a
+  local file or a custom protocol handler. **Not `explorer.exe`**: it is the file manager,
+  it reads its argument as a path, and an address carrying a query string or a fragment is
+  opened as a folder — which is exactly why a raw link in a message could open Explorer
+  instead of the browser. **Not `cmd /c start`** either: `start` is a shell builtin, and an
+  `&` in an address is a command separator to cmd, so an untrusted link would be parsed as
+  something to run. `rundll32` takes the address as one CreateProcess argument, so nothing
+  in it can be read as a command, and it is the shell's own entry point for "open this with
+  whatever handles the scheme". `mailto:` links are therefore inert: that is deliberate,
+  and better than the alternative.
 - **A code block is copied from the rendered tree, not from the Markdown source.** The `pre`
   component wraps the block the renderer already drew, so highlighting is untouched, and what
   goes to the clipboard is `textInHast` of that drawing — the text at its leaves, which is the
@@ -1037,6 +1062,23 @@ it with the user rather than quietly changing it.
   of very long lines wrap until neither reads as a line. And a character width of zero means
   one column, because a canvas that cannot measure is not a reason to guess — which is also
   why every component test in jsdom draws the single-column view.
+- **A patch is drawn in the file's own language, and the characters that changed are marked
+  inside the line.** The language comes from the `+++` path's extension (the `---` path for a
+  deletion), so it is a fact about the file rather than a guess; an unknown extension stays
+  plain. **An edit's result is hunks alone**: the card renders the CLI's `structuredPatch`,
+  which has `@@` headers and no `+++` line at all, so `ToolCard` reads the path the call
+  itself named (`toolFilePath`) and hands it down as `filePath`. Without that fallback every
+  edit was drawn in plain green and red while the unit tests — which build patches with a
+  header — still passed. Each side is highlighted **once as a whole** — `highlightSide` runs
+  highlight.js over the joined text and `segmentsFromHtml` splits the result back into lines,
+  carrying an open class across a newline. Per-line highlighting would mis-colour every block
+  comment and template literal, which is why it is not done that way. The edit is found
+  character by character in `changedRanges`, after the shared prefix and suffix are taken
+  off, with a one-character gap merged because a character that happens to match inside a
+  rewritten run is noise rather than an unchanged part. `DiffText` cuts the syntax runs at
+  the mark boundaries, so a token that straddles the edge of an edit is drawn once inside the
+  mark and once outside it. The marker is a span of its own now rather than the line's first
+  character; the rendered text is unchanged, which is why the older assertions still hold.
 - **A `fit`-named helper in a test file is read as a focused test.** Biome's
   `noFocusedTests` fires on `fit(...)`, the Jasmine spelling, so a local helper that decides
   whether something fits has to be called anything else.
@@ -1114,6 +1156,18 @@ it with the user rather than quietly changing it.
   reader's editor, which is exactly the thing this is for. A poll rather than a filesystem
   watcher: the file is one small object, a `stat` is nothing next to a dependency, and 750ms is
   short enough that an edit reads as having worked.
+- **The log is the application's own, and it is written beside the executable.** `logging.rs`
+  installs a `log` file logger at `<install folder>/logs/terminice.log` — the same per-user
+  folder `sessions/` uses — with `trace` through `error`, a 4 MB rotation to
+  `terminice.1.log`, and a timestamp formatted here rather than by a date library. The
+  level is `trace` in a development build and `error` in a release build, and
+  `--log-level` overrides both; it is read from `std::env::args` at startup rather than
+  through Tauri, so the same flag works from a terminal or a shortcut with nothing else
+  having to parse the window's arguments. The window writes through `log_message`, which
+  the same level filters, and the folder is opened from both an error banner and the
+  settings — a log nobody can find is a log nobody sends. Do not log every streamed frame:
+  `--include-partial-messages` means there are thousands in a turn. The logger has to be
+  live before anything else runs, so `logging::init()` is the first line of `run`.
 - **The model lives beside the settings, not beside the executable.** Session history goes
   next to the exe because the installer is per-user; a 140 MB model must not, because in
   development the exe is inside `target` and a `cargo clean` would cost a fresh download.

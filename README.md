@@ -210,6 +210,25 @@ writing it back over yours.
 |---|---|
 | `TERMINICE_CLAUDE_BINARY` | Full path to the `claude` executable, when it is not on `PATH` |
 
+### Logging
+
+The application writes a log to `logs/terminice.log`, beside the executable and next to
+`sessions/`. A development build logs everything from `trace` upwards; a released build
+logs errors only. The level is chosen at launch:
+
+```bash
+terminice.exe --log-level debug
+```
+
+The same flag works from a terminal, a shortcut, or the `Target` field of a `.lnk`. It
+takes `trace`, `debug`, `info`, `warn`, `error` or `off`, and `--log-level=debug` is
+accepted as well. The file is appended to and rotated to `terminice.1.log` once it passes
+4 MB, so it can be left on a machine that is meant to collect one.
+
+Every error in the transcript has an **Open logs** button, and **Settings → View logs**
+opens the same folder. The window's own lines travel to the same file as the backend's, so
+one log covers a whole session.
+
 #### What a session cost
 
 The header shows the cost Claude Code reports, which is the real cost for Anthropic's own
@@ -469,12 +488,14 @@ PipeWire or PulseAudio holds the ALSA `default` device, so cpal needs its
   but how much they contain is the provider's business: the same session can return a full
   chain of thought on one turn and an empty block on the next.
 - **`!` commands need bash.** Claude Code runs them in bash, so terminice does too, looking
-  on `PATH` first and then in the usual Git for Windows locations. Without either, it falls
-  back to `cmd`, where shell syntax will not work the way you expect. Note that bash is
-  typically *not* on `PATH` even when Git is installed — the fallback is what usually finds
-  it.
-- **A `!` command runs until it finishes.** There is no timeout and no way to cancel one
-  from the app; a command that never returns leaves its card showing `running…`.
+  on `PATH` first and then in the usual Git for Windows locations — including the per-user
+  install under `%LOCALAPPDATA%\Programs\Git`, which is not always on `PATH`. The `bash.exe`
+  that Windows ships in `System32` for WSL is passed over: it runs commands inside Linux,
+  and starting that distribution can wait indefinitely where virtualisation is not allowed.
+  Without any bash, it falls back to `cmd`, where shell syntax will not work the way you
+  expect.
+- **A `!` command runs until it finishes.** There is no timeout. A command that never
+  returns leaves its card showing `running…`, and Stop is the way out of it.
 - **The compaction bar cannot show real progress.** Verified by logging every event during
   a compaction: the CLI emits `system/status` with `status: "compacting"` when it starts and
   `system/compact_boundary` when it ends, with nothing in between. There is no percentage

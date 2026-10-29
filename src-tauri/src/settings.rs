@@ -167,8 +167,22 @@ pub fn settings_path() -> Option<PathBuf> {
 
 fn read_settings() -> Option<Settings> {
     let path = settings_path()?;
-    let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            log::warn!("could not read {}: {error}", path.display());
+            return None;
+        }
+    };
+
+    match serde_json::from_str(&text) {
+        Ok(settings) => Some(settings),
+        Err(error) => {
+            log::error!("could not parse {}: {error}", path.display());
+            None
+        }
+    }
 }
 
 fn write_settings(settings: &Settings) -> io::Result<()> {
@@ -226,6 +240,7 @@ pub fn watch_settings(app: tauri::AppHandle) {
                 continue;
             }
             last = current;
+            log::debug!("settings file changed; telling the window");
             let _ = app.emit(SETTINGS_CHANGED, ());
         }
     });
@@ -243,7 +258,10 @@ pub fn load_settings() -> Settings {
 /// Writes the settings to disk, creating `~/.config` when it does not exist.
 #[tauri::command]
 pub fn save_settings(settings: Settings) -> Result<(), String> {
-    write_settings(&settings).map_err(|error| error.to_string())
+    write_settings(&settings).map_err(|error| {
+        log::error!("could not save the settings: {error}");
+        error.to_string()
+    })
 }
 
 #[cfg(test)]

@@ -364,6 +364,7 @@ export function withReplay(state: ChatState, frames: Json[]): ChatState {
     streaming: "",
     busy: false,
     compacting: false,
+    summaryPending: false,
     thinkingTokens: 0,
     suggestion: null,
   };
@@ -412,6 +413,40 @@ function readCompactSummary(message: Json): string | null {
   if (message.isCompactSummary !== true) return null;
   const text = readTextBlocks(asRecord(message.message)?.content);
   return text.trim().length > 0 ? text : null;
+}
+
+/**
+ * The opening of the summary text a compaction writes.
+ *
+ * A session that resumed from a transcript is summarised the same way, so this
+ * is the one line both a compaction and a rewrite start with. It is a fallback
+ * for a summary whose boundary frame was missed, not the rule the usual case
+ * rests on.
+ */
+const SUMMARY_PREAMBLE = "This session is being continued from a previous conversation";
+
+/**
+ * Reads the summary a compaction sends over the live stream.
+ *
+ * The live stream does not carry the flags the transcript file does: verified
+ * against the CLI, a `/compact` emits `system/compact_boundary` and then an
+ * ordinary-looking `user` line whose content is the summary as a bare string,
+ * with no `isCompactSummary` on it at all. That is why the summary appeared
+ * only after a resume — the replay read a flag the live frame does not have.
+ * The boundary is therefore what says the next user line is a summary; a line
+ * wrapped in a `<local-command-…>` tag is a hook's own output and is skipped,
+ * and so is the interrupt marker.
+ *
+ * @param state - The current chat state.
+ * @param message - A decoded `user` frame.
+ * @returns The summary text, or null when the frame is not one.
+ */
+function readLiveCompactSummary(state: ChatState, message: Json): string | null {
+  const text = readTextBlocks(asRecord(message.message)?.content).trim();
+  if (text.length === 0 || text.startsWith("<")) return null;
+  if (text.startsWith("[Request interrupted")) return null;
+  if (state.summaryPending !== true && !text.startsWith(SUMMARY_PREAMBLE)) return null;
+  return text;
 }
 
 /** What the caller knows about an event that the event itself does not say. */
@@ -1083,6 +1118,7 @@ function applyCompactBoundary(state: ChatState, message: Json): ChatState {
     ...state,
     busy: false,
     compacting: false,
+    summaryPending: true,
     entries: [
       ...withSettledQueue(state.entries),
       {
@@ -1163,9 +1199,13 @@ function readUnknownCost(message: Json): boolean {
  * @returns The updated chat state.
  */
 function applyUserEvent(state: ChatState, message: Json): ChatState {
-  const summary = readCompactSummary(message);
+  const summary = readCompactSummary(message) ?? readLiveCompactSummary(state, message);
   if (summary !== null) {
-    return appendEntry(state, { id: nextId("summary"), role: "summary", text: summary });
+    return {
+      ...state,
+      summaryPending: false,
+      entries: [...state.entries, { id: nextId("summary"), role: "summary", text: summary }],
+    };
   }
 
   const entries = withToolResults(state.entries, message);
@@ -1226,6 +1266,7 @@ function applyResultEvent(state: ChatState, message: Json, interrupted: boolean)
     streaming: "",
     busy: false,
     compacting: false,
+    summaryPending: false,
     thinkingTokens: 0,
     costUsd: asNumber(message.total_cost_usd) ?? state.costUsd,
     costUnknown: readUnknownCost(message) || state.costUnknown,

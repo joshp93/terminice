@@ -111,7 +111,12 @@ fn claim(held: &Mutex<Vec<(usize, TcpListener)>>, bases: &[u16], start: usize) -
 /// the part that has to be made across processes.
 #[tauri::command]
 pub fn claim_window_colour(state: tauri::State<'_, WindowColours>) -> Option<usize> {
-    claim(&state.0, PORT_BASES, starting_point())
+    let colour = claim(&state.0, PORT_BASES, starting_point());
+    match colour {
+        Some(index) => log::debug!("claimed palette colour {index} for this window"),
+        None => log::warn!("no window colour was free; every palette entry is held or unbindable"),
+    }
+    colour
 }
 
 #[cfg(test)]

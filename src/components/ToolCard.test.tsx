@@ -53,6 +53,23 @@ describe("ToolCard", () => {
     expect(summary()).toHaveTextContent("ls -la");
   });
 
+  /// An edit's patch is hunks alone — the CLI's `structuredPatch` has no `+++`
+  /// line — so the file the language comes from is the one the call named. Here
+  /// the preview (which is drawn before anything is expanded) is checked.
+  it("draws a patch in the language its call names", () => {
+    render(
+      <Harness
+        {...base}
+        name="Edit"
+        detail="App.tsx"
+        input={'{"file_path":"D:\\\\apps\\\\terminice\\\\src\\\\App.tsx"}'}
+        result={"@@ -1,1 +1,1 @@\n-const a = 1;\n+const b = 1;"}
+      />,
+    );
+
+    expect(document.querySelector(".tool-preview .hljs-keyword")).toHaveTextContent("const");
+  });
+
   it("uses a description as the title, with the input underneath it", () => {
     render(
       <Harness {...base} name="PowerShell" description="Sign in to AWS" detail="aws sso login" />,

@@ -4,6 +4,7 @@ mod browser;
 mod claude;
 mod history;
 mod home;
+mod logging;
 mod mic;
 mod path;
 mod resample;
@@ -19,6 +20,8 @@ mod window_colour;
 
 /// Starts the terminice application.
 pub fn run() {
+    logging::init();
+
     tauri::Builder::default()
         .manage(claude::ClaudeSessions::default())
         .manage(shell::ShellCommands::default())
@@ -33,6 +36,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             startup::startup_directory_command,
             version::app_version,
+            logging::open_logs_folder,
+            logging::log_message,
             claude::start_claude,
             claude::send_claude_line,
             claude::close_claude,

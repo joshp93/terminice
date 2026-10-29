@@ -2,6 +2,7 @@ import { memo } from "react";
 import type { ChatEntry } from "../types";
 import { ContextSummary } from "./ContextSummary";
 import { MessageBubble } from "./MessageBubble";
+import { OpenLogsButton } from "./OpenLogsButton";
 import { ShellCard } from "./ShellCard";
 import { SubagentCard } from "./SubagentCard";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -73,7 +74,12 @@ export const TranscriptItem = memo(function TranscriptItem({
         />
       );
     case "error":
-      return <div className="error-banner">{entry.text}</div>;
+      return (
+        <div className="error-banner">
+          <span className="error-text">{entry.text}</span>
+          <OpenLogsButton />
+        </div>
+      );
     case "user":
       return (
         <div className="bubble user">

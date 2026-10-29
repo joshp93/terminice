@@ -34,6 +34,7 @@ import {
 } from "../lib/controlProtocol";
 import { type Prompt, type PromptResolution, readPrompt } from "../lib/dialogModels";
 import { asRecord, asText, type Json, parseJsonLine } from "../lib/json";
+import { logMessage } from "../lib/logMessage";
 import { messageUuid } from "../lib/messageUuid";
 import { nextId } from "../lib/nextId";
 import { capForModel } from "../lib/outputLimits";
@@ -346,6 +347,10 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         const store = storeRef.current;
         const record = store.get(backendId);
         if (!record) return;
+        logMessage(
+          event.code === null || event.code === 0 ? "info" : "error",
+          `claude session ${backendId} ended with code ${event.code}`,
+        );
         store.set(backendId, {
           ...record,
           status: event.code === null ? "closed" : `closed (${event.code})`,
@@ -426,6 +431,10 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       })
         .then((id) => {
           backendId = id;
+          logMessage(
+            "info",
+            `claude session ${id} started in ${dir}${options.resume ? ` (resume ${options.resume})` : ""}`,
+          );
           storeRef.current.set(id, {
             backendId: id,
             state: createChatState(),
@@ -458,6 +467,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
           }
         })
         .catch((error: unknown) => {
+          logMessage("error", `could not start claude: ${String(error)}`);
           const id = nextId("failed");
           storeRef.current.set(id, {
             backendId: id,
@@ -616,6 +626,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       // Run where the session is now, not where it started: if Claude has
       // changed directory, `!pwd` should agree with it.
       const liveCwd = record.state.cwd ?? cwdRef.current;
+      logMessage("info", `running a local command in ${liveCwd}: ${command}`);
 
       // The model is handed the output once the command is over, so it is kept
       // whole here rather than being read back out of a transcript that is
@@ -637,6 +648,10 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
         }
 
         patchState(active, (state) => finishShell(state, id, event.code, event.stopped));
+        logMessage(
+          event.code === null || event.code === 0 ? "info" : "warn",
+          `local command ${id} ended with ${event.stopped ? "a stop" : `code ${event.code}`}`,
+        );
         shellContextRef.current = [
           ...shellContextRef.current,
           `<bash-input> ${command}</bash-input>`,
@@ -647,6 +662,7 @@ export function useClaudeChat(cwd: string | null): ClaudeSession {
       };
 
       void runShellCommand(id, command, liveCwd, channel).catch((error: unknown) => {
+        logMessage("error", `local command ${id} could not run: ${String(error)}`);
         patchState(active, (state) =>
           withShellResult(state, id, { stdout: "", stderr: String(error), code: null }),
         );

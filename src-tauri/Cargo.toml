@@ -19,6 +19,8 @@ tauri = { version = "2.12.1", features = [] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 uuid = { version = "1.27.0", features = ["v4"] }
+# The logging facade. The logger behind it is this crate's own, in `logging.rs`.
+log = { version = "0.4.29", features = ["std"] }
 # The microphone. Pure Rust on Windows; nothing else has to be installed.
 cpal = "0.18"
 # Speech recognition, run on this machine rather than sent anywhere. Its build

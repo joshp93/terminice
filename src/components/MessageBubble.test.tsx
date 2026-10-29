@@ -101,6 +101,25 @@ describe("MessageBubble", () => {
     );
   });
 
+  /// A raw link is the case that opened Explorer: the address carries a query
+  /// string, and it has to reach the opener whole — ampersands included.
+  it("keeps a query string in a bare link", () => {
+    render(<MessageBubble text="see https://example.com/a?b=1&c=2 now" />);
+
+    expect(screen.getByRole("link", { name: "https://example.com/a?b=1&c=2" })).toHaveAttribute(
+      "href",
+      "https://example.com/a?b=1&c=2",
+    );
+  });
+
+  it("keeps a balanced bracket in a bare link", () => {
+    render(<MessageBubble text="https://en.wikipedia.org/wiki/Foo_(bar) is the page" />);
+
+    expect(
+      screen.getByRole("link", { name: "https://en.wikipedia.org/wiki/Foo_(bar)" }),
+    ).toHaveAttribute("href", "https://en.wikipedia.org/wiki/Foo_(bar)");
+  });
+
   it("leaves a URL inside code alone, where it is being quoted rather than offered", () => {
     const { container } = render(<MessageBubble text={"```\nhttps://example.com\n```"} />);
 

@@ -7,6 +7,7 @@ import { CogIcon } from "./CogIcon";
 import { CostRates } from "./CostRates";
 import { FontFamilySelect } from "./FontFamilySelect";
 import { FontSizeStepper } from "./FontSizeStepper";
+import { OpenLogsButton } from "./OpenLogsButton";
 import { SegmentedChoice } from "./SegmentedChoice";
 import { ShortcutsDialog } from "./ShortcutsDialog";
 import { VoiceSetting } from "./VoiceSetting";
@@ -202,6 +203,7 @@ export function SettingsMenu({ settings, onChange, open, onOpenChange, voice }: 
           <button type="button" className="settings-open" onClick={showShortcuts}>
             Keyboard shortcuts
           </button>
+          <OpenLogsButton className="settings-open" label="View logs" />
           {version !== null && <p className="settings-version">terminice {version}</p>}
           <p className="settings-note">Settings are stored in ~/.config/terminice-settings.json.</p>
         </div>

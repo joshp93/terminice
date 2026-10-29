@@ -754,6 +754,46 @@ describe("user tool results", () => {
       state,
     );
   });
+
+  /// The live stream carries none of the flags the transcript does: verified
+  /// against the CLI, `/compact` sends the boundary and then an ordinary user
+  /// line holding the summary as a bare string. The boundary is what says the
+  /// line is a summary, and without that the entry only ever appeared on resume.
+  it("appends the summary the live stream sends after a compact boundary", () => {
+    const compacted = apply(createChatState(), { type: "system", subtype: "compact_boundary" });
+    const state = apply(compacted, {
+      type: "user",
+      message: {
+        role: "user",
+        content:
+          "This session is being continued from a previous conversation that ran out of context.",
+      },
+    });
+
+    expect(state.entries.map((entry) => entry.role)).toEqual(["notice", "summary"]);
+    expect(state.entries[1]).toMatchObject({
+      text: "This session is being continued from a previous conversation that ran out of context.",
+    });
+    expect(state.summaryPending).toBe(false);
+  });
+
+  it("does not mistake a local command's own output for the summary", () => {
+    const compacted = apply(createChatState(), { type: "system", subtype: "compact_boundary" });
+    const state = apply(compacted, {
+      type: "user",
+      message: {
+        role: "user",
+        content: "<local-command-stdout>Compacted</local-command-stdout>",
+      },
+    });
+
+    expect(state.entries.map((entry) => entry.role)).toEqual(["notice"]);
+  });
+
+  it("leaves a bare user line alone when no compaction is waiting for one", () => {
+    const state = createChatState();
+    expect(apply(state, { type: "user", message: { content: "hi" } })).toBe(state);
+  });
 });
 
 describe("result", () => {

@@ -13,6 +13,7 @@ import { describeFastMode, describePermissionMode } from "./lib/claudeConfig";
 import { composerPlaceholder } from "./lib/composerPlaceholder";
 import { monoFontStack, uiFontStack } from "./lib/fonts";
 import { isModShortcut } from "./lib/isModShortcut";
+import { logMessage } from "./lib/logMessage";
 import { modifierShortcut } from "./lib/modifierShortcut";
 import { pendingMessages } from "./lib/pendingMessages";
 import { planOf } from "./lib/planOf";
@@ -42,10 +43,22 @@ export function App() {
 
   useEffect(() => {
     void invoke<string>("startup_directory_command")
-      .then(setCwd)
-      .catch(() => setCwd(""));
-    void loadSettings().then(setSettings);
-    void claimWindowColour().then((index) => setColour(paletteColour(index)));
+      .then((dir) => {
+        logMessage("info", `opening a session in ${dir}`);
+        setCwd(dir);
+      })
+      .catch((error: unknown) => {
+        logMessage("error", `could not find a startup directory: ${String(error)}`);
+        setCwd("");
+      });
+    void loadSettings().then((loaded) => {
+      logMessage("debug", "settings loaded");
+      setSettings(loaded);
+    });
+    void claimWindowColour().then((index) => {
+      logMessage("debug", `window colour ${index}`);
+      setColour(paletteColour(index));
+    });
   }, []);
 
   /**

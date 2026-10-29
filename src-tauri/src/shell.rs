@@ -4,7 +4,10 @@ use crate::path::find_on_path;
 use crate::spawn::hide_console;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::env;
 use std::io::Read;
+use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
@@ -34,31 +37,104 @@ pub enum ShellEvent {
 #[derive(Clone, Default)]
 pub struct ShellCommands(Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>);
 
-/// Where Git for Windows usually puts bash when it is not on `PATH`.
+/// The directories a Git for Windows install commonly lives in.
+///
+/// `PATH` covers the Git that was installed for all users and put on it, which
+/// is the usual case; a per-user install puts bash under `LOCALAPPDATA` and may
+/// never be on `PATH` at all. That is the difference between a machine where
+/// `!` works and one where it does not, so the search looks where the installers
+/// actually put it rather than only where `PATH` says to.
 #[cfg(windows)]
-const BASH_FALLBACKS: &[&str] = &[
-    r"C:\Program Files\Git\bin\bash.exe",
-    r"C:\Program Files\Git\usr\bin\bash.exe",
-    r"C:\Program Files (x86)\Git\bin\bash.exe",
-];
+fn known_bash_locations() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+
+    if let Some(local) = env::var_os("LOCALAPPDATA") {
+        roots.push(PathBuf::from(local).join("Programs").join("Git"));
+    }
+    if let Some(profile) = env::var_os("USERPROFILE") {
+        roots.push(
+            PathBuf::from(profile)
+                .join("scoop")
+                .join("apps")
+                .join("git")
+                .join("current"),
+        );
+    }
+    for variable in ["ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {
+        if let Some(directory) = env::var_os(variable) {
+            roots.push(PathBuf::from(directory).join("Git"));
+        }
+    }
+
+    roots
+        .into_iter()
+        .flat_map(|root| {
+            [
+                root.join("bin").join("bash.exe"),
+                root.join("usr").join("bin").join("bash.exe"),
+            ]
+        })
+        .filter(|candidate| candidate.is_file())
+        .collect()
+}
 
 #[cfg(not(windows))]
-const BASH_FALLBACKS: &[&str] = &[];
+fn known_bash_locations() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// Whether a program called `bash.exe` is the WSL launcher rather than Git bash.
+///
+/// Windows ships a `bash.exe` of its own in `System32` when the Windows
+/// Subsystem for Linux is enabled, and it is a different program in every way
+/// that matters here: `-c` runs inside the default Linux distribution, a
+/// Windows working directory has to be translated before it means anything, and
+/// starting that distribution can take an unbounded amount of time on a machine
+/// that is not allowed to run the virtual machine behind it. A command typed
+/// into this application is a Windows command, so that launcher is passed over
+/// even when it is the first `bash` on `PATH`.
+#[cfg(windows)]
+fn is_wsl_launcher(candidate: &Path) -> bool {
+    let named_bash = candidate
+        .file_name()
+        .is_some_and(|name| name.eq_ignore_ascii_case("bash.exe"));
+    let in_system = candidate
+        .parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("system32") || name.eq_ignore_ascii_case("sysnative")
+        });
+
+    named_bash && in_system
+}
+
+#[cfg(not(windows))]
+fn is_wsl_launcher(_candidate: &Path) -> bool {
+    false
+}
+
+/// Finds bash on `PATH`, skipping the WSL launcher.
+fn bash_on_path() -> Option<String> {
+    let path = env::var_os("PATH")?;
+
+    env::split_paths(&path)
+        .flat_map(|directory| [directory.join("bash.exe"), directory.join("bash")])
+        .find(|candidate| candidate.is_file() && !is_wsl_launcher(candidate))
+        .map(|candidate| candidate.to_string_lossy().into_owned())
+}
 
 /// Finds a shell to run the command with.
 ///
 /// Claude Code runs `!` commands in bash, so this prefers it and only falls
 /// back to the platform shell when bash cannot be found at all.
 pub fn shell_program() -> Option<String> {
-    for name in ["bash.exe", "bash"] {
-        if let Some(found) = find_on_path(name) {
-            return Some(found);
-        }
-    }
-    BASH_FALLBACKS
-        .iter()
-        .find(|path| std::path::Path::new(path).is_file())
-        .map(|path| path.to_string())
+    bash_on_path()
+        .or_else(|| {
+            known_bash_locations()
+                .into_iter()
+                .next()
+                .map(|candidate| candidate.to_string_lossy().into_owned())
+        })
         .or_else(|| find_on_path("cmd.exe"))
 }
 
@@ -195,14 +271,28 @@ fn run(
     stop: Arc<AtomicBool>,
     emit: Emit,
 ) -> Result<Option<i32>, String> {
-    let program = shell_program().ok_or("no shell was found to run the command with")?;
+    let program = shell_program().ok_or_else(|| {
+        log::error!("no shell was found to run a local command with");
+        "no shell was found to run the command with".to_string()
+    })?;
+
+    // Which shell was chosen is the first thing every question about a local
+    // command starts with, and the answer differs per machine.
+    log::debug!("running a local command with {program} in {cwd:?}: {command}");
+
     let mut process = if program.ends_with("cmd.exe") {
-        let mut process = Command::new(program);
+        let mut process = Command::new(&program);
         process.arg("/c").arg(&command);
         process
     } else {
-        let mut process = Command::new(program);
+        let mut process = Command::new(&program);
         process.arg("-c").arg(&command);
+        // Bash runs the file `BASH_ENV` names before every non-interactive
+        // command. It is set by IDEs and login scripts rather than by the
+        // reader, and a startup file that waits is a `!` command that prints
+        // nothing and never ends — the shape of a hang this cannot otherwise
+        // explain from here.
+        process.env_remove("BASH_ENV");
         process
     };
 
@@ -215,9 +305,10 @@ fn run(
     }
     hide_console(&mut process);
 
-    let mut child = process
-        .spawn()
-        .map_err(|error| format!("could not run the command: {error}"))?;
+    let mut child = process.spawn().map_err(|error| {
+        log::error!("could not run the command with {program}: {error}");
+        format!("could not run the command: {error}")
+    })?;
 
     let finished = Arc::new(AtomicBool::new(false));
     let stdout = child.stdout.take().map(|stream| {
@@ -263,6 +354,12 @@ fn run(
     }
     finished.store(true, Ordering::SeqCst);
 
+    log::debug!(
+        "the local command ended with {:?}{}",
+        status.code(),
+        if stopped { " (stopped)" } else { "" }
+    );
+
     // A command that was stopped has no exit code of its own: what the shell
     // reports after being killed is an artefact of the kill, not something the
     // command said.
@@ -288,6 +385,7 @@ pub fn stop_shell_command(state: State<'_, ShellCommands>, id: String) -> bool {
 
     match commands.get(&id) {
         Some(stop) => {
+            log::info!("stopping local command {id}");
             stop.store(true, Ordering::SeqCst);
             true
         }
@@ -482,6 +580,23 @@ mod tests {
     fn finds_a_shell_to_run_with() {
         let found = shell_program();
         assert!(found.is_some(), "no shell was found");
+    }
+
+    /// WSL ships a `bash.exe` of its own, and it is not a shell for a command
+    /// typed into a Windows window: `-c` would run inside Linux, and starting
+    /// the distribution can wait indefinitely where it is not allowed to run.
+    #[cfg(windows)]
+    #[test]
+    fn passes_over_the_wsl_launcher() {
+        assert!(super::is_wsl_launcher(std::path::Path::new(
+            r"C:\Windows\System32\bash.exe"
+        )));
+        assert!(!super::is_wsl_launcher(std::path::Path::new(
+            r"C:\Program Files\Git\bin\bash.exe"
+        )));
+        assert!(!super::is_wsl_launcher(std::path::Path::new(
+            r"C:\Program Files\Git\usr\bin\bash.exe"
+        )));
     }
 
     #[test]

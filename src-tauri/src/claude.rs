@@ -56,6 +56,12 @@ pub fn start_claude(
     permission_mode: Option<String>,
 ) -> Result<String, String> {
     let program = claude_binary()?;
+    log::info!(
+        "starting claude ({program}) in {:?} (resume {:?}, permission mode {:?})",
+        cwd,
+        resume,
+        permission_mode
+    );
     let mut command = interpreter_command(&program);
     command.args(default_args());
     if let Some(id) = resume.filter(|id| !id.is_empty()) {
@@ -73,9 +79,10 @@ pub fn start_claude(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("could not start {program}: {error}"))?;
+    let mut child = command.spawn().map_err(|error| {
+        log::error!("could not start {program}: {error}");
+        format!("could not start {program}: {error}")
+    })?;
 
     let stdin = child.stdin.take().ok_or("claude stdin was not captured")?;
     let stdout = child
@@ -88,11 +95,12 @@ pub fn start_claude(
         .ok_or("claude stderr was not captured")?;
     let id = Uuid::new_v4().to_string();
 
-    pump_lines(stdout, on_event.clone(), ClaudeEvent::line);
-    pump_lines(stderr, on_event.clone(), ClaudeEvent::stderr);
+    pump_lines(stdout, on_event.clone(), ClaudeEvent::line, "stdout");
+    pump_lines(stderr, on_event.clone(), ClaudeEvent::stderr, "stderr");
 
     thread::spawn(move || {
         let code = child.wait().ok().and_then(|status| status.code());
+        log::info!("the claude process ended with exit code {code:?}");
         let _ = on_event.send(ClaudeEvent::Exit { code });
     });
 
@@ -128,11 +136,15 @@ pub fn send_claude_line(
     };
 
     let mut stdin = writer.lock().map_err(|error| error.to_string())?;
-    stdin
-        .write_all(line.as_bytes())
-        .map_err(|error| error.to_string())?;
+    stdin.write_all(line.as_bytes()).map_err(|error| {
+        log::error!("could not write to claude: {error}");
+        error.to_string()
+    })?;
     stdin.write_all(b"\n").map_err(|error| error.to_string())?;
-    stdin.flush().map_err(|error| error.to_string())
+    stdin.flush().map_err(|error| {
+        log::error!("could not flush a claude message: {error}");
+        error.to_string()
+    })
 }
 
 /// Stops tracking a Claude session, which ends it by closing its stdin.
@@ -146,19 +158,30 @@ pub fn close_claude(state: tauri::State<'_, ClaudeSessions>, id: String) -> Resu
     Ok(())
 }
 
-fn pump_lines<R>(source: R, on_event: Channel<ClaudeEvent>, wrap: fn(String) -> ClaudeEvent)
-where
+fn pump_lines<R>(
+    source: R,
+    on_event: Channel<ClaudeEvent>,
+    wrap: fn(String) -> ClaudeEvent,
+    label: &'static str,
+) where
     R: std::io::Read + Send + 'static,
 {
     thread::spawn(move || {
         for line in BufReader::new(source).lines() {
             match line {
                 Ok(line) => {
+                    if label == "stderr" {
+                        log::warn!("claude stderr: {line}");
+                    }
                     if on_event.send(wrap(line)).is_err() {
+                        log::debug!("the window stopped listening to claude {label}");
                         break;
                     }
                 }
-                Err(_) => break,
+                Err(error) => {
+                    log::debug!("claude {label} could not be read: {error}");
+                    break;
+                }
             }
         }
     });
